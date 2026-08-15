@@ -75,7 +75,7 @@ function bratonien_tools_fetch_derivative($rel_url, $physical_path)
       CURLOPT_CONNECTTIMEOUT => 5,
       CURLOPT_TIMEOUT => 30,
       CURLOPT_FAILONERROR => true,
-      CURLOPT_USERAGENT => 'BratonienTools/0.2.1',
+      CURLOPT_USERAGENT => 'BratonienTools/0.3.0',
     ));
     $data = curl_exec($ch);
     curl_close($ch);
@@ -176,6 +176,8 @@ if (!in_array($ext, array('jpg','jpeg','png','gif','webp'), true))
   $ext = 'jpg';
 }
 
+$scale_percent = isset($profile['scale_percent']) ? max(1.0, min(1000.0, (float)$profile['scale_percent'])) : 100.0;
+
 $cache_dir = PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR.'bratonien-watermark/'.$profile_id;
 if (!is_dir($cache_dir) && !mkdir($cache_dir, 0755, true) && !is_dir($cache_dir))
 {
@@ -185,7 +187,7 @@ if (!is_dir($cache_dir) && !mkdir($cache_dir, 0755, true) && !is_dir($cache_dir)
 
 $cache_fingerprint = array(
   $rel_url,
-  $profile['watermark_file'], $profile['xpos'], $profile['ypos'],
+  $profile['watermark_file'], $scale_percent, $profile['xpos'], $profile['ypos'],
   $profile['xrepeat'], $profile['yrepeat'], $profile['opacity'],
   $profile['min_width'], $profile['min_height'], $profile['active'],
   @filemtime($watermark_path),
@@ -209,14 +211,24 @@ if ($width < (int)$profile['min_width'] || $height < (int)$profile['min_height']
 }
 
 $wm = new pwg_image($watermark_path);
-$wm_width = $wm->get_width();
-$wm_height = $wm->get_height();
+$original_wm_width = $wm->get_width();
+$original_wm_height = $wm->get_height();
+$wm_width = max(1, (int)round($original_wm_width * $scale_percent / 100));
+$wm_height = max(1, (int)round($original_wm_height * $scale_percent / 100));
 
+if ($wm_width !== $original_wm_width || $wm_height !== $original_wm_height)
+{
+  $wm->resize($wm_width, $wm_height);
+}
+
+// A watermark may be deliberately enlarged, but it must never make the image
+// renderer address pixels outside the derivative. If the requested size is
+// larger than the derivative, keep the aspect ratio and fit it to the image.
 if ($width < $wm_width || $height < $wm_height)
 {
-  $scale = min($width / $wm_width, $height / $wm_height);
-  $wm_width = max(1, (int)floor($wm_width * $scale));
-  $wm_height = max(1, (int)floor($wm_height * $scale));
+  $fit = min($width / $wm_width, $height / $wm_height);
+  $wm_width = max(1, (int)floor($wm_width * $fit));
+  $wm_height = max(1, (int)floor($wm_height * $fit));
   $wm->resize($wm_width, $wm_height);
 }
 
