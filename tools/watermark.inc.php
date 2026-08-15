@@ -67,6 +67,82 @@ function bratonien_tools_get_watermark_data()
   );
 }
 
+function bratonien_tools_normalize_watermark_file($file)
+{
+  $file = ltrim(trim((string)$file), '/');
+  if ($file === '')
+  {
+    throw new RuntimeException('Keine Wasserzeichendatei ausgewaehlt.');
+  }
+
+  $root = realpath(PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'watermarks');
+  $path = realpath(PHPWG_ROOT_PATH . $file);
+  if (!$root || !$path || strpos($path, $root . DIRECTORY_SEPARATOR) !== 0 || !is_file($path))
+  {
+    throw new RuntimeException('Die ausgewaehlte Wasserzeichendatei ist ungueltig.');
+  }
+
+  if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'png')
+  {
+    throw new RuntimeException('Es koennen nur PNG-Wasserzeichen geloescht werden.');
+  }
+
+  return array('relative'=>$file, 'path'=>$path);
+}
+
+function bratonien_tools_delete_watermark_file()
+{
+  if (!is_webmaster())
+  {
+    throw new RuntimeException('Nur ein Piwigo-Webmaster darf Wasserzeichendateien loeschen.');
+  }
+
+  $target = bratonien_tools_normalize_watermark_file($_POST['watermark_file'] ?? '');
+  $relative = $target['relative'];
+
+  if (!function_exists('bratonien_tools_table'))
+  {
+    require_once(BRATONIEN_TOOLS_PATH . 'include/database.class.php');
+  }
+  bratonien_tools_create_tables();
+
+  $profiles = query2array(
+    "SELECT id,name FROM ".bratonien_tools_table('watermark_profiles').
+    " WHERE watermark_file='".pwg_db_real_escape_string($relative)."' ORDER BY name"
+  );
+  if (!empty($profiles))
+  {
+    $names = array();
+    foreach ($profiles as $profile)
+    {
+      $names[] = $profile['name'];
+    }
+    throw new RuntimeException('Die Datei wird noch von folgenden Profilen verwendet: '.implode(', ', $names).'. Bitte dort zuerst eine andere Datei waehlen.');
+  }
+
+  if (!class_exists('ImageStdParams'))
+  {
+    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
+  }
+  $current = ImageStdParams::get_watermark();
+  if (ltrim((string)$current->file, '/') === $relative)
+  {
+    throw new RuntimeException('Die Datei ist aktuell als Basis-Wasserzeichen ausgewaehlt. Bitte zuerst eine andere Datei speichern.');
+  }
+
+  if (!@unlink($target['path']))
+  {
+    throw new RuntimeException('Die Wasserzeichendatei konnte nicht geloescht werden.');
+  }
+
+  require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
+  $cache_result = bratonien_tools_clear_image_cache();
+
+  return array(
+    'message' => 'Wasserzeichendatei geloescht. '.$cache_result['message'],
+  );
+}
+
 function bratonien_tools_save_watermark()
 {
   if (!is_webmaster())
