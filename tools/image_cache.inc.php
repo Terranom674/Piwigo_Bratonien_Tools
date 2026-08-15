@@ -106,7 +106,7 @@ function bratonien_tools_clear_image_cache()
     );
   }
 
-  bratonien_tools_request_watermark_precache();
+  bratonien_tools_request_watermark_precache('Bildcache wurde geleert');
 
   return array(
     'message' => sprintf(
@@ -169,7 +169,46 @@ function bratonien_tools_scan_image_cache($cache_root)
   return $result;
 }
 
-function bratonien_tools_request_watermark_precache()
+function bratonien_tools_precache_status_file()
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.status.json';
+}
+
+function bratonien_tools_write_precache_status(array $status)
+{
+  $status_file = bratonien_tools_precache_status_file();
+  $directory = dirname($status_file);
+
+  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory))
+  {
+    throw new RuntimeException('Precache-Status konnte nicht vorbereitet werden.');
+  }
+
+  $defaults = array(
+    'state' => 'queued',
+    'message' => '',
+    'total' => 0,
+    'completed' => 0,
+    'generated' => 0,
+    'cached' => 0,
+    'skipped' => 0,
+    'errors' => 0,
+    'current' => '',
+    'updated_at' => time(),
+  );
+  $payload = array_merge($defaults, $status);
+  $payload['updated_at'] = time();
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+  if ($json === false || @file_put_contents($status_file, $json."\n", LOCK_EX) === false)
+  {
+    throw new RuntimeException('Precache-Status konnte nicht gespeichert werden.');
+  }
+
+  @chmod($status_file, 0664);
+}
+
+function bratonien_tools_request_watermark_precache($reason='Konfiguration wurde geaendert')
 {
   $request_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.request';
   $directory = dirname($request_file);
@@ -185,6 +224,10 @@ function bratonien_tools_request_watermark_precache()
   }
 
   @chmod($request_file, 0664);
+  bratonien_tools_write_precache_status(array(
+    'state' => 'queued',
+    'message' => $reason.'. Wasserzeichen-Precache wartet auf den Hintergrundprozess.',
+  ));
   return $request_file;
 }
 
