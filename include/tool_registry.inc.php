@@ -20,6 +20,9 @@ function bratonien_tools_get_tools()
     'watermark_save' => array(
       'handler' => 'bratonien_tools_save_watermark',
     ),
+    'watermark_file_delete' => array(
+      'handler' => 'bratonien_tools_delete_watermark_file',
+    ),
     'watermark_engine' => array(
       'handler' => 'bratonien_tools_handle_watermark_engine',
     ),
