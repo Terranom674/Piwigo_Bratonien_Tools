@@ -3,6 +3,46 @@
 {foreach from=$BRATONIEN_MESSAGES item=message}<div class="infos"><p>{$message|escape:html}</p></div>{/foreach}
 {foreach from=$BRATONIEN_ERRORS item=error}<div class="errors"><p>{$error|escape:html}</p></div>{/foreach}
 
+<style>
+.bratonien-watermark-preview {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #666;
+  background: rgba(255,255,255,.03);
+}
+.bratonien-watermark-preview__image {
+  width: 260px;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background:
+    linear-gradient(45deg, #555 25%, transparent 25%),
+    linear-gradient(-45deg, #555 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #555 75%),
+    linear-gradient(-45deg, transparent 75%, #555 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  box-sizing: border-box;
+}
+.bratonien-watermark-preview__image img {
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+}
+.bratonien-watermark-preview__empty {
+  color: #aaa;
+  text-align: center;
+}
+.bratonien-watermark-preview__meta {
+  line-height: 1.6;
+}
+</style>
+
 <fieldset>
   <legend>Bildcache</legend>
   <p>Loescht alle erzeugten Piwigo- und Bratonien-Bildderivate. Originalbilder bleiben erhalten.</p>
@@ -25,6 +65,28 @@
 <fieldset>
   <legend>Wasserzeichendateien</legend>
   <p>PNG-Dateien liegen im normalen Piwigo-Wasserzeichenordner und koennen sowohl von Piwigo als auch von Bratonien-Profilen verwendet werden.</p>
+
+  <div class="bratonien-watermark-preview">
+    <div class="bratonien-watermark-preview__image">
+      {if $WATERMARK.preview_url}
+        <img src="{$WATERMARK.preview_url|escape:html}" alt="Aktuelles Wasserzeichen">
+      {else}
+        <div class="bratonien-watermark-preview__empty">Noch kein Wasserzeichen ausgewählt</div>
+      {/if}
+    </div>
+    <div class="bratonien-watermark-preview__meta">
+      <strong>Aktuelles Wasserzeichen</strong><br>
+      {if $WATERMARK.file}
+        {$WATERMARK.file|escape:html}<br>
+        Position: {$WATERMARK.xpos} / {$WATERMARK.ypos}<br>
+        Deckkraft: {$WATERMARK.opacity}%<br>
+        Mindestgröße: {$WATERMARK.minw} × {$WATERMARK.minh}
+      {else}
+        Keine Datei ausgewählt
+      {/if}
+    </div>
+  </div>
+
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
     <p><label>Datei <select name="watermark_file">{foreach from=$WATERMARK.files key=file item=name}<option value="{$file|escape:html}" {if $file == $WATERMARK.file}selected{/if}>{$name|escape:html}</option>{/foreach}</select></label> <label>Neues PNG <input type="file" name="watermark_upload" accept="image/png"></label></p>
