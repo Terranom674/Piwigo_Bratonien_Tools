@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
 }
 
 define('BRATONIEN_TOOLS_PRECACHE_BUILD', true);
-define('PHPWG_ROOT_PATH', '../../');
+define('PHPWG_ROOT_PATH', rtrim(dirname(__DIR__, 2), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR);
 
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 $_SERVER['SERVER_ADDR'] = '127.0.0.1';
@@ -18,7 +18,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/precache.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.2';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.3';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -281,7 +281,7 @@ foreach ($images as $image)
             CURLOPT_CONNECTTIMEOUT => 3,
             CURLOPT_TIMEOUT => 120,
             CURLOPT_FAILONERROR => false,
-            CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.2',
+            CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.3',
             CURLOPT_WRITEFUNCTION => static function ($ch, $data) { return strlen($data); },
           ));
           curl_exec($ch);
