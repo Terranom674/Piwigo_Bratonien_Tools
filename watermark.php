@@ -75,7 +75,7 @@ function bratonien_tools_fetch_derivative($rel_url, $physical_path)
       CURLOPT_CONNECTTIMEOUT => 5,
       CURLOPT_TIMEOUT => 30,
       CURLOPT_FAILONERROR => true,
-      CURLOPT_USERAGENT => 'BratonienTools/0.2',
+      CURLOPT_USERAGENT => 'BratonienTools/0.2.1',
     ));
     $data = curl_exec($ch);
     curl_close($ch);
@@ -152,14 +152,13 @@ if (!hash_equals($expected, $signature))
 }
 
 $profile = bratonien_tools_get_watermark_profile($profile_id);
-if (!$profile || empty($profile['active']) || empty($profile['watermark_file']))
+if (!$profile || empty($profile['active']))
 {
   bratonien_tools_watermark_fail(404, 'Watermark profile unavailable');
 }
 
-$watermark_root = realpath(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'watermarks');
-$watermark_path = realpath(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'watermarks/'.$profile['watermark_file']);
-if (!$watermark_root || !$watermark_path || strpos($watermark_path, $watermark_root.DIRECTORY_SEPARATOR) !== 0 || !is_file($watermark_path))
+$watermark_path = bratonien_tools_profile_watermark_path($profile);
+if (!$watermark_path)
 {
   bratonien_tools_watermark_fail(404, 'Watermark file unavailable');
 }
