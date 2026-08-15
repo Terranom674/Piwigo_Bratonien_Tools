@@ -23,7 +23,8 @@ function bratonien_tools_clear_image_cache()
 
   $deleted_files = 0;
   $deleted_bytes = 0;
-  $failed_files = 0;
+  $deleted_custom = 0;
+  $failed_files = array();
 
   $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator($real_cache_root, FilesystemIterator::SKIP_DOTS),
@@ -43,31 +44,70 @@ function bratonien_tools_clear_image_cache()
     }
 
     $path = $item->getPathname();
+    $filename = $item->getFilename();
     $size = $item->isFile() ? $item->getSize() : 0;
+    $is_custom = strpos($filename, '-cu_') !== false;
 
     if (@unlink($path))
     {
       $deleted_files++;
       $deleted_bytes += $size;
+      if ($is_custom)
+      {
+        $deleted_custom++;
+      }
     }
     else
     {
-      $failed_files++;
+      $failed_files[] = $path;
     }
   }
 
-  if ($failed_files > 0)
+  if (!empty($failed_files))
   {
     throw new RuntimeException(
-      sprintf('%d Dateien geloescht, %d Dateien konnten nicht geloescht werden.', $deleted_files, $failed_files)
+      sprintf(
+        '%d Dateien geloescht, %d Dateien konnten nicht geloescht werden. Erste problematische Datei: %s',
+        $deleted_files,
+        count($failed_files),
+        $failed_files[0]
+      )
+    );
+  }
+
+  // Sicherheitskontrolle: Nach dem Leeren darf kein Custom-Derivat mehr
+  // im Piwigo-Bildcache liegen. Damit werden insbesondere gdThumb-Dateien
+  // wie *-cu_s9999x250.jpg erfasst.
+  $remaining_custom = array();
+  $verify_iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($real_cache_root, FilesystemIterator::SKIP_DOTS)
+  );
+
+  foreach ($verify_iterator as $item)
+  {
+    if ($item->isFile() && strpos($item->getFilename(), '-cu_') !== false)
+    {
+      $remaining_custom[] = $item->getPathname();
+      if (count($remaining_custom) >= 5)
+      {
+        break;
+      }
+    }
+  }
+
+  if (!empty($remaining_custom))
+  {
+    throw new RuntimeException(
+      'Bildcache wurde nicht vollstaendig geleert. Verbleibendes Custom-Derivat: ' . $remaining_custom[0]
     );
   }
 
   return array(
     'message' => sprintf(
-      'Bildcache geleert: %d Dateien (%s) entfernt.',
+      'Bildcache geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate.',
       $deleted_files,
-      bratonien_tools_format_bytes($deleted_bytes)
+      bratonien_tools_format_bytes($deleted_bytes),
+      $deleted_custom
     ),
   );
 }
