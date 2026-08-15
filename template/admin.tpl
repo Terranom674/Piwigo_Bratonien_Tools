@@ -40,6 +40,8 @@
 .bratonien-scale-preview__info { margin-top:8px; color:#a9a9a9; line-height:1.5; }
 .bratonien-lock { color:#a9a9a9; }
 .bratonien-base-note { margin:12px 0 0; color:#a9a9a9; font-size:12px; line-height:1.5; }
+.bratonien-delete-button { border-color:rgba(210,80,80,.7)!important; }
+.bratonien-delete-button:hover,.bratonien-delete-button:focus { border-color:#d65a5a!important; }
 .bratonien-rule-table { width:100%; border-collapse:collapse; }
 .bratonien-rule-table th,.bratonien-rule-table td { padding:9px 8px; text-align:left; vertical-align:middle; border-bottom:1px solid rgba(255,255,255,.09); }
 .bratonien-rule-table th { color:#d7d7d7; }
@@ -108,7 +110,11 @@
             <label for="watermark_opacity">Deckkraft</label><span><input id="watermark_opacity" type="number" name="watermark_opacity" value="{$WATERMARK.opacity}" min="1" max="100" size="4" data-watermark-opacity> %</span>
             <span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="watermark_minw" value="{$WATERMARK.minw}" min="0" size="5"> × <input type="number" name="watermark_minh" value="{$WATERMARK.minh}" min="0" size="5"></span>
           </div>
-          <div class="bratonien-actions"><label><input type="checkbox" name="watermark_clear_cache" value="1"> Bildcache danach leeren</label><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_save">Basis-Wasserzeichen speichern</button></div>
+          <div class="bratonien-actions">
+            <label><input type="checkbox" name="watermark_clear_cache" value="1"> Bildcache danach leeren</label>
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_save">Basis-Wasserzeichen speichern</button>
+            <button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="watermark_file_delete" onclick="return confirm('Die aktuell ausgewählte Wasserzeichendatei wirklich dauerhaft löschen?');">Ausgewählte Datei löschen</button>
+          </div>
         </div>
       </div>
     </form>
