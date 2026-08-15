@@ -47,14 +47,6 @@
 .bratonien-rule-table th { color:#d7d7d7; }
 .bratonien-effective { white-space:nowrap; }
 .bratonien-muted { color:#a9a9a9; }
-.bratonien-progress { margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
-.bratonien-progress__head { display:flex; justify-content:space-between; gap:12px; margin-bottom:7px; }
-.bratonien-progress__track { height:18px; overflow:hidden; border:1px solid rgba(255,255,255,.16); border-radius:4px; background:rgba(0,0,0,.25); }
-.bratonien-progress__bar { width:0; height:100%; background:#66a845; transition:width .25s ease; }
-.bratonien-progress.is-error .bratonien-progress__bar { background:#c95b5b; }
-.bratonien-progress.is-queued .bratonien-progress__bar { background:#a7834d; }
-.bratonien-progress__details { margin-top:8px; color:#a9a9a9; line-height:1.45; }
-.bratonien-progress__current { margin-top:4px; font-size:12px; color:#8f8f8f; overflow-wrap:anywhere; }
 @media (max-width:850px) {
   .bratonien-grid,.bratonien-scale-grid { grid-template-columns:1fr; }
   .bratonien-form-grid,.bratonien-scale-fields { grid-template-columns:1fr; }
@@ -111,7 +103,7 @@
 
   <section class="bratonien-section" id="regeln"><h3>Regeln</h3><p class="bratonien-section__intro">Standardregeln und Album-Ausnahmen gemeinsam verwalten.</p><div class="bratonien-card"><h4>Globale Standardregeln</h4><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><div class="bratonien-form-grid"><label>Öffentliche Alben</label><select name="public_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.public_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select><label>Private Alben</label><select name="private_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.private_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></div><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_defaults">Standardregeln speichern</button></div></form></div><div class="bratonien-card" style="margin-top:16px;"><h4>Album-Ausnahmen</h4><p class="bratonien-muted">Erben verwendet die nächste explizite Regel eines Elternalbums und danach den globalen Standard.</p><table class="bratonien-rule-table"><thead><tr><th>Album</th><th>Sichtbarkeit</th><th>Regel</th><th>Profil</th><th>Wirksam</th><th></th></tr></thead><tbody>{foreach from=$WATERMARK_CATEGORIES item=category}<tr><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="category_id" value="{$category.id}"><td><strong>{$category.display_name|escape:html}</strong></td><td>{$category.status|escape:html}</td><td><select name="rule_mode"><option value="inherit" {if $category.rule.mode == 'inherit'}selected{/if}>Erben</option><option value="disabled" {if $category.rule.mode == 'disabled'}selected{/if}>Kein Wasserzeichen</option><option value="profile" {if $category.rule.mode == 'profile'}selected{/if}>Profil verwenden</option></select></td><td><select name="rule_profile"><option value="">Profil wählen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $category.rule.profile_id == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></td><td class="bratonien-effective"><strong>{$category.effective_label|escape:html}</strong> <span class="bratonien-muted">({$category.effective.source|escape:html})</span></td><td><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_rule">Speichern</button></td></form></tr>{/foreach}</tbody></table></div></section>
 
-  <section class="bratonien-section" id="wartung"><h3>Wartung</h3><p class="bratonien-section__intro">Werkzeuge, die nicht zur täglichen Konfiguration gehören.</p><div class="bratonien-card"><h4>Bildcache</h4><p>Löscht alle erzeugten Piwigo- und Bratonien-Bildderivate. Originalbilder bleiben erhalten. Anschließend wird der Wasserzeichen-Precache automatisch im Hintergrund neu aufgebaut.</p><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_clear" onclick="return confirm('Wirklich den gesamten Bildcache leeren und anschließend neu aufbauen?');">Bildcache leeren</button></form><div class="bratonien-progress" data-precache-progress data-status-url="{$PRECACHE_STATUS_URL|escape:html}"><div class="bratonien-progress__head"><strong data-precache-title>Precache-Status</strong><strong data-precache-percent>–</strong></div><div class="bratonien-progress__track" role="progressbar" aria-label="Wasserzeichen-Precache" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-precache-track><div class="bratonien-progress__bar" data-precache-bar></div></div><div class="bratonien-progress__details" data-precache-details>Status wird geladen …</div><div class="bratonien-progress__current" data-precache-current></div></div></div></section>
+  <section class="bratonien-section" id="wartung"><h3>Wartung</h3><p class="bratonien-section__intro">Werkzeuge, die nicht zur täglichen Konfiguration gehören.</p><div class="bratonien-card"><h4>Bildcache</h4><p>Löscht alle erzeugten Piwigo- und Bratonien-Bildderivate. Originalbilder bleiben erhalten. Benötigte Varianten werden beim nächsten Aufruf automatisch neu erzeugt.</p><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_clear" onclick="return confirm('Wirklich den gesamten Bildcache leeren? Benötigte Varianten werden anschließend bei Bedarf neu erzeugt.');">Bildcache leeren</button></form></div></section>
 </div>
 
 <script>
@@ -131,23 +123,6 @@ function initWatermarkEditor(form){
   fileSelect.addEventListener('change',function(){applyPercent(percentInput.value||100);});percentInput.addEventListener('input',function(){applyPercent(percentInput.value);});widthInput.addEventListener('input',applyWidth);heightInput.addEventListener('input',applyHeight);if(opacityInput)opacityInput.addEventListener('input',function(){applyPercent(percentInput.value);});applyPercent(percentInput.value||100);
 }
 document.querySelectorAll('[data-watermark-editor]').forEach(initWatermarkEditor);
-
-function initPrecacheProgress(){
-  var box=document.querySelector('[data-precache-progress]');if(!box)return;
-  var url=box.getAttribute('data-status-url'),title=box.querySelector('[data-precache-title]'),percentEl=box.querySelector('[data-precache-percent]'),details=box.querySelector('[data-precache-details]'),current=box.querySelector('[data-precache-current]'),bar=box.querySelector('[data-precache-bar]'),track=box.querySelector('[data-precache-track]'),timer=null;
-  function render(data){
-    var total=Math.max(0,parseInt(data.total,10)||0),completed=Math.max(0,parseInt(data.completed,10)||0),percent=total>0?Math.min(100,Math.round(completed/total*100)):(data.state==='complete'?100:0);
-    box.classList.toggle('is-error',data.state==='error');box.classList.toggle('is-queued',data.state==='queued');bar.style.width=percent+'%';track.setAttribute('aria-valuenow',String(percent));percentEl.textContent=(data.state==='idle'?'–':percent+' %');
-    var labels={idle:'Precache-Status',queued:'Precache wartet',running:'Precache läuft',complete:'Precache fertig',error:'Precache mit Fehlern'};title.textContent=labels[data.state]||'Precache-Status';
-    details.textContent=(data.message||'')+(total>0?' · '+completed+' / '+total+' Varianten · '+(parseInt(data.generated,10)||0)+' neu · '+(parseInt(data.cached,10)||0)+' vorhanden · '+(parseInt(data.skipped,10)||0)+' übersprungen · '+(parseInt(data.errors,10)||0)+' Fehler':'');
-    current.textContent=data.current?('Aktuell: '+data.current):'';
-    if(data.state==='queued'||data.state==='running'){schedule(1500);}else if(timer){clearTimeout(timer);timer=null;}
-  }
-  function schedule(delay){if(timer)clearTimeout(timer);timer=setTimeout(load,delay);}
-  function load(){fetch(url+(url.indexOf('?')===-1?'?':'&')+'_='+(Date.now()),{credentials:'same-origin',cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(render).catch(function(){details.textContent='Precache-Status konnte nicht geladen werden.';schedule(5000);});}
-  load();
-}
-initPrecacheProgress();
 })();
 {/literal}
 </script>
