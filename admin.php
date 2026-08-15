@@ -129,6 +129,7 @@ $template->assign(array(
   'WATERMARK_DEFAULTS' => $defaults,
   'WATERMARK_CATEGORIES' => $categories,
   'WATERMARK_ENGINE' => $engine,
+  'PRECACHE_STATUS_URL' => get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/precache-status.php',
 ));
 
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
