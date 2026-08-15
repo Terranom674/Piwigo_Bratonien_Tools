@@ -9,6 +9,12 @@ function bratonien_tools_table($name)
   return $GLOBALS['prefixeTable'] . 'bratonien_tools_' . $name;
 }
 
+function bratonien_tools_column_exists($table, $column)
+{
+  $result = pwg_query("SHOW COLUMNS FROM `".$table."` LIKE '".pwg_db_real_escape_string($column)."'");
+  return pwg_db_num_rows($result) > 0;
+}
+
 function bratonien_tools_create_tables()
 {
   $profiles = bratonien_tools_table('watermark_profiles');
@@ -20,12 +26,28 @@ function bratonien_tools_create_tables()
     watermark_file varchar(255) NOT NULL,
     xpos int(11) NOT NULL DEFAULT 90,
     ypos int(11) NOT NULL DEFAULT 90,
+    xrepeat int(11) NOT NULL DEFAULT 0,
+    yrepeat int(11) NOT NULL DEFAULT 0,
     opacity int(11) NOT NULL DEFAULT 35,
     min_width int(11) NOT NULL DEFAULT 10,
     min_height int(11) NOT NULL DEFAULT 10,
+    active tinyint(1) NOT NULL DEFAULT 1,
     created datetime NOT NULL,
     PRIMARY KEY (id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+  if (!bratonien_tools_column_exists($profiles, 'xrepeat'))
+  {
+    pwg_query("ALTER TABLE `$profiles` ADD xrepeat int(11) NOT NULL DEFAULT 0 AFTER ypos");
+  }
+  if (!bratonien_tools_column_exists($profiles, 'yrepeat'))
+  {
+    pwg_query("ALTER TABLE `$profiles` ADD yrepeat int(11) NOT NULL DEFAULT 0 AFTER xrepeat");
+  }
+  if (!bratonien_tools_column_exists($profiles, 'active'))
+  {
+    pwg_query("ALTER TABLE `$profiles` ADD active tinyint(1) NOT NULL DEFAULT 1 AFTER min_height");
+  }
 
   pwg_query("CREATE TABLE IF NOT EXISTS `$rules` (
     id int(11) NOT NULL AUTO_INCREMENT,
