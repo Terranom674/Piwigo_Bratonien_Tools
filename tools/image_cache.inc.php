@@ -44,13 +44,8 @@ function bratonien_tools_clear_image_cache()
     throw new RuntimeException('Piwigos Funktion clear_derivative_cache() ist nicht verfuegbar.');
   }
 
-  // Zuerst exakt denselben Mechanismus verwenden wie
-  // Wartung -> Mehrfache Bildgroessen entfernen -> Alles.
   clear_derivative_cache('all');
 
-  // Danach bewusst ALLE verbleibenden erzeugten Bilddateien im
-  // Derivatverzeichnis entfernen. Damit werden auch Dateien erfasst,
-  // die von Plugins erzeugt wurden oder nicht in Piwigos Typ-Muster passen.
   $failed_files = array();
   $residual_deleted = 0;
 
@@ -111,9 +106,11 @@ function bratonien_tools_clear_image_cache()
     );
   }
 
+  bratonien_tools_request_watermark_precache();
+
   return array(
     'message' => sprintf(
-      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Löschmustern entfernt.',
+      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Loeschmustern entfernt. Wasserzeichen-Precache wurde vorgemerkt.',
       $before['files'],
       bratonien_tools_format_bytes($before['bytes']),
       $before['custom'],
@@ -170,6 +167,25 @@ function bratonien_tools_scan_image_cache($cache_root)
   }
 
   return $result;
+}
+
+function bratonien_tools_request_watermark_precache()
+{
+  $request_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.request';
+  $directory = dirname($request_file);
+
+  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory))
+  {
+    throw new RuntimeException('Precache-Anforderung konnte nicht vorbereitet werden.');
+  }
+
+  if (@file_put_contents($request_file, (string)time()."\n", LOCK_EX) === false)
+  {
+    throw new RuntimeException('Precache-Anforderung konnte nicht gespeichert werden.');
+  }
+
+  @chmod($request_file, 0664);
+  return $request_file;
 }
 
 function bratonien_tools_format_bytes($bytes)
