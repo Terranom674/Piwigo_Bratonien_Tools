@@ -78,7 +78,7 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
   }
 
   $profile = bratonien_tools_get_watermark_profile((int)$rule['profile_id']);
-  if (!$profile || empty($profile['watermark_file']))
+  if (!$profile || empty($profile['active']) || empty($profile['watermark_file']))
   {
     return $url;
   }
@@ -87,6 +87,15 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
   if (!is_file($watermark_path))
   {
     return $url;
+  }
+
+  if (is_object($params) && is_object($src_image) && $src_image->has_size())
+  {
+    $size = $params->compute_final_size($src_image->get_size());
+    if ($size && ($size[0] < (int)$profile['min_width'] || $size[1] < (int)$profile['min_height']))
+    {
+      return $url;
+    }
   }
 
   $profile_id = (int)$profile['id'];
