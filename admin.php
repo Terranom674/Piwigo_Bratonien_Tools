@@ -39,6 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
   }
 }
 
+if (isset($tools['watermark']))
+{
+  $template->assign('WATERMARK', bratonien_tools_get_watermark_data());
+}
+
 $template->assign(array(
   'BRATONIEN_TOOLS' => $tools,
   'BRATONIEN_MESSAGES' => $messages,
