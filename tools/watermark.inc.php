@@ -4,6 +4,28 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+function bratonien_tools_get_base_watermark_scale()
+{
+  if (!function_exists('conf_get_param'))
+  {
+    return 100.0;
+  }
+
+  $value = (float)conf_get_param('bratonien_watermark_base_scale_percent', 100);
+  return max(1.0, min(1000.0, $value > 0 ? $value : 100.0));
+}
+
+function bratonien_tools_save_base_watermark_scale($scale_percent)
+{
+  if (!function_exists('conf_update_param'))
+  {
+    throw new RuntimeException('Piwigo-Konfiguration ist nicht verfuegbar.');
+  }
+
+  $scale_percent = max(1.0, min(1000.0, (float)$scale_percent));
+  conf_update_param('bratonien_watermark_base_scale_percent', (string)$scale_percent);
+}
+
 function bratonien_tools_get_watermark_data()
 {
   if (!class_exists('ImageStdParams'))
@@ -41,6 +63,7 @@ function bratonien_tools_get_watermark_data()
     'minh' => isset($watermark->min_size[1]) ? (int) $watermark->min_size[1] : 0,
     'files' => $files,
     'preview_url' => !empty($watermark->file) ? get_root_url() . $watermark->file : '',
+    'scale_percent' => bratonien_tools_get_base_watermark_scale(),
   );
 }
 
@@ -127,6 +150,13 @@ function bratonien_tools_save_watermark()
   $minh = bratonien_tools_watermark_int('watermark_minh', 0, 100000, 10);
   $xrepeat = bratonien_tools_watermark_int('watermark_xrepeat', 0, 100000, 0);
   $yrepeat = bratonien_tools_watermark_int('watermark_yrepeat', 0, 100000, 0);
+
+  $scale_percent = isset($_POST['watermark_scale_percent']) ? (float)$_POST['watermark_scale_percent'] : bratonien_tools_get_base_watermark_scale();
+  if (!is_finite($scale_percent) || $scale_percent < 1 || $scale_percent > 1000)
+  {
+    throw new RuntimeException('Die Wasserzeichengroesse muss zwischen 1 und 1000 Prozent liegen.');
+  }
+  bratonien_tools_save_base_watermark_scale($scale_percent);
 
   $watermark = new WatermarkParams();
   $watermark->file = $selected_file;
