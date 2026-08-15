@@ -18,7 +18,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/precache.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.0';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.1';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -31,6 +31,55 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
 
 require_once(BRATONIEN_TOOLS_PATH.'include/watermark_runtime.inc.php');
 require_once(PHPWG_ROOT_PATH.'include/derivative.inc.php');
+
+function bratonien_tools_precache_url_to_size($value)
+{
+  $parts = explode('x', (string)$value, 2);
+  if (count($parts) === 1)
+  {
+    $size = max(1, (int)$parts[0]);
+    return array($size, $size);
+  }
+  return array(max(1, (int)$parts[0]), max(1, (int)$parts[1]));
+}
+
+function bratonien_tools_precache_custom_params($key)
+{
+  $tokens = explode('_', (string)$key);
+  if (!$tokens)
+  {
+    return null;
+  }
+
+  $token = array_shift($tokens);
+  $crop = 0;
+  $min_size = null;
+
+  if (isset($token[0]) && $token[0] === 's')
+  {
+    $size = bratonien_tools_precache_url_to_size(substr($token, 1));
+  }
+  elseif (isset($token[0]) && $token[0] === 'e')
+  {
+    $crop = 1;
+    $size = $min_size = bratonien_tools_precache_url_to_size(substr($token, 1));
+  }
+  else
+  {
+    if (count($tokens) < 2)
+    {
+      return null;
+    }
+    $size = bratonien_tools_precache_url_to_size($token);
+    $crop_token = array_shift($tokens);
+    $min_size = bratonien_tools_precache_url_to_size(array_shift($tokens));
+    $crop = char_to_fraction($crop_token);
+  }
+
+  $params = new DerivativeParams(new SizingParams($size, $crop, $min_size));
+  ImageStdParams::apply_global($params);
+  return $params;
+}
 
 if (!bratonien_tools_watermark_engine_enabled())
 {
@@ -80,10 +129,21 @@ while ($row = pwg_db_fetch_assoc($result))
   $image_categories[$image_id][] = (int)$row['category_id'];
 }
 
-$root_url = get_absolute_root_url();
-$endpoint = rtrim($root_url, '/').'/plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php';
-$types = ImageStdParams::get_defined_type_map();
+$variants = array();
+foreach (ImageStdParams::get_defined_type_map() as $type => $params)
+{
+  $variants[$type] = $params;
+}
+foreach (ImageStdParams::$custom as $custom_key => $last_used)
+{
+  $params = bratonien_tools_precache_custom_params($custom_key);
+  if ($params)
+  {
+    $variants['custom:'.$custom_key] = $params;
+  }
+}
 
+$endpoint = 'http://127.0.0.1/plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php';
 $checked = 0;
 $generated = 0;
 $already_cached = 0;
@@ -123,7 +183,7 @@ while ($image = pwg_db_fetch_assoc($result))
   {
     $profile = $profiles[$profile_id];
 
-    foreach ($types as $type => $params)
+    foreach ($variants as $variant_name => $params)
     {
       $checked++;
 
@@ -183,7 +243,7 @@ while ($image = pwg_db_fetch_assoc($result))
           CURLOPT_CONNECTTIMEOUT => 3,
           CURLOPT_TIMEOUT => 120,
           CURLOPT_FAILONERROR => false,
-          CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.0',
+          CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.1',
           CURLOPT_WRITEFUNCTION => static function ($ch, $data) { return strlen($data); },
         ));
         curl_exec($ch);
@@ -193,7 +253,7 @@ while ($image = pwg_db_fetch_assoc($result))
         $ok = ($status >= 200 && $status < 300 && is_file($descriptor['path']));
         if (!$ok)
         {
-          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $type: Precache fehlgeschlagen (HTTP $status".($curl_error !== '' ? ", $curl_error" : '').").\n");
+          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen (HTTP $status".($curl_error !== '' ? ", $curl_error" : '').").\n");
         }
       }
       else
@@ -203,7 +263,7 @@ while ($image = pwg_db_fetch_assoc($result))
         $ok = is_file($descriptor['path']);
         if (!$ok)
         {
-          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $type: Precache fehlgeschlagen.\n");
+          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen.\n");
         }
       }
 
