@@ -51,6 +51,9 @@
 .bratonien-main-cache__warning { margin:10px 0; color:#d6ae62; font-size:12px; line-height:1.45; }
 .bratonien-main-cache__controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .bratonien-main-cache__cancel { display:none; }
+.bratonien-worker-settings { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin:12px 0; padding:10px 12px; border:1px solid rgba(255,255,255,.1); border-radius:4px; background:rgba(0,0,0,.08); }
+.bratonien-worker-settings input[type=number] { width:70px; }
+.bratonien-worker-settings__state { color:#a9a9a9; }
 .bratonien-main-cache__progress { display:none; margin-top:14px; }
 .bratonien-main-cache__head { display:flex; justify-content:space-between; gap:12px; margin-bottom:7px; }
 .bratonien-main-cache__track { height:18px; overflow:hidden; border:1px solid rgba(255,255,255,.16); border-radius:4px; background:rgba(0,0,0,.25); }
@@ -125,7 +128,14 @@
       <div class="bratonien-main-cache">
         <h4>Piwigo-Bildcache vorbereiten</h4>
         <p>Erzeugt die normalen Piwigo-Bildgrößen vorab. Bratonien-Wasserzeichen werden weiterhin nur bei Bedarf erzeugt.</p>
-        <p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Der manuelle Cache-Aufbau nutzt sechs parallele Worker und kann CPU, Arbeitsspeicher und Datenträger des LXC deutlich belasten. Diese Warnung wird entfernt, sobald der Ablauf im Dauerbetrieb stabil ist.</p>
+        <p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Die Automatik nutzt bewusst nur einen Worker pro tatsächlich verfügbarem CPU-Kern. Aktuell erkannt: {$CACHE_WORKERS.cpu_count} CPU(s) → {$CACHE_WORKERS.auto_workers} Worker. Maximal 32 Worker.</p>
+        <form method="post" class="bratonien-worker-settings">
+          <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          <label><input type="checkbox" name="cache_workers_auto" value="1" {if $CACHE_WORKERS.auto}checked{/if}> Worker automatisch nach verfügbaren CPU-Kernen wählen (1:1)</label>
+          <span class="bratonien-worker-settings__state">Erkannt: {$CACHE_WORKERS.cpu_count} CPU(s) · Auto: {$CACHE_WORKERS.auto_workers} · aktuell verwendet: {$CACHE_WORKERS.worker_count}</span>
+          <label>Manuell: <input type="number" name="cache_workers_manual" value="{$CACHE_WORKERS.manual_workers}" min="1" max="32" step="1"> Worker</label>
+          <button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_worker_settings">Worker-Einstellung speichern</button>
+        </form>
         <div class="bratonien-main-cache__controls">
           <form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_build">Piwigo-Bildcache aufbauen</button></form>
           <form method="post" class="bratonien-main-cache__cancel" data-cache-cancel-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="image_cache_cancel">Cache-Aufbau abbrechen</button></form>
