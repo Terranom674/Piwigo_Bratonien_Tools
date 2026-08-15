@@ -137,6 +137,22 @@ function bratonien_tools_runtime_profile_version(array $profile)
   return substr(sha1(implode('|', $parts)), 0, 16);
 }
 
+function bratonien_tools_runtime_canonical_derivative_url($rel_url)
+{
+  $rel_url = (string)$rel_url;
+  if (strpos($rel_url, PWG_DERIVATIVE_DIR) === 0)
+  {
+    return $rel_url;
+  }
+
+  if (preg_match('#^i(?:\.php)?\?/(.+)$#', $rel_url, $match) || preg_match('#^i(?:\.php)?/(.+)$#', $rel_url, $match))
+  {
+    return PWG_DERIVATIVE_DIR.ltrim(rawurldecode($match[1]), '/');
+  }
+
+  return $rel_url;
+}
+
 function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $params, $source_path, $extension='')
 {
   if (!$params || !$source_path)
@@ -150,8 +166,9 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
     return null;
   }
 
+  $canonical_rel_url = bratonien_tools_runtime_canonical_derivative_url($rel_url);
   $extension = strtolower((string)$extension);
-  if ($extension === '' && preg_match('/\.(jpe?g|png|gif|webp)(?:$|\?)/i', (string)$rel_url, $match))
+  if ($extension === '' && preg_match('/\.(jpe?g|png|gif|webp)(?:$|\?)/i', $canonical_rel_url, $match))
   {
     $extension = strtolower($match[1]);
   }
@@ -170,7 +187,7 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
   $profile_version = bratonien_tools_runtime_profile_version($profile);
   $min_size = is_array($params->sizing->min_size) ? implode('x', $params->sizing->min_size) : '';
   $cache_fingerprint = array(
-    $rel_url,
+    $canonical_rel_url,
     $profile_version,
     @filemtime($source_path) ?: 0,
     $params->last_mod_time,
@@ -194,6 +211,7 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
     'relative_path' => $relative_path,
     'url' => get_root_url().$relative_path,
     'profile_version' => $profile_version,
+    'canonical_rel_url' => $canonical_rel_url,
   );
 }
 
