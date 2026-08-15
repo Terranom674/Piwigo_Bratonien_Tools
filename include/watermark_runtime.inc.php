@@ -153,6 +153,17 @@ function bratonien_tools_runtime_canonical_derivative_url($rel_url)
   return $rel_url;
 }
 
+function bratonien_tools_runtime_absolute_url($relative_path)
+{
+  $relative_path = ltrim((string)$relative_path, '/');
+  if (function_exists('get_absolute_root_url'))
+  {
+    return rtrim(get_absolute_root_url(true), '/').'/'.$relative_path;
+  }
+
+  return '/'.$relative_path;
+}
+
 function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $params, $source_path, $extension='')
 {
   if (!$params || !$source_path)
@@ -197,7 +208,7 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
     'dir' => PHPWG_ROOT_PATH.$relative_dir,
     'path' => PHPWG_ROOT_PATH.$relative_path,
     'relative_path' => $relative_path,
-    'url' => get_root_url().$relative_path,
+    'url' => bratonien_tools_runtime_absolute_url($relative_path),
     'profile_version' => $profile_version,
     'canonical_rel_url' => $canonical_rel_url,
   );
@@ -243,7 +254,8 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
   $profile_id = (int)$profile['id'];
   $profile_version = bratonien_tools_runtime_profile_version($profile);
   $signature = bratonien_tools_runtime_sign($rel_url, $profile_id, $profile_version);
-
-  return get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php?p='.$profile_id.'&v='.
+  $endpoint = 'plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php?p='.$profile_id.'&v='.
     rawurlencode($profile_version).'&u='.rawurlencode(bratonien_tools_runtime_b64url_encode($rel_url)).'&s='.$signature;
+
+  return bratonien_tools_runtime_absolute_url($endpoint);
 }
