@@ -9,7 +9,6 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
 
 function bratonien_tools_runtime_category_id()
 {
@@ -146,74 +145,12 @@ function bratonien_tools_runtime_canonical_derivative_url($rel_url)
     return $rel_url;
   }
 
-  if (preg_match('#^i(?:\.php)?\?/(.+)$#', $rel_url, $match) || preg_match('#^i(?:\.php)?/(.+)$#', $rel_url, $match))
+  if (preg_match('#^i(?:\\.php)?\\?/(.+)$#', $rel_url, $match) || preg_match('#^i(?:\\.php)?/(.+)$#', $rel_url, $match))
   {
     return PWG_DERIVATIVE_DIR.ltrim(rawurldecode($match[1]), '/');
   }
 
   return $rel_url;
-}
-
-function bratonien_tools_runtime_precache_active()
-{
-  static $active = null;
-  if ($active !== null)
-  {
-    return $active;
-  }
-
-  $active = false;
-  $status_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.status.json';
-  if (!is_file($status_file) || !is_readable($status_file))
-  {
-    return false;
-  }
-
-  $raw = @file_get_contents($status_file);
-  $status = $raw !== false ? json_decode($raw, true) : null;
-  if (!is_array($status))
-  {
-    return false;
-  }
-
-  $state = (string)($status['state'] ?? '');
-  $updated_at = (int)($status['updated_at'] ?? 0);
-  $age = $updated_at > 0 ? max(0, time() - $updated_at) : PHP_INT_MAX;
-
-  // running wird vom Worker waehrend der Arbeit laufend aktualisiert.
-  // queued gilt nur kurz als aktiver Startvorgang; danach darf sich die
-  // Galerie selbst heilen, falls der Hintergrundprozess nicht hochkam.
-  if ($state === 'running' && $age <= 30)
-  {
-    $active = true;
-  }
-  elseif ($state === 'queued' && $age <= 10)
-  {
-    $active = true;
-  }
-
-  return $active;
-}
-
-function bratonien_tools_runtime_request_precache_if_idle()
-{
-  static $requested = false;
-
-  if ($requested || bratonien_tools_runtime_precache_active())
-  {
-    return;
-  }
-
-  $requested = true;
-  try
-  {
-    bratonien_tools_request_watermark_precache('Fehlende Wasserzeichenvariante beim Seitenaufruf erkannt');
-  }
-  catch (Throwable $e)
-  {
-    // Der Seiten-Fallback muss auch dann funktionieren, wenn der Hintergrund-
-    // Precache nicht gestartet werden kann. Deshalb hier bewusst nicht abbrechen.
-  }
 }
 
 function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $params, $source_path, $extension='')
@@ -231,7 +168,7 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
 
   $canonical_rel_url = bratonien_tools_runtime_canonical_derivative_url($rel_url);
   $extension = strtolower((string)$extension);
-  if ($extension === '' && preg_match('/\.(jpe?g|png|gif|webp)(?:$|\?)/i', $canonical_rel_url, $match))
+  if ($extension === '' && preg_match('/\\.(jpe?g|png|gif|webp)(?:$|\\?)/i', $canonical_rel_url, $match))
   {
     $extension = strtolower($match[1]);
   }
@@ -246,26 +183,14 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
     return null;
   }
 
-  $scale_percent = isset($profile['scale_percent']) ? max(1.0, min(1000.0, (float)$profile['scale_percent'])) : 100.0;
   $profile_version = bratonien_tools_runtime_profile_version($profile);
-  $min_size = is_array($params->sizing->min_size) ? implode('x', $params->sizing->min_size) : '';
-  $cache_fingerprint = array(
+  $relative_dir = PWG_DERIVATIVE_DIR.'bratonien-watermark/'.$profile_id;
+  $fingerprint = array(
     $canonical_rel_url,
     $profile_version,
     @filemtime($source_path) ?: 0,
-    $params->last_mod_time,
-    $params->sharpen,
-    implode('x', $params->sizing->ideal_size),
-    $params->sizing->max_crop,
-    $min_size,
-    $profile['watermark_file'], $scale_percent, $profile['xpos'], $profile['ypos'],
-    $profile['xrepeat'], $profile['yrepeat'], $profile['opacity'],
-    $profile['min_width'], $profile['min_height'], $profile['active'],
-    @filemtime($watermark_path),
   );
-
-  $relative_dir = PWG_DERIVATIVE_DIR.'bratonien-watermark/'.$profile_id;
-  $filename = sha1(implode('|', $cache_fingerprint)).'.'.$extension;
+  $filename = sha1(implode('|', $fingerprint)).'.'.$extension;
   $relative_path = $relative_dir.'/'.$filename;
 
   return array(
@@ -280,11 +205,6 @@ function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $par
 
 function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_url)
 {
-  if (defined('BRATONIEN_TOOLS_PRECACHE_BUILD') && BRATONIEN_TOOLS_PRECACHE_BUILD)
-  {
-    return $url;
-  }
-
   if (!bratonien_tools_watermark_engine_enabled())
   {
     return $url;
@@ -297,12 +217,7 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
   }
 
   $profile = bratonien_tools_runtime_get_profile((int)$rule['profile_id']);
-  if (!$profile || empty($profile['active']))
-  {
-    return $url;
-  }
-
-  if (!bratonien_tools_profile_watermark_path($profile))
+  if (!$profile || empty($profile['active']) || !bratonien_tools_profile_watermark_path($profile))
   {
     return $url;
   }
@@ -324,12 +239,6 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
       return $descriptor['url'];
     }
   }
-
-  // Cache fehlt: Der Seitenaufruf bleibt immer das Sicherheitsnetz und
-  // rendert diese Variante ueber watermark.php. Falls gleichzeitig kein
-  // aktiver Precache arbeitet, wird der Hintergrund-Precache einmalig neu
-  // angestossen, damit weitere Varianten wieder vorab entstehen.
-  bratonien_tools_runtime_request_precache_if_idle();
 
   $profile_id = (int)$profile['id'];
   $profile_version = bratonien_tools_runtime_profile_version($profile);
