@@ -47,6 +47,14 @@
 .bratonien-rule-table th { color:#d7d7d7; }
 .bratonien-effective { white-space:nowrap; }
 .bratonien-muted { color:#a9a9a9; }
+.bratonien-progress { margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
+.bratonien-progress__head { display:flex; justify-content:space-between; gap:12px; margin-bottom:7px; }
+.bratonien-progress__track { height:18px; overflow:hidden; border:1px solid rgba(255,255,255,.16); border-radius:4px; background:rgba(0,0,0,.25); }
+.bratonien-progress__bar { width:0; height:100%; background:#66a845; transition:width .25s ease; }
+.bratonien-progress.is-error .bratonien-progress__bar { background:#c95b5b; }
+.bratonien-progress.is-queued .bratonien-progress__bar { background:#a7834d; }
+.bratonien-progress__details { margin-top:8px; color:#a9a9a9; line-height:1.45; }
+.bratonien-progress__current { margin-top:4px; font-size:12px; color:#8f8f8f; overflow-wrap:anywhere; }
 @media (max-width:850px) {
   .bratonien-grid,.bratonien-scale-grid { grid-template-columns:1fr; }
   .bratonien-form-grid,.bratonien-scale-fields { grid-template-columns:1fr; }
@@ -56,151 +64,90 @@
 
 <div class="bratonien-admin">
   <nav class="bratonien-nav" aria-label="Bratonien Tools Navigation">
-    <a href="#uebersicht">Übersicht</a>
-    <a href="#wasserzeichen">Wasserzeichen</a>
-    <a href="#regeln">Regeln</a>
-    <a href="#wartung">Wartung</a>
+    <a href="#uebersicht">Übersicht</a><a href="#wasserzeichen">Wasserzeichen</a><a href="#regeln">Regeln</a><a href="#wartung">Wartung</a>
   </nav>
 
   <section class="bratonien-section" id="uebersicht">
-    <h3>Übersicht</h3>
-    <p class="bratonien-section__intro">Aktueller Zustand der Bratonien-Wasserzeichenverwaltung.</p>
+    <h3>Übersicht</h3><p class="bratonien-section__intro">Aktueller Zustand der Bratonien-Wasserzeichenverwaltung.</p>
     <div class="bratonien-grid">
-      <div class="bratonien-card">
-        <h4>Engine</h4>
-        <div class="bratonien-status"><span class="bratonien-status__dot {if $WATERMARK_ENGINE.enabled}is-active{/if}"></span><strong>{if $WATERMARK_ENGINE.enabled}Aktiv{else}Inaktiv{/if}</strong></div>
-        <form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><label><input type="checkbox" name="engine_enabled" value="1" {if $WATERMARK_ENGINE.enabled}checked{/if}> Bratonien-Wasserzeichenverwaltung aktivieren</label><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_engine">Status speichern</button></div></form>
-      </div>
-      <div class="bratonien-card">
-        <h4>Standardregeln</h4>
-        <div class="bratonien-form-grid">
-          <span class="bratonien-label">Öffentliche Alben</span><strong>{if $WATERMARK_DEFAULTS.public_profile}{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.id == $WATERMARK_DEFAULTS.public_profile}{$profile.name|escape:html}{/if}{/foreach}{else}Kein Wasserzeichen{/if}</strong>
-          <span class="bratonien-label">Private Alben</span><strong>{if $WATERMARK_DEFAULTS.private_profile}{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.id == $WATERMARK_DEFAULTS.private_profile}{$profile.name|escape:html}{/if}{/foreach}{else}Kein Wasserzeichen{/if}</strong>
-          <span class="bratonien-label">Profile</span><span>{$WATERMARK_PROFILES|@count} vorhanden</span>
-        </div>
-      </div>
+      <div class="bratonien-card"><h4>Engine</h4><div class="bratonien-status"><span class="bratonien-status__dot {if $WATERMARK_ENGINE.enabled}is-active{/if}"></span><strong>{if $WATERMARK_ENGINE.enabled}Aktiv{else}Inaktiv{/if}</strong></div><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><label><input type="checkbox" name="engine_enabled" value="1" {if $WATERMARK_ENGINE.enabled}checked{/if}> Bratonien-Wasserzeichenverwaltung aktivieren</label><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_engine">Status speichern</button></div></form></div>
+      <div class="bratonien-card"><h4>Standardregeln</h4><div class="bratonien-form-grid"><span class="bratonien-label">Öffentliche Alben</span><strong>{if $WATERMARK_DEFAULTS.public_profile}{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.id == $WATERMARK_DEFAULTS.public_profile}{$profile.name|escape:html}{/if}{/foreach}{else}Kein Wasserzeichen{/if}</strong><span class="bratonien-label">Private Alben</span><strong>{if $WATERMARK_DEFAULTS.private_profile}{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.id == $WATERMARK_DEFAULTS.private_profile}{$profile.name|escape:html}{/if}{/foreach}{else}Kein Wasserzeichen{/if}</strong><span class="bratonien-label">Profile</span><span>{$WATERMARK_PROFILES|@count} vorhanden</span></div></div>
     </div>
   </section>
 
   <section class="bratonien-section" id="wasserzeichen">
-    <h3>Wasserzeichen</h3>
-    <p class="bratonien-section__intro">Basis-Wasserzeichen direkt vorbereiten und anschließend bei Bedarf pro Profil abweichend konfigurieren.</p>
-
+    <h3>Wasserzeichen</h3><p class="bratonien-section__intro">Basis-Wasserzeichen direkt vorbereiten und anschließend bei Bedarf pro Profil abweichend konfigurieren.</p>
     <form method="post" enctype="multipart/form-data" data-watermark-editor>
       <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
       <div class="bratonien-grid">
-        <div class="bratonien-card">
-          <h4>Vorschau des Basis-Wasserzeichens</h4>
-          <div class="bratonien-scale-preview__stage" data-preview-stage>{if $WATERMARK.preview_url}<img src="{$WATERMARK.preview_url|escape:html}" alt="Vorschau" data-preview-image>{else}<span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none">{/if}</div>
-          <div class="bratonien-scale-preview__info" data-preview-info></div>
-          <p class="bratonien-base-note">Diese Größe ist die Basis für neue Profile. Bereits vorhandene Profile behalten ihre eigene Skalierung.</p>
-        </div>
-        <div class="bratonien-card">
-          <h4>Datei und Basisgröße</h4>
-          <div class="bratonien-form-grid">
-            <label for="watermark_file">Vorhandene Datei</label>
-            <select id="watermark_file" name="watermark_file" data-watermark-file>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}" {if $option.file == $WATERMARK.file}selected{/if}>{$option.name|escape:html}</option>{/foreach}</select>
-            <label for="watermark_upload">Neues PNG</label><input id="watermark_upload" type="file" name="watermark_upload" accept="image/png">
-            <span class="bratonien-label">Originalgröße</span><span data-original-size>{if $WATERMARK.original_width}{$WATERMARK.original_width} × {$WATERMARK.original_height} px{else}Keine Datei gewählt{/if}</span>
-            <label for="watermark_scale_percent">Skalierung</label><span><input id="watermark_scale_percent" type="number" name="watermark_scale_percent" value="{$WATERMARK.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span>
-            <label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span>
-            <label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span>
-            <span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span>
-            <span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="watermark_xpos" value="{$WATERMARK.xpos}" min="0" max="100" size="4"> Y <input type="number" name="watermark_ypos" value="{$WATERMARK.ypos}" min="0" max="100" size="4"></span>
-            <label for="watermark_opacity">Deckkraft</label><span><input id="watermark_opacity" type="number" name="watermark_opacity" value="{$WATERMARK.opacity}" min="1" max="100" size="4" data-watermark-opacity> %</span>
-            <span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="watermark_minw" value="{$WATERMARK.minw}" min="0" size="5"> × <input type="number" name="watermark_minh" value="{$WATERMARK.minh}" min="0" size="5"></span>
-          </div>
-          <div class="bratonien-actions">
-            <label><input type="checkbox" name="watermark_clear_cache" value="1"> Bildcache danach leeren</label>
-            <button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_save">Basis-Wasserzeichen speichern</button>
-            <button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="watermark_file_delete" onclick="return confirm('Die aktuell ausgewählte Wasserzeichendatei wirklich dauerhaft löschen?');">Ausgewählte Datei löschen</button>
-          </div>
-        </div>
+        <div class="bratonien-card"><h4>Vorschau des Basis-Wasserzeichens</h4><div class="bratonien-scale-preview__stage" data-preview-stage>{if $WATERMARK.preview_url}<img src="{$WATERMARK.preview_url|escape:html}" alt="Vorschau" data-preview-image>{else}<span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none">{/if}</div><div class="bratonien-scale-preview__info" data-preview-info></div><p class="bratonien-base-note">Diese Größe ist die Basis für neue Profile. Bereits vorhandene Profile behalten ihre eigene Skalierung.</p></div>
+        <div class="bratonien-card"><h4>Datei und Basisgröße</h4><div class="bratonien-form-grid">
+          <label for="watermark_file">Vorhandene Datei</label><select id="watermark_file" name="watermark_file" data-watermark-file>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}" {if $option.file == $WATERMARK.file}selected{/if}>{$option.name|escape:html}</option>{/foreach}</select>
+          <label for="watermark_upload">Neues PNG</label><input id="watermark_upload" type="file" name="watermark_upload" accept="image/png">
+          <span class="bratonien-label">Originalgröße</span><span data-original-size>{if $WATERMARK.original_width}{$WATERMARK.original_width} × {$WATERMARK.original_height} px{else}Keine Datei gewählt{/if}</span>
+          <label for="watermark_scale_percent">Skalierung</label><span><input id="watermark_scale_percent" type="number" name="watermark_scale_percent" value="{$WATERMARK.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span>
+          <label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span><label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span>
+          <span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span>
+          <span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="watermark_xpos" value="{$WATERMARK.xpos}" min="0" max="100" size="4"> Y <input type="number" name="watermark_ypos" value="{$WATERMARK.ypos}" min="0" max="100" size="4"></span>
+          <label for="watermark_opacity">Deckkraft</label><span><input id="watermark_opacity" type="number" name="watermark_opacity" value="{$WATERMARK.opacity}" min="1" max="100" size="4" data-watermark-opacity> %</span>
+          <span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="watermark_minw" value="{$WATERMARK.minw}" min="0" size="5"> × <input type="number" name="watermark_minh" value="{$WATERMARK.minh}" min="0" size="5"></span>
+        </div><div class="bratonien-actions"><label><input type="checkbox" name="watermark_clear_cache" value="1"> Bildcache danach leeren</label><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_save">Basis-Wasserzeichen speichern</button><button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="watermark_file_delete" onclick="return confirm('Die aktuell ausgewählte Wasserzeichendatei wirklich dauerhaft löschen?');">Ausgewählte Datei löschen</button></div></div>
       </div>
     </form>
 
-    <div class="bratonien-card" style="margin-top:16px;">
-      <h4>Profile</h4>
-      <p class="bratonien-muted">Profile können die Basisgröße bewusst überschreiben. Prozent, Breite und Höhe bleiben dabei immer miteinander gekoppelt.</p>
-      <div class="bratonien-profile-list">
-        {foreach from=$WATERMARK_PROFILES item=profile}
-          <details class="bratonien-profile">
-            <summary>{$profile.name|escape:html}<span class="bratonien-profile__summary">{if $profile.active}aktiv{else}inaktiv{/if} · {$profile.opacity}% · {$profile.scale_percent}% Größe</span></summary>
-            <div class="bratonien-profile__body">
-              <form method="post" data-watermark-editor>
-                <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="profile_id" value="{$profile.id}">
-                <div class="bratonien-form-grid">
-                  <label>Name</label><span class="bratonien-inline"><input name="profile_name" value="{$profile.name|escape:html}" size="28"> <label><input type="checkbox" name="profile_active" value="1" {if $profile.active}checked{/if}> aktiv</label></span>
-                  <label>Datei</label><select name="profile_file" data-watermark-file><option value="" data-width="0" data-height="0" data-url="">Keine Datei</option>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}" {if $option.file == $profile.watermark_file}selected{/if}>{$option.name|escape:html}</option>{/foreach}</select>
-                  <span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="profile_xpos" value="{$profile.xpos}" min="0" max="100" size="3"> Y <input type="number" name="profile_ypos" value="{$profile.ypos}" min="0" max="100" size="3"></span>
-                  <span class="bratonien-label">Wiederholen</span><span class="bratonien-inline">X <input type="number" name="profile_xrepeat" value="{$profile.xrepeat}" min="0" max="20" size="3"> Y <input type="number" name="profile_yrepeat" value="{$profile.yrepeat}" min="0" max="20" size="3"></span>
-                  <label>Deckkraft</label><span><input type="number" name="profile_opacity" value="{$profile.opacity}" min="1" max="100" size="3" data-watermark-opacity> %</span>
-                  <span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="profile_min_width" value="{$profile.min_width}" min="0" size="5"> × <input type="number" name="profile_min_height" value="{$profile.min_height}" min="0" size="5"></span>
-                </div>
-                <div class="bratonien-scale-editor">
-                  <div class="bratonien-scale-editor__title">Größe & Vorschau</div>
-                  <div class="bratonien-scale-grid">
-                    <div class="bratonien-scale-fields">
-                      <span class="bratonien-label">Originalgröße</span><span data-original-size>{if $profile.original_width}{$profile.original_width} × {$profile.original_height} px{else}Keine Datei gewählt{/if}</span>
-                      <label>Skalierung</label><span><input type="number" name="profile_scale_percent" value="{$profile.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span>
-                      <label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span>
-                      <label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span>
-                      <span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span>
-                    </div>
-                    <div><div class="bratonien-scale-preview__stage" data-preview-stage>{if $profile.preview_url}<img src="{$profile.preview_url|escape:html}" alt="Vorschau" data-preview-image>{else}<span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none">{/if}</div><div class="bratonien-scale-preview__info" data-preview-info></div></div>
-                  </div>
-                </div>
-                <div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_save">Speichern</button><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_duplicate">Duplizieren</button><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_delete" onclick="return confirm('Profil wirklich löschen?');">Löschen</button></div>
-              </form>
-            </div>
-          </details>
-        {/foreach}
-
-        <details class="bratonien-profile">
-          <summary>+ Neues Profil</summary>
-          <div class="bratonien-profile__body">
-            <form method="post" data-watermark-editor>
-              <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-              <div class="bratonien-form-grid">
-                <label>Name</label><span class="bratonien-inline"><input name="profile_name" size="28"> <label><input type="checkbox" name="profile_active" value="1" checked> aktiv</label></span>
-                <label>Datei</label><select name="profile_file" data-watermark-file><option value="" data-width="0" data-height="0" data-url="">Keine Datei</option>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}">{$option.name|escape:html}</option>{/foreach}</select>
-                <span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="profile_xpos" value="90" min="0" max="100" size="3"> Y <input type="number" name="profile_ypos" value="90" min="0" max="100" size="3"></span>
-                <span class="bratonien-label">Wiederholen</span><span class="bratonien-inline">X <input type="number" name="profile_xrepeat" value="0" min="0" max="20" size="3"> Y <input type="number" name="profile_yrepeat" value="0" min="0" max="20" size="3"></span>
-                <label>Deckkraft</label><span><input type="number" name="profile_opacity" value="35" min="1" max="100" size="3" data-watermark-opacity> %</span>
-                <span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="profile_min_width" value="10" min="0" size="5"> × <input type="number" name="profile_min_height" value="10" min="0" size="5"></span>
-              </div>
-              <div class="bratonien-scale-editor">
-                <div class="bratonien-scale-editor__title">Größe & Vorschau</div>
-                <div class="bratonien-scale-grid">
-                  <div class="bratonien-scale-fields">
-                    <span class="bratonien-label">Originalgröße</span><span data-original-size>Keine Datei gewählt</span>
-                    <label>Skalierung</label><span><input type="number" name="profile_scale_percent" value="{$WATERMARK.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span>
-                    <label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span>
-                    <label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span>
-                    <span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span>
-                  </div>
-                  <div><div class="bratonien-scale-preview__stage" data-preview-stage><span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none"></div><div class="bratonien-scale-preview__info" data-preview-info></div></div>
-                </div>
-              </div>
-              <div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_save">Profil anlegen</button></div>
-            </form>
-          </div>
-        </details>
-      </div>
-    </div>
+    <div class="bratonien-card" style="margin-top:16px;"><h4>Profile</h4><p class="bratonien-muted">Profile können die Basisgröße bewusst überschreiben. Prozent, Breite und Höhe bleiben dabei immer miteinander gekoppelt.</p><div class="bratonien-profile-list">
+      {foreach from=$WATERMARK_PROFILES item=profile}
+      <details class="bratonien-profile"><summary>{$profile.name|escape:html}<span class="bratonien-profile__summary">{if $profile.active}aktiv{else}inaktiv{/if} · {$profile.opacity}% · {$profile.scale_percent}% Größe</span></summary><div class="bratonien-profile__body"><form method="post" data-watermark-editor><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="profile_id" value="{$profile.id}"><div class="bratonien-form-grid">
+        <label>Name</label><span class="bratonien-inline"><input name="profile_name" value="{$profile.name|escape:html}" size="28"> <label><input type="checkbox" name="profile_active" value="1" {if $profile.active}checked{/if}> aktiv</label></span>
+        <label>Datei</label><select name="profile_file" data-watermark-file><option value="" data-width="0" data-height="0" data-url="">Keine Datei</option>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}" {if $option.file == $profile.watermark_file}selected{/if}>{$option.name|escape:html}</option>{/foreach}</select>
+        <span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="profile_xpos" value="{$profile.xpos}" min="0" max="100" size="3"> Y <input type="number" name="profile_ypos" value="{$profile.ypos}" min="0" max="100" size="3"></span>
+        <span class="bratonien-label">Wiederholen</span><span class="bratonien-inline">X <input type="number" name="profile_xrepeat" value="{$profile.xrepeat}" min="0" max="20" size="3"> Y <input type="number" name="profile_yrepeat" value="{$profile.yrepeat}" min="0" max="20" size="3"></span>
+        <label>Deckkraft</label><span><input type="number" name="profile_opacity" value="{$profile.opacity}" min="1" max="100" size="3" data-watermark-opacity> %</span><span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="profile_min_width" value="{$profile.min_width}" min="0" size="5"> × <input type="number" name="profile_min_height" value="{$profile.min_height}" min="0" size="5"></span>
+      </div><div class="bratonien-scale-editor"><div class="bratonien-scale-editor__title">Größe & Vorschau</div><div class="bratonien-scale-grid"><div class="bratonien-scale-fields"><span class="bratonien-label">Originalgröße</span><span data-original-size>{if $profile.original_width}{$profile.original_width} × {$profile.original_height} px{else}Keine Datei gewählt{/if}</span><label>Skalierung</label><span><input type="number" name="profile_scale_percent" value="{$profile.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span><label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span><label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span><span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span></div><div><div class="bratonien-scale-preview__stage" data-preview-stage>{if $profile.preview_url}<img src="{$profile.preview_url|escape:html}" alt="Vorschau" data-preview-image>{else}<span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none">{/if}</div><div class="bratonien-scale-preview__info" data-preview-info></div></div></div></div><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_save">Speichern</button><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_duplicate">Duplizieren</button><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_delete" onclick="return confirm('Profil wirklich löschen?');">Löschen</button></div></form></div></details>
+      {/foreach}
+      <details class="bratonien-profile"><summary>+ Neues Profil</summary><div class="bratonien-profile__body"><form method="post" data-watermark-editor><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><div class="bratonien-form-grid"><label>Name</label><span class="bratonien-inline"><input name="profile_name" size="28"> <label><input type="checkbox" name="profile_active" value="1" checked> aktiv</label></span><label>Datei</label><select name="profile_file" data-watermark-file><option value="" data-width="0" data-height="0" data-url="">Keine Datei</option>{foreach from=$WATERMARK_OPTIONS item=option}<option value="{$option.file|escape:html}" data-width="{$option.width}" data-height="{$option.height}" data-url="{$option.url|escape:html}">{$option.name|escape:html}</option>{/foreach}</select><span class="bratonien-label">Position</span><span class="bratonien-inline">X <input type="number" name="profile_xpos" value="90" min="0" max="100" size="3"> Y <input type="number" name="profile_ypos" value="90" min="0" max="100" size="3"></span><span class="bratonien-label">Wiederholen</span><span class="bratonien-inline">X <input type="number" name="profile_xrepeat" value="0" min="0" max="20" size="3"> Y <input type="number" name="profile_yrepeat" value="0" min="0" max="20" size="3"></span><label>Deckkraft</label><span><input type="number" name="profile_opacity" value="35" min="1" max="100" size="3" data-watermark-opacity> %</span><span class="bratonien-label">Mindestgröße</span><span class="bratonien-inline"><input type="number" name="profile_min_width" value="10" min="0" size="5"> × <input type="number" name="profile_min_height" value="10" min="0" size="5"></span></div><div class="bratonien-scale-editor"><div class="bratonien-scale-editor__title">Größe & Vorschau</div><div class="bratonien-scale-grid"><div class="bratonien-scale-fields"><span class="bratonien-label">Originalgröße</span><span data-original-size>Keine Datei gewählt</span><label>Skalierung</label><span><input type="number" name="profile_scale_percent" value="{$WATERMARK.scale_percent}" min="1" max="1000" step="0.1" data-scale-percent> %</span><label>Breite</label><span><input type="number" min="1" step="1" data-scale-width> px</span><label>Höhe</label><span><input type="number" min="1" step="1" data-scale-height> px</span><span class="bratonien-label">Seitenverhältnis</span><span class="bratonien-lock">🔒 gesperrt</span></div><div><div class="bratonien-scale-preview__stage" data-preview-stage><span class="bratonien-scale-preview__empty" data-preview-empty>Keine Wasserzeichendatei gewählt</span><img src="" alt="Vorschau" data-preview-image style="display:none"></div><div class="bratonien-scale-preview__info" data-preview-info></div></div></div></div><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_profile_save">Profil anlegen</button></div></form></div></details>
+    </div></div>
   </section>
 
-  <section class="bratonien-section" id="regeln">
-    <h3>Regeln</h3><p class="bratonien-section__intro">Standardregeln und Album-Ausnahmen gemeinsam verwalten.</p>
-    <div class="bratonien-card"><h4>Globale Standardregeln</h4><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><div class="bratonien-form-grid"><label>Öffentliche Alben</label><select name="public_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.public_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select><label>Private Alben</label><select name="private_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.private_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></div><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_defaults">Standardregeln speichern</button></div></form></div>
-    <div class="bratonien-card" style="margin-top:16px;"><h4>Album-Ausnahmen</h4><p class="bratonien-muted">Erben verwendet die nächste explizite Regel eines Elternalbums und danach den globalen Standard.</p><table class="bratonien-rule-table"><thead><tr><th>Album</th><th>Sichtbarkeit</th><th>Regel</th><th>Profil</th><th>Wirksam</th><th></th></tr></thead><tbody>{foreach from=$WATERMARK_CATEGORIES item=category}<tr><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="category_id" value="{$category.id}"><td><strong>{$category.display_name|escape:html}</strong></td><td>{$category.status|escape:html}</td><td><select name="rule_mode"><option value="inherit" {if $category.rule.mode == 'inherit'}selected{/if}>Erben</option><option value="disabled" {if $category.rule.mode == 'disabled'}selected{/if}>Kein Wasserzeichen</option><option value="profile" {if $category.rule.mode == 'profile'}selected{/if}>Profil verwenden</option></select></td><td><select name="rule_profile"><option value="">Profil wählen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $category.rule.profile_id == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></td><td class="bratonien-effective"><strong>{$category.effective_label|escape:html}</strong> <span class="bratonien-muted">({$category.effective.source|escape:html})</span></td><td><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_rule">Speichern</button></td></form></tr>{/foreach}</tbody></table></div>
-  </section>
+  <section class="bratonien-section" id="regeln"><h3>Regeln</h3><p class="bratonien-section__intro">Standardregeln und Album-Ausnahmen gemeinsam verwalten.</p><div class="bratonien-card"><h4>Globale Standardregeln</h4><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><div class="bratonien-form-grid"><label>Öffentliche Alben</label><select name="public_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.public_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select><label>Private Alben</label><select name="private_profile"><option value="">Kein Wasserzeichen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $WATERMARK_DEFAULTS.private_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></div><div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_defaults">Standardregeln speichern</button></div></form></div><div class="bratonien-card" style="margin-top:16px;"><h4>Album-Ausnahmen</h4><p class="bratonien-muted">Erben verwendet die nächste explizite Regel eines Elternalbums und danach den globalen Standard.</p><table class="bratonien-rule-table"><thead><tr><th>Album</th><th>Sichtbarkeit</th><th>Regel</th><th>Profil</th><th>Wirksam</th><th></th></tr></thead><tbody>{foreach from=$WATERMARK_CATEGORIES item=category}<tr><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="category_id" value="{$category.id}"><td><strong>{$category.display_name|escape:html}</strong></td><td>{$category.status|escape:html}</td><td><select name="rule_mode"><option value="inherit" {if $category.rule.mode == 'inherit'}selected{/if}>Erben</option><option value="disabled" {if $category.rule.mode == 'disabled'}selected{/if}>Kein Wasserzeichen</option><option value="profile" {if $category.rule.mode == 'profile'}selected{/if}>Profil verwenden</option></select></td><td><select name="rule_profile"><option value="">Profil wählen</option>{foreach from=$WATERMARK_PROFILES item=profile}{if $profile.active}<option value="{$profile.id}" {if $category.rule.profile_id == $profile.id}selected{/if}>{$profile.name|escape:html}</option>{/if}{/foreach}</select></td><td class="bratonien-effective"><strong>{$category.effective_label|escape:html}</strong> <span class="bratonien-muted">({$category.effective.source|escape:html})</span></td><td><button class="buttonLike" type="submit" name="bratonien_tool" value="watermark_rule">Speichern</button></td></form></tr>{/foreach}</tbody></table></div></section>
 
-  <section class="bratonien-section" id="wartung"><h3>Wartung</h3><p class="bratonien-section__intro">Werkzeuge, die nicht zur täglichen Konfiguration gehören.</p><div class="bratonien-card"><h4>Bildcache</h4><p>Löscht alle erzeugten Piwigo- und Bratonien-Bildderivate. Originalbilder bleiben erhalten.</p><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_clear" onclick="return confirm('Wirklich den gesamten Bildcache leeren?');">Bildcache leeren</button></form></div></section>
+  <section class="bratonien-section" id="wartung"><h3>Wartung</h3><p class="bratonien-section__intro">Werkzeuge, die nicht zur täglichen Konfiguration gehören.</p><div class="bratonien-card"><h4>Bildcache</h4><p>Löscht alle erzeugten Piwigo- und Bratonien-Bildderivate. Originalbilder bleiben erhalten. Anschließend wird der Wasserzeichen-Precache automatisch im Hintergrund neu aufgebaut.</p><form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_clear" onclick="return confirm('Wirklich den gesamten Bildcache leeren und anschließend neu aufbauen?');">Bildcache leeren</button></form><div class="bratonien-progress" data-precache-progress data-status-url="{$PRECACHE_STATUS_URL|escape:html}"><div class="bratonien-progress__head"><strong data-precache-title>Precache-Status</strong><strong data-precache-percent>–</strong></div><div class="bratonien-progress__track" role="progressbar" aria-label="Wasserzeichen-Precache" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-precache-track><div class="bratonien-progress__bar" data-precache-bar></div></div><div class="bratonien-progress__details" data-precache-details>Status wird geladen …</div><div class="bratonien-progress__current" data-precache-current></div></div></div></section>
 </div>
 
 <script>
 {literal}
-(function(){'use strict';function clamp(v,min,max){return Math.min(max,Math.max(min,v));}function round(v,d){var f=Math.pow(10,d||0);return Math.round(v*f)/f;}function initWatermarkEditor(form){var fileSelect=form.querySelector('[data-watermark-file]'),percentInput=form.querySelector('[data-scale-percent]'),widthInput=form.querySelector('[data-scale-width]'),heightInput=form.querySelector('[data-scale-height]'),originalLabel=form.querySelector('[data-original-size]'),previewImage=form.querySelector('[data-preview-image]'),previewEmpty=form.querySelector('[data-preview-empty]'),previewInfo=form.querySelector('[data-preview-info]'),opacityInput=form.querySelector('[data-watermark-opacity]'),previewStage=form.querySelector('[data-preview-stage]');if(!fileSelect||!percentInput||!widthInput||!heightInput)return;function selectedMeta(){var option=fileSelect.options[fileSelect.selectedIndex];return{width:parseFloat(option?option.getAttribute('data-width'):0)||0,height:parseFloat(option?option.getAttribute('data-height'):0)||0,url:option?(option.getAttribute('data-url')||''):''};}function updatePreview(width,height,percent){var meta=selectedMeta();if(!meta.width||!meta.height||!meta.url){if(previewImage)previewImage.style.display='none';if(previewEmpty)previewEmpty.style.display='';if(previewInfo)previewInfo.textContent='';return;}if(previewEmpty)previewEmpty.style.display='none';if(previewImage){previewImage.src=meta.url;previewImage.style.display='block';previewImage.style.opacity=opacityInput?String(clamp((parseFloat(opacityInput.value)||100)/100,.01,1)):'1';var aw=Math.max(1,(previewStage?previewStage.clientWidth:360)-20),ah=Math.max(1,(previewStage?previewStage.clientHeight:250)-20),vs=Math.min(1,aw/width,ah/height);previewImage.style.width=Math.max(1,Math.round(width*vs))+'px';previewImage.style.height=Math.max(1,Math.round(height*vs))+'px';}if(previewInfo){var aW=Math.max(1,(previewStage?previewStage.clientWidth:360)-20),aH=Math.max(1,(previewStage?previewStage.clientHeight:250)-20),fitted=width>aW||height>aH;previewInfo.textContent='Original: '+Math.round(meta.width)+' × '+Math.round(meta.height)+' px · Ziel: '+Math.round(width)+' × '+Math.round(height)+' px · '+round(percent,1)+' %'+(fitted?' · Vorschau verkleinert':'');}}function applyPercent(raw){var meta=selectedMeta();if(!meta.width||!meta.height){widthInput.value='';heightInput.value='';if(originalLabel)originalLabel.textContent='Keine Datei gewählt';updatePreview(1,1,100);return;}var p=parseFloat(raw);if(!isFinite(p))p=100;p=clamp(p,1,1000);var w=Math.max(1,Math.round(meta.width*p/100)),h=Math.max(1,Math.round(meta.height*p/100));percentInput.value=round(p,2);widthInput.value=w;heightInput.value=h;if(originalLabel)originalLabel.textContent=Math.round(meta.width)+' × '+Math.round(meta.height)+' px';updatePreview(w,h,p);}function applyWidth(){var meta=selectedMeta();if(!meta.width||!meta.height)return;var w=parseFloat(widthInput.value);if(!isFinite(w)||w<1)w=meta.width;applyPercent(clamp(w/meta.width*100,1,1000));}function applyHeight(){var meta=selectedMeta();if(!meta.width||!meta.height)return;var h=parseFloat(heightInput.value);if(!isFinite(h)||h<1)h=meta.height;applyPercent(clamp(h/meta.height*100,1,1000));}fileSelect.addEventListener('change',function(){applyPercent(percentInput.value||100);});percentInput.addEventListener('input',function(){applyPercent(percentInput.value);});widthInput.addEventListener('input',applyWidth);heightInput.addEventListener('input',applyHeight);if(opacityInput)opacityInput.addEventListener('input',function(){applyPercent(percentInput.value);});applyPercent(percentInput.value||100);}document.querySelectorAll('[data-watermark-editor]').forEach(initWatermarkEditor);})();
+(function(){
+'use strict';
+function clamp(v,min,max){return Math.min(max,Math.max(min,v));}
+function round(v,d){var f=Math.pow(10,d||0);return Math.round(v*f)/f;}
+function initWatermarkEditor(form){
+  var fileSelect=form.querySelector('[data-watermark-file]'),percentInput=form.querySelector('[data-scale-percent]'),widthInput=form.querySelector('[data-scale-width]'),heightInput=form.querySelector('[data-scale-height]'),originalLabel=form.querySelector('[data-original-size]'),previewImage=form.querySelector('[data-preview-image]'),previewEmpty=form.querySelector('[data-preview-empty]'),previewInfo=form.querySelector('[data-preview-info]'),opacityInput=form.querySelector('[data-watermark-opacity]'),previewStage=form.querySelector('[data-preview-stage]');
+  if(!fileSelect||!percentInput||!widthInput||!heightInput)return;
+  function selectedMeta(){var option=fileSelect.options[fileSelect.selectedIndex];return{width:parseFloat(option?option.getAttribute('data-width'):0)||0,height:parseFloat(option?option.getAttribute('data-height'):0)||0,url:option?(option.getAttribute('data-url')||''):''};}
+  function updatePreview(width,height,percent){var meta=selectedMeta();if(!meta.width||!meta.height||!meta.url){if(previewImage)previewImage.style.display='none';if(previewEmpty)previewEmpty.style.display='';if(previewInfo)previewInfo.textContent='';return;}if(previewEmpty)previewEmpty.style.display='none';if(previewImage){previewImage.src=meta.url;previewImage.style.display='block';previewImage.style.opacity=opacityInput?String(clamp((parseFloat(opacityInput.value)||100)/100,.01,1)):'1';var aw=Math.max(1,(previewStage?previewStage.clientWidth:360)-20),ah=Math.max(1,(previewStage?previewStage.clientHeight:250)-20),vs=Math.min(1,aw/width,ah/height);previewImage.style.width=Math.max(1,Math.round(width*vs))+'px';previewImage.style.height=Math.max(1,Math.round(height*vs))+'px';}if(previewInfo){var aW=Math.max(1,(previewStage?previewStage.clientWidth:360)-20),aH=Math.max(1,(previewStage?previewStage.clientHeight:250)-20),fitted=width>aW||height>aH;previewInfo.textContent='Original: '+Math.round(meta.width)+' × '+Math.round(meta.height)+' px · Ziel: '+Math.round(width)+' × '+Math.round(height)+' px · '+round(percent,1)+' %'+(fitted?' · Vorschau verkleinert':'');}}
+  function applyPercent(raw){var meta=selectedMeta();if(!meta.width||!meta.height){widthInput.value='';heightInput.value='';if(originalLabel)originalLabel.textContent='Keine Datei gewählt';updatePreview(1,1,100);return;}var p=parseFloat(raw);if(!isFinite(p))p=100;p=clamp(p,1,1000);var w=Math.max(1,Math.round(meta.width*p/100)),h=Math.max(1,Math.round(meta.height*p/100));percentInput.value=round(p,2);widthInput.value=w;heightInput.value=h;if(originalLabel)originalLabel.textContent=Math.round(meta.width)+' × '+Math.round(meta.height)+' px';updatePreview(w,h,p);}
+  function applyWidth(){var meta=selectedMeta();if(!meta.width||!meta.height)return;var w=parseFloat(widthInput.value);if(!isFinite(w)||w<1)w=meta.width;applyPercent(clamp(w/meta.width*100,1,1000));}
+  function applyHeight(){var meta=selectedMeta();if(!meta.width||!meta.height)return;var h=parseFloat(heightInput.value);if(!isFinite(h)||h<1)h=meta.height;applyPercent(clamp(h/meta.height*100,1,1000));}
+  fileSelect.addEventListener('change',function(){applyPercent(percentInput.value||100);});percentInput.addEventListener('input',function(){applyPercent(percentInput.value);});widthInput.addEventListener('input',applyWidth);heightInput.addEventListener('input',applyHeight);if(opacityInput)opacityInput.addEventListener('input',function(){applyPercent(percentInput.value);});applyPercent(percentInput.value||100);
+}
+document.querySelectorAll('[data-watermark-editor]').forEach(initWatermarkEditor);
+
+function initPrecacheProgress(){
+  var box=document.querySelector('[data-precache-progress]');if(!box)return;
+  var url=box.getAttribute('data-status-url'),title=box.querySelector('[data-precache-title]'),percentEl=box.querySelector('[data-precache-percent]'),details=box.querySelector('[data-precache-details]'),current=box.querySelector('[data-precache-current]'),bar=box.querySelector('[data-precache-bar]'),track=box.querySelector('[data-precache-track]'),timer=null;
+  function render(data){
+    var total=Math.max(0,parseInt(data.total,10)||0),completed=Math.max(0,parseInt(data.completed,10)||0),percent=total>0?Math.min(100,Math.round(completed/total*100)):(data.state==='complete'?100:0);
+    box.classList.toggle('is-error',data.state==='error');box.classList.toggle('is-queued',data.state==='queued');bar.style.width=percent+'%';track.setAttribute('aria-valuenow',String(percent));percentEl.textContent=(data.state==='idle'?'–':percent+' %');
+    var labels={idle:'Precache-Status',queued:'Precache wartet',running:'Precache läuft',complete:'Precache fertig',error:'Precache mit Fehlern'};title.textContent=labels[data.state]||'Precache-Status';
+    details.textContent=(data.message||'')+(total>0?' · '+completed+' / '+total+' Varianten · '+(parseInt(data.generated,10)||0)+' neu · '+(parseInt(data.cached,10)||0)+' vorhanden · '+(parseInt(data.skipped,10)||0)+' übersprungen · '+(parseInt(data.errors,10)||0)+' Fehler':'');
+    current.textContent=data.current?('Aktuell: '+data.current):'';
+    if(data.state==='queued'||data.state==='running'){schedule(1500);}else if(timer){clearTimeout(timer);timer=null;}
+  }
+  function schedule(delay){if(timer)clearTimeout(timer);timer=setTimeout(load,delay);}
+  function load(){fetch(url+(url.indexOf('?')===-1?'?':'&')+'_='+(Date.now()),{credentials:'same-origin',cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(render).catch(function(){details.textContent='Precache-Status konnte nicht geladen werden.';schedule(5000);});}
+  load();
+}
+initPrecacheProgress();
+})();
 {/literal}
 </script>
