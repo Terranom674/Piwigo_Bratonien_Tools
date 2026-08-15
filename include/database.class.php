@@ -23,7 +23,7 @@ function bratonien_tools_create_tables()
   pwg_query("CREATE TABLE IF NOT EXISTS `$profiles` (
     id int(11) NOT NULL AUTO_INCREMENT,
     name varchar(255) NOT NULL,
-    watermark_file varchar(255) NOT NULL,
+    watermark_file varchar(255) DEFAULT NULL,
     xpos int(11) NOT NULL DEFAULT 90,
     ypos int(11) NOT NULL DEFAULT 90,
     xrepeat int(11) NOT NULL DEFAULT 0,
@@ -35,6 +35,12 @@ function bratonien_tools_create_tables()
     created datetime NOT NULL,
     PRIMARY KEY (id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+  // Piwigo's mass_inserts() serializes empty strings as SQL NULL. A profile is
+  // deliberately allowed to exist before a watermark file is assigned, so the
+  // database column must accept NULL as well. This migration also repairs
+  // installations created by Bratonien Tools 0.2.0 before this was corrected.
+  pwg_query("ALTER TABLE `$profiles` MODIFY watermark_file varchar(255) DEFAULT NULL");
 
   if (!bratonien_tools_column_exists($profiles, 'xrepeat'))
   {
