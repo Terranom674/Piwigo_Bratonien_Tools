@@ -30,8 +30,13 @@ function bratonien_tools_runtime_b64url_decode($value)
 
 function bratonien_tools_watermark_fail($code, $message)
 {
+  while (ob_get_level() > 0)
+  {
+    @ob_end_clean();
+  }
   http_response_code($code);
   header('Content-Type: text/plain; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
   echo $message;
   exit;
 }
@@ -39,6 +44,16 @@ function bratonien_tools_watermark_fail($code, $message)
 function bratonien_tools_output_image($path)
 {
   clearstatcache(true, $path);
+  if (!is_file($path) || !is_readable($path))
+  {
+    bratonien_tools_watermark_fail(500, 'Image output unavailable');
+  }
+
+  while (ob_get_level() > 0)
+  {
+    @ob_end_clean();
+  }
+
   $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
   $types = array('jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif','webp'=>'image/webp');
   $mtime = @filemtime($path) ?: time();
@@ -52,6 +67,7 @@ function bratonien_tools_output_image($path)
     exit;
   }
 
+  http_response_code(200);
   header('Content-Type: '.($types[$ext] ?? 'application/octet-stream'));
   if ($size > 0)
   {
@@ -60,14 +76,8 @@ function bratonien_tools_output_image($path)
   header('Last-Modified: '.gmdate('D, d M Y H:i:s', $mtime).' GMT');
   header('ETag: '.$etag);
   header('Cache-Control: public, max-age=31536000, immutable');
+  header('X-Bratonien-Watermark: direct');
   readfile($path);
-  exit;
-}
-
-function bratonien_tools_redirect_to_cache($url)
-{
-  header('Cache-Control: no-store, max-age=0');
-  header('Location: '.$url, true, 302);
   exit;
 }
 
@@ -325,7 +335,7 @@ if (!$descriptor)
 
 if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
-  bratonien_tools_redirect_to_cache($descriptor['url']);
+  bratonien_tools_output_image($descriptor['path']);
 }
 
 if (!is_dir($descriptor['dir']) && !mkdir($descriptor['dir'], 0755, true) && !is_dir($descriptor['dir']))
@@ -348,7 +358,7 @@ if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
   flock($lock, LOCK_UN);
   fclose($lock);
-  bratonien_tools_redirect_to_cache($descriptor['url']);
+  bratonien_tools_output_image($descriptor['path']);
 }
 
 $piwigo_derivative = bratonien_tools_ensure_piwigo_derivative($derivative);
@@ -432,4 +442,4 @@ if (!is_file($descriptor['path']) || !is_readable($descriptor['path']))
   bratonien_tools_watermark_fail(500, 'Generated watermark cache unavailable');
 }
 
-bratonien_tools_redirect_to_cache($descriptor['url']);
+bratonien_tools_output_image($descriptor['path']);
