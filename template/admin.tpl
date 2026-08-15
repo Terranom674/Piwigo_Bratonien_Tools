@@ -128,12 +128,12 @@
       <div class="bratonien-main-cache">
         <h4>Piwigo-Bildcache vorbereiten</h4>
         <p>Erzeugt die normalen Piwigo-Bildgrößen vorab. Bratonien-Wasserzeichen werden weiterhin nur bei Bedarf erzeugt.</p>
-        <p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Die Automatik nutzt bewusst nur einen Worker pro tatsächlich verfügbarem CPU-Kern. Aktuell erkannt: {$CACHE_WORKERS.cpu_count} CPU(s) → {$CACHE_WORKERS.auto_workers} Worker. Maximal 32 Worker.</p>
+        <p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Die Automatik nutzt einen Worker pro sichtbarem CPU-Kern. Aktuell erkannt: {$CACHE_WORKERS.cpu_count} CPU(s) → {$CACHE_WORKERS.auto_workers} Worker. Manuell sind maximal {$CACHE_WORKERS.max_workers} Worker erlaubt (CPU-Kerne × 2).</p>
         <form method="post" class="bratonien-worker-settings">
           <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
           <label><input type="checkbox" name="cache_workers_auto" value="1" {if $CACHE_WORKERS.auto}checked{/if}> Worker automatisch nach verfügbaren CPU-Kernen wählen (1:1)</label>
-          <span class="bratonien-worker-settings__state">Erkannt: {$CACHE_WORKERS.cpu_count} CPU(s) · Auto: {$CACHE_WORKERS.auto_workers} · aktuell verwendet: {$CACHE_WORKERS.worker_count}</span>
-          <label>Manuell: <input type="number" name="cache_workers_manual" value="{$CACHE_WORKERS.manual_workers}" min="1" max="32" step="1"> Worker</label>
+          <span class="bratonien-worker-settings__state">Sichtbar: {$CACHE_WORKERS.cpu_count} CPU(s) · Prozess-Affinität: {$CACHE_WORKERS.process_cpu_count} · Auto: {$CACHE_WORKERS.auto_workers} · aktuell verwendet: {$CACHE_WORKERS.worker_count}</span>
+          <label>Manuell: <input type="number" name="cache_workers_manual" value="{$CACHE_WORKERS.manual_workers}" min="1" max="{$CACHE_WORKERS.max_workers}" step="1"> Worker</label>
           <button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_worker_settings">Worker-Einstellung speichern</button>
         </form>
         <div class="bratonien-main-cache__controls">
