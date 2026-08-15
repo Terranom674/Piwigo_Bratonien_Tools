@@ -115,6 +115,7 @@ $template->assign(array(
   'WATERMARK_DEFAULTS' => $defaults,
   'WATERMARK_CATEGORIES' => $categories,
   'WATERMARK_ENGINE' => $engine,
+  'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
 ));
 
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
