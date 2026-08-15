@@ -9,6 +9,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
 
 function bratonien_tools_runtime_category_id()
 {
@@ -153,6 +154,68 @@ function bratonien_tools_runtime_canonical_derivative_url($rel_url)
   return $rel_url;
 }
 
+function bratonien_tools_runtime_precache_active()
+{
+  static $active = null;
+  if ($active !== null)
+  {
+    return $active;
+  }
+
+  $active = false;
+  $status_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.status.json';
+  if (!is_file($status_file) || !is_readable($status_file))
+  {
+    return false;
+  }
+
+  $raw = @file_get_contents($status_file);
+  $status = $raw !== false ? json_decode($raw, true) : null;
+  if (!is_array($status))
+  {
+    return false;
+  }
+
+  $state = (string)($status['state'] ?? '');
+  $updated_at = (int)($status['updated_at'] ?? 0);
+  $age = $updated_at > 0 ? max(0, time() - $updated_at) : PHP_INT_MAX;
+
+  // running wird vom Worker waehrend der Arbeit laufend aktualisiert.
+  // queued gilt nur kurz als aktiver Startvorgang; danach darf sich die
+  // Galerie selbst heilen, falls der Hintergrundprozess nicht hochkam.
+  if ($state === 'running' && $age <= 30)
+  {
+    $active = true;
+  }
+  elseif ($state === 'queued' && $age <= 10)
+  {
+    $active = true;
+  }
+
+  return $active;
+}
+
+function bratonien_tools_runtime_request_precache_if_idle()
+{
+  static $requested = false;
+
+  if ($requested || bratonien_tools_runtime_precache_active())
+  {
+    return;
+  }
+
+  $requested = true;
+  try
+  {
+    bratonien_tools_request_watermark_precache('Fehlende Wasserzeichenvariante beim Seitenaufruf erkannt');
+  }
+  catch (Throwable $e)
+  {
+    // Der Seiten-Fallback muss auch dann funktionieren, wenn der Hintergrund-
+    // Precache nicht gestartet werden kann. Deshalb hier bewusst nicht abbrechen.
+  }
+}
+
 function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $params, $source_path, $extension='')
 {
   if (!$params || !$source_path)
@@ -261,6 +324,12 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
       return $descriptor['url'];
     }
   }
+
+  // Cache fehlt: Der Seitenaufruf bleibt immer das Sicherheitsnetz und
+  // rendert diese Variante ueber watermark.php. Falls gleichzeitig kein
+  // aktiver Precache arbeitet, wird der Hintergrund-Precache einmalig neu
+  // angestossen, damit weitere Varianten wieder vorab entstehen.
+  bratonien_tools_runtime_request_precache_if_idle();
 
   $profile_id = (int)$profile['id'];
   $profile_version = bratonien_tools_runtime_profile_version($profile);
