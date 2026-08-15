@@ -24,6 +24,7 @@ function bratonien_tools_create_tables()
     id int(11) NOT NULL AUTO_INCREMENT,
     name varchar(255) NOT NULL,
     watermark_file varchar(255) DEFAULT NULL,
+    scale_percent decimal(8,2) NOT NULL DEFAULT 100.00,
     xpos int(11) NOT NULL DEFAULT 90,
     ypos int(11) NOT NULL DEFAULT 90,
     xrepeat int(11) NOT NULL DEFAULT 0,
@@ -42,6 +43,10 @@ function bratonien_tools_create_tables()
   // installations created by Bratonien Tools 0.2.0 before this was corrected.
   pwg_query("ALTER TABLE `$profiles` MODIFY watermark_file varchar(255) DEFAULT NULL");
 
+  if (!bratonien_tools_column_exists($profiles, 'scale_percent'))
+  {
+    pwg_query("ALTER TABLE `$profiles` ADD scale_percent decimal(8,2) NOT NULL DEFAULT 100.00 AFTER watermark_file");
+  }
   if (!bratonien_tools_column_exists($profiles, 'xrepeat'))
   {
     pwg_query("ALTER TABLE `$profiles` ADD xrepeat int(11) NOT NULL DEFAULT 0 AFTER ypos");
