@@ -5,6 +5,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 }
 
 require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -17,9 +18,15 @@ function bratonien_tools_get_tools()
       'handler' => 'bratonien_tools_clear_image_cache',
       'danger' => true,
     ),
+    'watermark' => array(
+      'title' => 'Wasserzeichen verwalten',
+      'description' => 'Verwaltet Wasserzeichenprofile und die Piwigo-Wasserzeichenkonfiguration. Profile und Albumregeln bilden die Grundlage fuer oeffentliche, private und spezielle Bereiche.',
+      'button' => 'Wasserzeichen speichern',
+      'confirm' => 'Wasserzeichenkonfiguration speichern?',
+      'handler' => 'bratonien_tools_save_watermark',
+      'danger' => false,
+    ),
   );
 
-  // Weitere Werkzeuge werden hier registriert. Die Admin-Oberflaeche
-  // rendert jeden Eintrag automatisch als eigene Werkzeug-Karte.
   return $tools;
 }
