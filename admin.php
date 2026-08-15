@@ -30,6 +30,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
       {
         $messages[] = $result['message'];
       }
+
+      if (in_array($tool_id, array(
+        'watermark_save',
+        'watermark_engine',
+        'watermark_profile_save',
+        'watermark_profile_delete',
+        'watermark_profile_duplicate',
+        'watermark_defaults',
+        'watermark_rule',
+      ), true))
+      {
+        bratonien_tools_request_watermark_precache();
+        $messages[] = 'Wasserzeichen-Precache wurde vorgemerkt.';
+      }
     }
     catch (Throwable $e)
     {
