@@ -156,9 +156,18 @@ function bratonien_tools_runtime_canonical_derivative_url($rel_url)
 function bratonien_tools_runtime_absolute_url($relative_path)
 {
   $relative_path = ltrim((string)$relative_path, '/');
+
   if (function_exists('get_absolute_root_url'))
   {
-    return rtrim(get_absolute_root_url(true), '/').'/'.$relative_path;
+    $root = rtrim(get_absolute_root_url(true), '/');
+    $plugin_suffix = '/plugins/'.trim(BRATONIEN_TOOLS_ID, '/');
+
+    if (substr($root, -strlen($plugin_suffix)) === $plugin_suffix)
+    {
+      $root = substr($root, 0, -strlen($plugin_suffix));
+    }
+
+    return rtrim($root, '/').'/'.$relative_path;
   }
 
   return '/'.$relative_path;
