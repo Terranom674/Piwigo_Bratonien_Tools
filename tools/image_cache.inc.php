@@ -4,6 +4,8 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+require_once(BRATONIEN_TOOLS_PATH.'include/cache_worker_settings.inc.php');
+
 function bratonien_tools_main_cache_status_file()
 {
   return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.status.json';
@@ -38,6 +40,8 @@ function bratonien_tools_write_main_cache_status(array $status)
     'skipped'=>0,
     'errors'=>0,
     'current'=>'',
+    'worker_count'=>0,
+    'cpu_count'=>0,
     'updated_at'=>time(),
   ), $status);
   $payload['updated_at'] = time();
@@ -372,13 +376,19 @@ function bratonien_tools_start_main_cache_build()
     throw new RuntimeException('PHP exec() ist deaktiviert; Cache-Worker kann nicht gestartet werden.');
   }
 
+  $settings = bratonien_tools_get_cache_worker_settings();
+  $worker_count = max(1, (int)$settings['worker_count']);
+  $cpu_count = max(1, (int)$settings['cpu_count']);
+
   bratonien_tools_write_main_cache_status(array(
     'state'=>'queued',
-    'message'=>'Piwigo-Bildcache wird mit 6 Workern vorbereitet.',
+    'message'=>sprintf('Piwigo-Bildcache wird mit %d Worker(n) vorbereitet.', $worker_count),
+    'worker_count'=>$worker_count,
+    'cpu_count'=>$cpu_count,
   ));
 
   $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.log';
-  $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($worker).' >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
+  $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($worker).' --workers='.$worker_count.' >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
   $output = array();
   $exit = 1;
   @exec($command, $output, $exit);
@@ -390,6 +400,8 @@ function bratonien_tools_start_main_cache_build()
       'state'=>'error',
       'message'=>'Piwigo-Bildcache konnte nicht gestartet werden.',
       'errors'=>1,
+      'worker_count'=>$worker_count,
+      'cpu_count'=>$cpu_count,
     ));
     throw new RuntimeException('Piwigo-Bildcache konnte nicht gestartet werden.');
   }
@@ -397,7 +409,12 @@ function bratonien_tools_start_main_cache_build()
   return array(
     'started'=>true,
     'pid'=>$pid,
-    'message'=>'Piwigo-Bildcache wurde manuell mit 6 Workern gestartet.',
+    'message'=>sprintf(
+      'Piwigo-Bildcache wurde mit %d Worker(n) gestartet (%d CPU(s), %s).',
+      $worker_count,
+      $cpu_count,
+      $settings['auto'] ? 'Automatik 1:1' : 'manuell'
+    ),
   );
 }
 
