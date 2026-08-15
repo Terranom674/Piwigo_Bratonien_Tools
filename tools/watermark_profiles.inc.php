@@ -18,9 +18,9 @@ function bratonien_tools_create_default_watermark_profiles()
 
   if ((int)$count[0] === 0)
   {
-    mass_inserts($table, array('name','watermark_file','xpos','ypos','xrepeat','yrepeat','opacity','min_width','min_height','active','created'), array(
-      array('name'=>'Oeffentlich','watermark_file'=>'','xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>35,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
-      array('name'=>'Familie & Freunde','watermark_file'=>'','xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>25,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
+    mass_inserts($table, array('name','watermark_file','scale_percent','xpos','ypos','xrepeat','yrepeat','opacity','min_width','min_height','active','created'), array(
+      array('name'=>'Oeffentlich','watermark_file'=>'','scale_percent'=>100,'xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>35,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
+      array('name'=>'Familie & Freunde','watermark_file'=>'','scale_percent'=>100,'xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>25,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
     ));
   }
 }
@@ -62,6 +62,27 @@ function bratonien_tools_validate_profile_file($file)
   return $file;
 }
 
+function bratonien_tools_profile_scale_percent($value, $default=100.0)
+{
+  if ($value === null || $value === '')
+  {
+    return (float)$default;
+  }
+
+  if (!is_numeric($value))
+  {
+    throw new RuntimeException('Die Skalierung muss eine Zahl sein.');
+  }
+
+  $value = (float)$value;
+  if ($value < 1 || $value > 1000)
+  {
+    throw new RuntimeException('Die Skalierung muss zwischen 1 und 1000 Prozent liegen.');
+  }
+
+  return round($value, 2);
+}
+
 function bratonien_tools_save_watermark_profile()
 {
   $table = bratonien_tools_table('watermark_profiles');
@@ -70,6 +91,7 @@ function bratonien_tools_save_watermark_profile()
   $data = array(
     'name' => trim((string)($_POST['profile_name'] ?? '')),
     'watermark_file' => bratonien_tools_validate_profile_file($_POST['profile_file'] ?? ''),
+    'scale_percent' => bratonien_tools_profile_scale_percent($_POST['profile_scale_percent'] ?? 100),
     'xpos' => max(0, min(100, (int)($_POST['profile_xpos'] ?? 90))),
     'ypos' => max(0, min(100, (int)($_POST['profile_ypos'] ?? 90))),
     'xrepeat' => max(0, min(20, (int)($_POST['profile_xrepeat'] ?? 0))),
