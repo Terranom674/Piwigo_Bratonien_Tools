@@ -20,7 +20,7 @@ function bratonien_tools_create_default_watermark_profiles()
   {
     mass_inserts($table, array('name','watermark_file','xpos','ypos','opacity','min_width','min_height','created'), array(
       array('name'=>'Oeffentlich','watermark_file'=>'','xpos'=>90,'ypos'=>90,'opacity'=>35,'min_width'=>10,'min_height'=>10,'created'=>date('Y-m-d H:i:s')),
-      array('name'=>'Kein Wasserzeichen','watermark_file'=>'','xpos'=>90,'ypos'=>90,'opacity'=>0,'min_width'=>0,'min_height'=>0,'created'=>date('Y-m-d H:i:s')),
+      array('name'=>'Familie & Freunde','watermark_file'=>'','xpos'=>90,'ypos'=>90,'opacity'=>25,'min_width'=>10,'min_height'=>10,'created'=>date('Y-m-d H:i:s')),
     ));
   }
 }
@@ -31,18 +31,48 @@ function bratonien_tools_get_watermark_profiles()
   return query2array('SELECT * FROM '.bratonien_tools_table('watermark_profiles').' ORDER BY name');
 }
 
+function bratonien_tools_get_watermark_profile($id)
+{
+  $id = (int)$id;
+  if ($id <= 0)
+  {
+    return null;
+  }
+
+  $row = pwg_db_fetch_assoc(pwg_query('SELECT * FROM '.bratonien_tools_table('watermark_profiles').' WHERE id='.$id.' LIMIT 1'));
+  return $row ?: null;
+}
+
+function bratonien_tools_validate_profile_file($file)
+{
+  $file = trim((string)$file);
+  if ($file === '')
+  {
+    return '';
+  }
+
+  $data = bratonien_tools_get_watermark_data();
+  if (!isset($data['files'][$file]))
+  {
+    throw new RuntimeException('Das ausgewaehlte Wasserzeichen existiert nicht.');
+  }
+
+  return $file;
+}
+
 function bratonien_tools_save_watermark_profile()
 {
   $table = bratonien_tools_table('watermark_profiles');
   $id = (int)($_POST['profile_id'] ?? 0);
+
   $data = array(
     'name' => trim((string)($_POST['profile_name'] ?? '')),
-    'watermark_file' => (string)($_POST['profile_file'] ?? ''),
-    'xpos' => (int)($_POST['profile_xpos'] ?? 90),
-    'ypos' => (int)($_POST['profile_ypos'] ?? 90),
-    'opacity' => (int)($_POST['profile_opacity'] ?? 35),
-    'min_width' => (int)($_POST['profile_min_width'] ?? 10),
-    'min_height' => (int)($_POST['profile_min_height'] ?? 10),
+    'watermark_file' => bratonien_tools_validate_profile_file($_POST['profile_file'] ?? ''),
+    'xpos' => max(0, min(100, (int)($_POST['profile_xpos'] ?? 90))),
+    'ypos' => max(0, min(100, (int)($_POST['profile_ypos'] ?? 90))),
+    'opacity' => max(1, min(100, (int)($_POST['profile_opacity'] ?? 35))),
+    'min_width' => max(0, (int)($_POST['profile_min_width'] ?? 10)),
+    'min_height' => max(0, (int)($_POST['profile_min_height'] ?? 10)),
   );
 
   if ($data['name'] === '')
@@ -52,10 +82,15 @@ function bratonien_tools_save_watermark_profile()
 
   if ($id > 0)
   {
-    $updates = array();
-    foreach ($data as $key=>$value)
+    if (!bratonien_tools_get_watermark_profile($id))
     {
-      $updates[] = $key.' = \''.pwg_db_real_escape_string($value).'\'';
+      throw new RuntimeException('Wasserzeichenprofil nicht gefunden.');
+    }
+
+    $updates = array();
+    foreach ($data as $key => $value)
+    {
+      $updates[] = $key."='".pwg_db_real_escape_string((string)$value)."'";
     }
     pwg_query('UPDATE '.$table.' SET '.implode(',', $updates).' WHERE id='.$id);
   }
@@ -68,14 +103,49 @@ function bratonien_tools_save_watermark_profile()
   return array('message'=>'Wasserzeichenprofil gespeichert.');
 }
 
+function bratonien_tools_profile_is_referenced($id)
+{
+  $id = (int)$id;
+  $rule_count = pwg_db_fetch_row(pwg_query('SELECT COUNT(*) FROM '.bratonien_tools_table('watermark_rules').' WHERE profile_id='.$id));
+  if ((int)$rule_count[0] > 0)
+  {
+    return true;
+  }
+
+  $defaults = bratonien_tools_get_watermark_defaults();
+  return ((int)($defaults['public_profile'] ?? 0) === $id || (int)($defaults['private_profile'] ?? 0) === $id);
+}
+
 function bratonien_tools_delete_watermark_profile()
 {
   $id = (int)($_POST['profile_id'] ?? 0);
-  if ($id <= 0)
+  if ($id <= 0 || !bratonien_tools_get_watermark_profile($id))
   {
     throw new RuntimeException('Ungueltiges Profil.');
   }
 
+  if (bratonien_tools_profile_is_referenced($id))
+  {
+    throw new RuntimeException('Das Profil wird noch von globalen Einstellungen oder Albumregeln verwendet.');
+  }
+
   pwg_query('DELETE FROM '.bratonien_tools_table('watermark_profiles').' WHERE id='.$id);
   return array('message'=>'Wasserzeichenprofil geloescht.');
+}
+
+function bratonien_tools_duplicate_watermark_profile()
+{
+  $id = (int)($_POST['profile_id'] ?? 0);
+  $profile = bratonien_tools_get_watermark_profile($id);
+  if (!$profile)
+  {
+    throw new RuntimeException('Wasserzeichenprofil nicht gefunden.');
+  }
+
+  unset($profile['id']);
+  $profile['name'] .= ' (Kopie)';
+  $profile['created'] = date('Y-m-d H:i:s');
+  mass_inserts(bratonien_tools_table('watermark_profiles'), array_keys($profile), array($profile));
+
+  return array('message'=>'Wasserzeichenprofil dupliziert.');
 }
