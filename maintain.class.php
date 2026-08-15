@@ -4,7 +4,7 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-class BratonienTools_maintain extends PluginMaintain
+class bratonien_tools_maintain extends PluginMaintain
 {
   public function install($plugin_version, &$errors = array())
   {
