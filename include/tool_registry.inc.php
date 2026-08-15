@@ -17,6 +17,9 @@ function bratonien_tools_get_tools()
     'image_cache_clear' => array(
       'handler' => 'bratonien_tools_clear_image_cache',
     ),
+    'image_cache_build' => array(
+      'handler' => 'bratonien_tools_start_main_cache_build',
+    ),
     'watermark_save' => array(
       'handler' => 'bratonien_tools_save_watermark',
     ),
