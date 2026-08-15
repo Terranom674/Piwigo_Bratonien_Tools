@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/main-cache-build.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.1';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.2';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -362,13 +362,13 @@ function bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $messag
     'cached'=>$sum['cached'],
     'skipped'=>$sum['skipped'],
     'errors'=>$sum['errors'],
-    'current'=>implode(' | ', array_slice($current, 0, 4)),
+    'current'=>implode(' | ', array_slice($current, 0, 6)),
   ));
   return $state;
 }
 
 $worker_index = null;
-$worker_count = 4;
+$worker_count = 6;
 $run_id = '';
 foreach ($argv as $arg)
 {
@@ -412,7 +412,7 @@ bratonien_tools_watermark_engine_enabled();
 
 if (!function_exists('proc_open'))
 {
-  bratonien_tools_write_main_cache_status(array('state'=>'error','message'=>'proc_open() ist deaktiviert; vier parallele Worker koennen nicht gestartet werden.','errors'=>1));
+  bratonien_tools_write_main_cache_status(array('state'=>'error','message'=>'proc_open() ist deaktiviert; sechs parallele Worker koennen nicht gestartet werden.','errors'=>1));
   flock($lock, LOCK_UN);
   fclose($lock);
   exit(1);
@@ -447,7 +447,7 @@ for ($i=0; $i<$worker_count; $i++)
 
 bratonien_tools_write_main_cache_status(array(
   'state'=>'running',
-  'message'=>'Piwigo-Bildcache wird mit 4 parallelen Workern aufgebaut.',
+  'message'=>'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.',
   'current'=>'Worker werden gestartet.',
 ));
 
@@ -463,7 +463,7 @@ while (true)
     }
   }
 
-  $state = bratonien_tools_cache_builder_aggregate($run_id, $worker_count, 'Piwigo-Bildcache wird mit 4 parallelen Workern aufgebaut.');
+  $state = bratonien_tools_cache_builder_aggregate($run_id, $worker_count, 'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.');
   if (!$running && ($state === 'complete' || $state === 'error'))
   {
     break;
