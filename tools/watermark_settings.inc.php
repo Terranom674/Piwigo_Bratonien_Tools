@@ -15,14 +15,30 @@ function bratonien_tools_get_watermark_defaults()
   ), is_array($defaults) ? $defaults : array());
 }
 
+function bratonien_tools_validate_default_profile($value)
+{
+  if ($value === '' || $value === null)
+  {
+    return null;
+  }
+
+  $id = (int)$value;
+  if ($id <= 0 || !bratonien_tools_get_watermark_profile($id))
+  {
+    throw new RuntimeException('Ungueltiges Wasserzeichenprofil in den globalen Regeln.');
+  }
+
+  return $id;
+}
+
 function bratonien_tools_save_watermark_defaults()
 {
   $config = array(
-    'public_profile' => !empty($_POST['public_profile']) ? (int)$_POST['public_profile'] : null,
-    'private_profile' => !empty($_POST['private_profile']) ? (int)$_POST['private_profile'] : null,
+    'public_profile' => bratonien_tools_validate_default_profile($_POST['public_profile'] ?? null),
+    'private_profile' => bratonien_tools_validate_default_profile($_POST['private_profile'] ?? null),
   );
 
   conf_update_param('bratonien_watermark_defaults', json_encode($config));
 
-  return array('message'=>'Globale Wasserzeichenprofile gespeichert.');
+  return array('message'=>'Globale Wasserzeichenregeln gespeichert.');
 }
