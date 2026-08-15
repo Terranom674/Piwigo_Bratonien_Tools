@@ -18,7 +18,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/precache.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.1';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.2';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -30,7 +30,23 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
 }
 
 require_once(BRATONIEN_TOOLS_PATH.'include/watermark_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'tools/image_cache.inc.php');
 require_once(PHPWG_ROOT_PATH.'include/derivative.inc.php');
+
+function bratonien_tools_precache_status($state, $message, $total=0, $completed=0, $generated=0, $cached=0, $skipped=0, $errors=0, $current='')
+{
+  bratonien_tools_write_precache_status(array(
+    'state' => $state,
+    'message' => $message,
+    'total' => (int)$total,
+    'completed' => (int)$completed,
+    'generated' => (int)$generated,
+    'cached' => (int)$cached,
+    'skipped' => (int)$skipped,
+    'errors' => (int)$errors,
+    'current' => (string)$current,
+  ));
+}
 
 function bratonien_tools_precache_url_to_size($value)
 {
@@ -83,6 +99,7 @@ function bratonien_tools_precache_custom_params($key)
 
 if (!bratonien_tools_watermark_engine_enabled())
 {
+  bratonien_tools_precache_status('complete', 'Wasserzeichen-Engine ist deaktiviert; kein Precache notwendig.');
   echo "Wasserzeichen-Engine ist deaktiviert; kein Precache notwendig.\n";
   exit(0);
 }
@@ -99,6 +116,7 @@ foreach (bratonien_tools_get_watermark_profiles() as $profile)
 
 if (!$profiles)
 {
+  bratonien_tools_precache_status('complete', 'Keine aktiven Wasserzeichenprofile vorhanden.');
   echo "Keine aktiven Wasserzeichenprofile vorhanden.\n";
   exit(0);
 }
@@ -143,19 +161,13 @@ foreach (ImageStdParams::$custom as $custom_key => $last_used)
   }
 }
 
-$endpoint = 'http://127.0.0.1/plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php';
-$checked = 0;
-$generated = 0;
-$already_cached = 0;
-$skipped = 0;
-$errors = 0;
-
+$images = array();
+$total = 0;
 $result = pwg_query('SELECT * FROM '.IMAGES_TABLE.' ORDER BY id');
 while ($image = pwg_db_fetch_assoc($result))
 {
   $image_id = (int)$image['id'];
   $profile_ids = array();
-
   foreach ($image_categories[$image_id] ?? array() as $category_id)
   {
     if (isset($category_profiles[$category_id]))
@@ -163,10 +175,32 @@ while ($image = pwg_db_fetch_assoc($result))
       $profile_ids[$category_profiles[$category_id]] = true;
     }
   }
+  $image['_bratonien_profile_ids'] = array_keys($profile_ids);
+  if ($profile_ids)
+  {
+    $total += count($profile_ids) * count($variants);
+  }
+  $images[] = $image;
+}
+
+$endpoint = 'http://127.0.0.1/plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php';
+$completed = 0;
+$generated = 0;
+$already_cached = 0;
+$skipped = 0;
+$errors = 0;
+$last_status_write = 0.0;
+
+bratonien_tools_precache_status('running', 'Wasserzeichen-Precache wird aufgebaut.', $total, 0, 0, 0, 0, 0, 'Vorbereitung');
+
+foreach ($images as $image)
+{
+  $image_id = (int)$image['id'];
+  $profile_ids = $image['_bratonien_profile_ids'];
+  unset($image['_bratonien_profile_ids']);
 
   if (!$profile_ids)
   {
-    $skipped++;
     continue;
   }
 
@@ -174,18 +208,22 @@ while ($image = pwg_db_fetch_assoc($result))
   $source_path = $src_image->get_path();
   if (!is_file($source_path) || !is_readable($source_path))
   {
+    $candidate_count = count($profile_ids) * count($variants);
+    $completed += $candidate_count;
+    $errors += $candidate_count;
     fwrite(STDERR, "Bild #$image_id: Quelldatei nicht lesbar: $source_path\n");
-    $errors++;
+    bratonien_tools_precache_status('running', 'Wasserzeichen-Precache wird aufgebaut.', $total, $completed, $generated, $already_cached, $skipped, $errors, 'Bild #'.$image_id.' nicht lesbar');
     continue;
   }
 
-  foreach (array_keys($profile_ids) as $profile_id)
+  foreach ($profile_ids as $profile_id)
   {
     $profile = $profiles[$profile_id];
 
     foreach ($variants as $variant_name => $params)
     {
-      $checked++;
+      $current = 'Bild #'.$image_id.' · Profil #'.$profile_id.' · '.$variant_name;
+      $completed++;
 
       if ($src_image->has_size())
       {
@@ -224,64 +262,78 @@ while ($image = pwg_db_fetch_assoc($result))
       if (is_file($descriptor['path']) && is_readable($descriptor['path']))
       {
         $already_cached++;
-        continue;
-      }
-
-      $profile_version = $descriptor['profile_version'];
-      $signature = bratonien_tools_runtime_sign($rel_url, $profile_id, $profile_version);
-      $url = $endpoint.'?p='.$profile_id.'&v='.rawurlencode($profile_version).
-        '&u='.rawurlencode(bratonien_tools_runtime_b64url_encode($rel_url)).'&s='.$signature;
-
-      $ok = false;
-      if (function_exists('curl_init'))
-      {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, array(
-          CURLOPT_RETURNTRANSFER => false,
-          CURLOPT_FOLLOWLOCATION => true,
-          CURLOPT_MAXREDIRS => 2,
-          CURLOPT_CONNECTTIMEOUT => 3,
-          CURLOPT_TIMEOUT => 120,
-          CURLOPT_FAILONERROR => false,
-          CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.1',
-          CURLOPT_WRITEFUNCTION => static function ($ch, $data) { return strlen($data); },
-        ));
-        curl_exec($ch);
-        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_error = curl_error($ch);
-        curl_close($ch);
-        $ok = ($status >= 200 && $status < 300 && is_file($descriptor['path']));
-        if (!$ok)
-        {
-          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen (HTTP $status".($curl_error !== '' ? ", $curl_error" : '').").\n");
-        }
       }
       else
       {
-        $context = stream_context_create(array('http'=>array('timeout'=>120, 'ignore_errors'=>true)));
-        @file_get_contents($url, false, $context);
-        $ok = is_file($descriptor['path']);
-        if (!$ok)
+        $profile_version = $descriptor['profile_version'];
+        $signature = bratonien_tools_runtime_sign($rel_url, $profile_id, $profile_version);
+        $url = $endpoint.'?p='.$profile_id.'&v='.rawurlencode($profile_version).
+          '&u='.rawurlencode(bratonien_tools_runtime_b64url_encode($rel_url)).'&s='.$signature;
+
+        $ok = false;
+        if (function_exists('curl_init'))
         {
-          fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen.\n");
+          $ch = curl_init($url);
+          curl_setopt_array($ch, array(
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 2,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_FAILONERROR => false,
+            CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.2',
+            CURLOPT_WRITEFUNCTION => static function ($ch, $data) { return strlen($data); },
+          ));
+          curl_exec($ch);
+          $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+          $curl_error = curl_error($ch);
+          curl_close($ch);
+          $ok = ($status >= 200 && $status < 300 && is_file($descriptor['path']));
+          if (!$ok)
+          {
+            fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen (HTTP $status".($curl_error !== '' ? ", $curl_error" : '').").\n");
+          }
+        }
+        else
+        {
+          $context = stream_context_create(array('http'=>array('timeout'=>120, 'ignore_errors'=>true)));
+          @file_get_contents($url, false, $context);
+          $ok = is_file($descriptor['path']);
+          if (!$ok)
+          {
+            fwrite(STDERR, "Bild #$image_id / Profil #$profile_id / $variant_name: Precache fehlgeschlagen.\n");
+          }
+        }
+
+        if ($ok)
+        {
+          $generated++;
+        }
+        else
+        {
+          $errors++;
         }
       }
 
-      if ($ok)
+      $now = microtime(true);
+      if ($now - $last_status_write >= 0.35 || $completed >= $total)
       {
-        $generated++;
-      }
-      else
-      {
-        $errors++;
+        bratonien_tools_precache_status('running', 'Wasserzeichen-Precache wird aufgebaut.', $total, $completed, $generated, $already_cached, $skipped, $errors, $current);
+        $last_status_write = $now;
       }
     }
   }
 }
 
+$state = $errors > 0 ? 'error' : 'complete';
+$message = $errors > 0
+  ? 'Wasserzeichen-Precache abgeschlossen, aber nicht alle Varianten konnten erzeugt werden.'
+  : 'Wasserzeichen-Precache vollständig aufgebaut.';
+bratonien_tools_precache_status($state, $message, $total, $completed, $generated, $already_cached, $skipped, $errors, '');
+
 printf(
   "Wasserzeichen-Precache: %d Varianten geprueft, %d neu erzeugt, %d bereits vorhanden, %d uebersprungen, %d Fehler.\n",
-  $checked,
+  $completed,
   $generated,
   $already_cached,
   $skipped,
