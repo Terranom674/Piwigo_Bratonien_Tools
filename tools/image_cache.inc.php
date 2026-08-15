@@ -106,15 +106,16 @@ function bratonien_tools_clear_image_cache()
     );
   }
 
-  bratonien_tools_request_watermark_precache('Bildcache wurde geleert');
+  $precache = bratonien_tools_request_watermark_precache('Bildcache wurde geleert');
 
   return array(
     'message' => sprintf(
-      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Loeschmustern entfernt. Wasserzeichen-Precache wurde vorgemerkt.',
+      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Loeschmustern entfernt. %s',
       $before['files'],
       bratonien_tools_format_bytes($before['bytes']),
       $before['custom'],
-      $residual_deleted
+      $residual_deleted,
+      !empty($precache['started']) ? 'Wasserzeichen-Precache wurde gestartet.' : 'Wasserzeichen-Precache konnte nicht gestartet werden.'
     ),
   );
 }
@@ -208,6 +209,52 @@ function bratonien_tools_write_precache_status(array $status)
   @chmod($status_file, 0664);
 }
 
+function bratonien_tools_find_php_cli()
+{
+  foreach (array('/usr/bin/php', '/usr/bin/php8.4', '/usr/local/bin/php') as $candidate)
+  {
+    if (is_file($candidate) && is_executable($candidate))
+    {
+      return $candidate;
+    }
+  }
+
+  return null;
+}
+
+function bratonien_tools_start_watermark_precache()
+{
+  $worker = realpath(BRATONIEN_TOOLS_PATH.'precache.php');
+  $php = bratonien_tools_find_php_cli();
+
+  if (!$worker || !is_file($worker))
+  {
+    return array('started'=>false, 'error'=>'Precache-Worker wurde nicht gefunden.');
+  }
+  if (!$php)
+  {
+    return array('started'=>false, 'error'=>'PHP-CLI wurde nicht gefunden.');
+  }
+  if (!function_exists('exec'))
+  {
+    return array('started'=>false, 'error'=>'PHP exec() ist deaktiviert; Hintergrundprozess kann nicht gestartet werden.');
+  }
+
+  $log_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.log';
+  $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($worker).' >> '.escapeshellarg($log_file).' 2>&1 < /dev/null & echo $!';
+  $output = array();
+  $exit_code = 1;
+  @exec($command, $output, $exit_code);
+  $pid = isset($output[0]) ? (int)$output[0] : 0;
+
+  if ($exit_code !== 0 || $pid <= 0)
+  {
+    return array('started'=>false, 'error'=>'Precache-Hintergrundprozess konnte nicht gestartet werden.');
+  }
+
+  return array('started'=>true, 'pid'=>$pid);
+}
+
 function bratonien_tools_request_watermark_precache($reason='Konfiguration wurde geaendert')
 {
   $request_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-precache.request';
@@ -226,9 +273,20 @@ function bratonien_tools_request_watermark_precache($reason='Konfiguration wurde
   @chmod($request_file, 0664);
   bratonien_tools_write_precache_status(array(
     'state' => 'queued',
-    'message' => $reason.'. Wasserzeichen-Precache wartet auf den Hintergrundprozess.',
+    'message' => $reason.'. Wasserzeichen-Precache wird gestartet.',
   ));
-  return $request_file;
+
+  $result = bratonien_tools_start_watermark_precache();
+  if (empty($result['started']))
+  {
+    bratonien_tools_write_precache_status(array(
+      'state' => 'error',
+      'message' => $reason.'. '.($result['error'] ?? 'Wasserzeichen-Precache konnte nicht gestartet werden.'),
+      'errors' => 1,
+    ));
+  }
+
+  return $result;
 }
 
 function bratonien_tools_format_bytes($bytes)
