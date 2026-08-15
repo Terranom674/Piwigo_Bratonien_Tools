@@ -4,12 +4,176 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+function bratonien_tools_main_cache_status_file()
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.status.json';
+}
+
+function bratonien_tools_main_cache_cancel_file()
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.cancel';
+}
+
+function bratonien_tools_main_cache_lock_file()
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.lock';
+}
+
+function bratonien_tools_write_main_cache_status(array $status)
+{
+  $file = bratonien_tools_main_cache_status_file();
+  $directory = dirname($file);
+  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory))
+  {
+    throw new RuntimeException('Cache-Status konnte nicht vorbereitet werden.');
+  }
+
+  $payload = array_merge(array(
+    'state'=>'idle',
+    'message'=>'',
+    'total'=>0,
+    'completed'=>0,
+    'generated'=>0,
+    'cached'=>0,
+    'skipped'=>0,
+    'errors'=>0,
+    'current'=>'',
+    'updated_at'=>time(),
+  ), $status);
+  $payload['updated_at'] = time();
+
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if ($json === false || @file_put_contents($file, $json."\n", LOCK_EX) === false)
+  {
+    throw new RuntimeException('Cache-Status konnte nicht gespeichert werden.');
+  }
+  @chmod($file, 0664);
+}
+
+function bratonien_tools_read_main_cache_status()
+{
+  $file = bratonien_tools_main_cache_status_file();
+  if (!is_file($file) || !is_readable($file))
+  {
+    return null;
+  }
+  $raw = @file_get_contents($file);
+  $status = $raw !== false ? json_decode($raw, true) : null;
+  return is_array($status) ? $status : null;
+}
+
+function bratonien_tools_main_cache_is_running()
+{
+  $status = bratonien_tools_read_main_cache_status();
+  if (!is_array($status) || !in_array(($status['state'] ?? ''), array('queued','running','cancelling'), true))
+  {
+    return false;
+  }
+
+  $updated = (int)($status['updated_at'] ?? 0);
+  return $updated > 0 && (time() - $updated) < 45;
+}
+
+function bratonien_tools_main_cache_process_active()
+{
+  $lock_path = bratonien_tools_main_cache_lock_file();
+  $lock = @fopen($lock_path, 'c');
+  if (!$lock)
+  {
+    return bratonien_tools_main_cache_is_running();
+  }
+
+  $free = @flock($lock, LOCK_EX | LOCK_NB);
+  if ($free)
+  {
+    @flock($lock, LOCK_UN);
+  }
+  fclose($lock);
+  return !$free;
+}
+
+function bratonien_tools_request_main_cache_cancel()
+{
+  $cancel = bratonien_tools_main_cache_cancel_file();
+  $directory = dirname($cancel);
+  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory))
+  {
+    throw new RuntimeException('Cache-Abbruch konnte nicht vorbereitet werden.');
+  }
+
+  if (@file_put_contents($cancel, (string)time()."\n", LOCK_EX) === false)
+  {
+    throw new RuntimeException('Cache-Abbruchsignal konnte nicht geschrieben werden.');
+  }
+  @chmod($cancel, 0664);
+
+  bratonien_tools_write_main_cache_status(array(
+    'state'=>'cancelling',
+    'message'=>'Cache-Aufbau wird abgebrochen.',
+  ));
+}
+
+function bratonien_tools_wait_main_cache_stopped($timeout_seconds=10.0)
+{
+  $deadline = microtime(true) + max(0.1, (float)$timeout_seconds);
+  do
+  {
+    if (!bratonien_tools_main_cache_process_active())
+    {
+      return true;
+    }
+    usleep(100000);
+  }
+  while (microtime(true) < $deadline);
+
+  return !bratonien_tools_main_cache_process_active();
+}
+
+function bratonien_tools_cancel_main_cache_build()
+{
+  if (!bratonien_tools_main_cache_process_active() && !bratonien_tools_main_cache_is_running())
+  {
+    @unlink(bratonien_tools_main_cache_cancel_file());
+    bratonien_tools_write_main_cache_status(array(
+      'state'=>'idle',
+      'message'=>'Kein Cache-Aufbau aktiv.',
+    ));
+    return array('message'=>'Es läuft kein Piwigo-Bildcache-Aufbau.');
+  }
+
+  bratonien_tools_request_main_cache_cancel();
+
+  if (!bratonien_tools_wait_main_cache_stopped(10.0))
+  {
+    return array('message'=>'Abbruch wurde angefordert. Ein Worker beendet noch die aktuell laufende Bildoperation.');
+  }
+
+  @unlink(bratonien_tools_main_cache_cancel_file());
+  bratonien_tools_write_main_cache_status(array(
+    'state'=>'cancelled',
+    'message'=>'Piwigo-Bildcache-Aufbau wurde abgebrochen.',
+  ));
+
+  return array('message'=>'Piwigo-Bildcache-Aufbau wurde abgebrochen.');
+}
+
 function bratonien_tools_clear_image_cache()
 {
   if (!defined('PWG_DERIVATIVE_DIR'))
   {
     throw new RuntimeException('PWG_DERIVATIVE_DIR ist nicht definiert.');
   }
+
+  if (bratonien_tools_main_cache_process_active() || bratonien_tools_main_cache_is_running())
+  {
+    bratonien_tools_request_main_cache_cancel();
+    if (!bratonien_tools_wait_main_cache_stopped(10.0))
+    {
+      throw new RuntimeException('Der laufende Cache-Aufbau konnte noch nicht beendet werden. Bitte den Abbruch kurz abschließen lassen und erneut leeren.');
+    }
+  }
+
+  @unlink(bratonien_tools_main_cache_cancel_file());
 
   $cache_root = PHPWG_ROOT_PATH . PWG_DERIVATIVE_DIR;
 
@@ -106,9 +270,14 @@ function bratonien_tools_clear_image_cache()
     );
   }
 
+  bratonien_tools_write_main_cache_status(array(
+    'state'=>'idle',
+    'message'=>'Bildcache wurde geleert. Kein manueller Cache-Aufbau aktiv.',
+  ));
+
   return array(
     'message' => sprintf(
-      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Loeschmustern entfernt. Der Cache wird bei Bedarf automatisch neu aufgebaut oder kann manuell vorbereitet werden.',
+      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Loeschmustern entfernt. Ein laufender manueller Cache-Aufbau wurde zuvor beendet.',
       $before['files'],
       bratonien_tools_format_bytes($before['bytes']),
       $before['custom'],
@@ -167,61 +336,6 @@ function bratonien_tools_scan_image_cache($cache_root)
   return $result;
 }
 
-function bratonien_tools_main_cache_status_file()
-{
-  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.status.json';
-}
-
-function bratonien_tools_write_main_cache_status(array $status)
-{
-  $file = bratonien_tools_main_cache_status_file();
-  $directory = dirname($file);
-  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory))
-  {
-    throw new RuntimeException('Cache-Status konnte nicht vorbereitet werden.');
-  }
-
-  $payload = array_merge(array(
-    'state'=>'idle',
-    'message'=>'',
-    'total'=>0,
-    'completed'=>0,
-    'generated'=>0,
-    'cached'=>0,
-    'skipped'=>0,
-    'errors'=>0,
-    'current'=>'',
-    'updated_at'=>time(),
-  ), $status);
-  $payload['updated_at'] = time();
-
-  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if ($json === false || @file_put_contents($file, $json."\n", LOCK_EX) === false)
-  {
-    throw new RuntimeException('Cache-Status konnte nicht gespeichert werden.');
-  }
-  @chmod($file, 0664);
-}
-
-function bratonien_tools_main_cache_is_running()
-{
-  $file = bratonien_tools_main_cache_status_file();
-  if (!is_file($file) || !is_readable($file))
-  {
-    return false;
-  }
-
-  $raw = @file_get_contents($file);
-  $status = $raw !== false ? json_decode($raw, true) : null;
-  if (!is_array($status) || ($status['state'] ?? '') !== 'running')
-  {
-    return false;
-  }
-
-  $updated = (int)($status['updated_at'] ?? 0);
-  return $updated > 0 && (time() - $updated) < 30;
-}
-
 function bratonien_tools_find_php_cli()
 {
   foreach (array('/usr/bin/php', '/usr/bin/php8.4', '/usr/local/bin/php') as $candidate)
@@ -236,10 +350,12 @@ function bratonien_tools_find_php_cli()
 
 function bratonien_tools_start_main_cache_build()
 {
-  if (bratonien_tools_main_cache_is_running())
+  if (bratonien_tools_main_cache_process_active() || bratonien_tools_main_cache_is_running())
   {
     return array('started'=>false, 'running'=>true, 'message'=>'Der Piwigo-Bildcache wird bereits aufgebaut.');
   }
+
+  @unlink(bratonien_tools_main_cache_cancel_file());
 
   $worker = realpath(BRATONIEN_TOOLS_PATH.'main-cache-build.php');
   $php = bratonien_tools_find_php_cli();
@@ -258,7 +374,7 @@ function bratonien_tools_start_main_cache_build()
 
   bratonien_tools_write_main_cache_status(array(
     'state'=>'queued',
-    'message'=>'Piwigo-Bildcache wird vorbereitet.',
+    'message'=>'Piwigo-Bildcache wird mit 6 Workern vorbereitet.',
   ));
 
   $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.log';
@@ -281,7 +397,7 @@ function bratonien_tools_start_main_cache_build()
   return array(
     'started'=>true,
     'pid'=>$pid,
-    'message'=>'Piwigo-Bildcache wurde manuell gestartet.',
+    'message'=>'Piwigo-Bildcache wurde manuell mit 6 Workern gestartet.',
   );
 }
 
