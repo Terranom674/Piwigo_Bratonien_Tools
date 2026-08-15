@@ -276,7 +276,7 @@ if (!is_dir($cache_dir) && !mkdir($cache_dir, 0755, true) && !is_dir($cache_dir)
 
 $min_size = is_array($params->sizing->min_size) ? implode('x', $params->sizing->min_size) : '';
 $cache_fingerprint = array(
-  $rel_url,
+  bratonien_tools_runtime_canonical_derivative_url($rel_url),
   $profile_version,
   $source_mtime,
   $params->last_mod_time,
