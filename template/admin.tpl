@@ -4,6 +4,9 @@
 {foreach from=$BRATONIEN_ERRORS item=error}<div class="errors"><p>{$error|escape:html}</p></div>{/foreach}
 
 <style>
+.titrePage h2 {
+  color: #e6e6e6;
+}
 .bratonien-admin {
   max-width: 1180px;
   margin: 0 auto;
@@ -19,7 +22,15 @@
   padding: 8px 12px;
   border: 1px solid rgba(255,255,255,.18);
   border-radius: 4px;
+  color: #d7d7d7;
   text-decoration: none;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.bratonien-nav a:hover,
+.bratonien-nav a:focus {
+  color: #f0a646;
+  border-color: rgba(240,166,70,.65);
+  background: rgba(240,166,70,.06);
 }
 .bratonien-section {
   margin: 0 0 22px;
@@ -30,11 +41,14 @@
 }
 .bratonien-section h3 {
   margin: 0 0 4px;
+  color: #e6e6e6;
   font-size: 18px;
+  font-weight: 700;
 }
 .bratonien-section__intro {
   margin: 0 0 16px;
-  opacity: .78;
+  color: #a9a9a9;
+  opacity: 1;
 }
 .bratonien-grid {
   display: grid;
@@ -49,7 +63,9 @@
 }
 .bratonien-card h4 {
   margin: 0 0 12px;
+  color: #d7d7d7;
   font-size: 15px;
+  font-weight: 700;
 }
 .bratonien-status {
   display: flex;
@@ -115,7 +131,7 @@
   object-fit: contain;
 }
 .bratonien-watermark-preview__empty {
-  opacity: .65;
+  color: #a9a9a9;
   text-align: center;
 }
 .bratonien-watermark-preview__meta {
@@ -133,15 +149,19 @@
 .bratonien-profile summary {
   cursor: pointer;
   padding: 12px 14px;
+  color: #d7d7d7;
   font-weight: 600;
+}
+.bratonien-profile summary:hover {
+  color: #f0a646;
 }
 .bratonien-profile__body {
   padding: 0 14px 14px;
 }
 .bratonien-profile__summary {
   margin-left: 8px;
+  color: #a9a9a9;
   font-weight: normal;
-  opacity: .7;
 }
 .bratonien-rule-table {
   width: 100%;
@@ -155,12 +175,16 @@
   border-bottom: 1px solid rgba(255,255,255,.09);
 }
 .bratonien-rule-table th {
-  opacity: .78;
+  color: #d7d7d7;
+  opacity: 1;
 }
 .bratonien-effective {
   white-space: nowrap;
 }
-.bratonien-muted { opacity: .68; }
+.bratonien-muted {
+  color: #a9a9a9;
+  opacity: 1;
+}
 @media (max-width: 850px) {
   .bratonien-grid,
   .bratonien-watermark-preview { grid-template-columns: 1fr; }
@@ -280,19 +304,14 @@
                 <div class="bratonien-form-grid">
                   <label>Name</label>
                   <span class="bratonien-inline"><input name="profile_name" value="{$profile.name|escape:html}" size="28"> <label><input type="checkbox" name="profile_active" value="1" {if $profile.active}checked{/if}> aktiv</label></span>
-
                   <label>Datei</label>
                   <select name="profile_file"><option value="">Keine Datei</option>{foreach from=$WATERMARK.files key=file item=name}<option value="{$file|escape:html}" {if $file == $profile.watermark_file}selected{/if}>{$name|escape:html}</option>{/foreach}</select>
-
                   <span class="bratonien-label">Position</span>
                   <span class="bratonien-inline">X <input type="number" name="profile_xpos" value="{$profile.xpos}" min="0" max="100" size="3"> Y <input type="number" name="profile_ypos" value="{$profile.ypos}" min="0" max="100" size="3"></span>
-
                   <span class="bratonien-label">Wiederholen</span>
                   <span class="bratonien-inline">X <input type="number" name="profile_xrepeat" value="{$profile.xrepeat}" min="0" max="20" size="3"> Y <input type="number" name="profile_yrepeat" value="{$profile.yrepeat}" min="0" max="20" size="3"></span>
-
                   <label>Deckkraft</label>
                   <span><input type="number" name="profile_opacity" value="{$profile.opacity}" min="1" max="100" size="3"> %</span>
-
                   <span class="bratonien-label">Mindestgröße</span>
                   <span class="bratonien-inline"><input type="number" name="profile_min_width" value="{$profile.min_width}" min="0" size="5"> × <input type="number" name="profile_min_height" value="{$profile.min_height}" min="0" size="5"></span>
                 </div>
