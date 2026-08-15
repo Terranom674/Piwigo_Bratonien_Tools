@@ -18,7 +18,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/precache.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.3';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Watermark-Precache/1.4';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -236,6 +236,23 @@ foreach ($images as $image)
       }
 
       $derivative = new DerivativeImage($params, $src_image);
+      $effective_type = $derivative->get_type();
+      if ($effective_type === 'Original')
+      {
+        $skipped++;
+        continue;
+      }
+
+      $effective_params = $params;
+      if ($effective_type !== IMG_CUSTOM)
+      {
+        $resolved_params = ImageStdParams::get_by_type($effective_type);
+        if ($resolved_params)
+        {
+          $effective_params = $resolved_params;
+        }
+      }
+
       $derivative_path = $derivative->get_path();
       $root_path = PHPWG_ROOT_PATH;
       if (strpos($derivative_path, $root_path) !== 0)
@@ -251,8 +268,13 @@ foreach ($images as $image)
         continue;
       }
 
+      if ($effective_type !== $variant_name && strpos($variant_name, 'custom:') !== 0)
+      {
+        $current .= ' → '.$effective_type;
+      }
+
       $extension = strtolower(pathinfo($derivative_path, PATHINFO_EXTENSION));
-      $descriptor = bratonien_tools_runtime_cache_descriptor($rel_url, $profile, $params, $source_path, $extension);
+      $descriptor = bratonien_tools_runtime_cache_descriptor($rel_url, $profile, $effective_params, $source_path, $extension);
       if (!$descriptor)
       {
         $errors++;
@@ -281,7 +303,7 @@ foreach ($images as $image)
             CURLOPT_CONNECTTIMEOUT => 3,
             CURLOPT_TIMEOUT => 120,
             CURLOPT_FAILONERROR => false,
-            CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.3',
+            CURLOPT_USERAGENT => 'Bratonien-Watermark-Precache/1.4',
             CURLOPT_WRITEFUNCTION => static function ($ch, $data) { return strlen($data); },
           ));
           curl_exec($ch);
