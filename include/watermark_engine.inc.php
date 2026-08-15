@@ -4,10 +4,22 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_base.inc.php');
+
 function bratonien_tools_watermark_engine_enabled()
 {
   $config = bratonien_tools_get_watermark_engine_config();
-  return !empty($config['enabled']);
+  $enabled = !empty($config['enabled']);
+
+  // Piwigo recalculates use_watermark for custom derivatives from the native
+  // watermark file itself. Therefore an active Bratonien engine must keep the
+  // native watermark file empty, not only the stored use_watermark flags false.
+  if ($enabled)
+  {
+    bratonien_tools_disable_piwigo_watermarks();
+  }
+
+  return $enabled;
 }
 
 function bratonien_tools_get_watermark_engine_config()
@@ -50,7 +62,6 @@ function bratonien_tools_set_watermark_engine($enabled)
   if ($enabled && empty($config['enabled']))
   {
     $config['piwigo_backup'] = bratonien_tools_backup_piwigo_watermark_settings();
-    bratonien_tools_disable_piwigo_watermarks();
   }
 
   if (!$enabled && !empty($config['enabled']) && !empty($config['restore_piwigo']))
@@ -60,25 +71,29 @@ function bratonien_tools_set_watermark_engine($enabled)
 
   $config['enabled'] = (bool) $enabled;
   bratonien_tools_save_watermark_engine_config($config);
+
+  if ($enabled)
+  {
+    bratonien_tools_disable_piwigo_watermarks();
+  }
 }
 
 function bratonien_tools_backup_piwigo_watermark_settings()
 {
-  if (!class_exists('ImageStdParams'))
-  {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
-  }
+  bratonien_tools_load_derivative_params();
 
-  $backup = array();
-
+  $types = array();
   foreach (ImageStdParams::get_defined_type_map() as $type => $params)
   {
-    $backup[$type] = array(
+    $types[$type] = array(
       'use_watermark' => (bool) $params->use_watermark,
     );
   }
 
-  return $backup;
+  return array(
+    'types' => $types,
+    'watermark' => bratonien_tools_watermark_params_to_array(ImageStdParams::get_watermark()),
+  );
 }
 
 function bratonien_tools_restore_piwigo_watermark_settings($backup)
@@ -88,16 +103,20 @@ function bratonien_tools_restore_piwigo_watermark_settings($backup)
     return;
   }
 
-  if (!class_exists('ImageStdParams'))
+  bratonien_tools_load_derivative_params();
+
+  // Backwards compatibility with backups produced before 0.3.1.
+  $types = isset($backup['types']) && is_array($backup['types']) ? $backup['types'] : $backup;
+  if (isset($backup['watermark']) && is_array($backup['watermark']))
   {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
+    ImageStdParams::set_watermark(bratonien_tools_array_to_watermark_params($backup['watermark']));
   }
 
   foreach (ImageStdParams::get_defined_type_map() as $type => $params)
   {
-    if (isset($backup[$type]['use_watermark']))
+    if (isset($types[$type]['use_watermark']))
     {
-      $params->use_watermark = (bool) $backup[$type]['use_watermark'];
+      $params->use_watermark = (bool) $types[$type]['use_watermark'];
     }
   }
 
@@ -106,10 +125,37 @@ function bratonien_tools_restore_piwigo_watermark_settings($backup)
 
 function bratonien_tools_disable_piwigo_watermarks()
 {
-  if (!class_exists('ImageStdParams'))
+  bratonien_tools_load_derivative_params();
+
+  // Capture/migrate the current base watermark before the native Piwigo file
+  // is cleared. This makes upgrades from 0.3.0 lossless.
+  bratonien_tools_get_base_watermark_config();
+
+  $current = ImageStdParams::get_watermark();
+  $needs_save = !empty($current->file);
+
+  if (!$needs_save)
   {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
+    foreach (ImageStdParams::get_defined_type_map() as $params)
+    {
+      if (!empty($params->use_watermark))
+      {
+        $needs_save = true;
+        break;
+      }
+    }
   }
+
+  if (!$needs_save)
+  {
+    return;
+  }
+
+  // Empty file is essential: ImageStdParams::get_custom() calls apply_global()
+  // and would otherwise re-enable the native watermark for custom derivatives.
+  $neutral = new WatermarkParams();
+  $neutral->file = '';
+  ImageStdParams::set_watermark($neutral);
 
   foreach (ImageStdParams::get_defined_type_map() as $params)
   {
