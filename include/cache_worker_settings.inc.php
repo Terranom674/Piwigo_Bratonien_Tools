@@ -36,17 +36,35 @@ function bratonien_tools_count_cpu_list($value)
   return $count;
 }
 
-function bratonien_tools_detect_available_cpu_count()
+function bratonien_tools_detect_visible_cpu_count()
 {
-  $counts = array();
-
-  $status = @file_get_contents('/proc/self/status');
-  if ($status !== false && preg_match('/^Cpus_allowed_list:\s*(.+)$/mi', $status, $m))
+  $cpuinfo = @file_get_contents('/proc/cpuinfo');
+  if ($cpuinfo !== false)
   {
-    $allowed = bratonien_tools_count_cpu_list($m[1]);
-    if ($allowed > 0)
+    $matches = array();
+    $count = preg_match_all('/^processor\s*:\s*\d+\s*$/mi', $cpuinfo, $matches);
+    if ($count > 0)
     {
-      $counts[] = $allowed;
+      return (int)$count;
+    }
+  }
+
+  foreach (array('/usr/bin/getconf', '/bin/getconf') as $candidate)
+  {
+    if (!is_file($candidate) || !is_executable($candidate) || !function_exists('exec'))
+    {
+      continue;
+    }
+    $output = array();
+    $exit = 1;
+    @exec(escapeshellarg($candidate).' _NPROCESSORS_ONLN 2>/dev/null', $output, $exit);
+    if ($exit === 0 && isset($output[0]) && ctype_digit(trim($output[0])))
+    {
+      $count = (int)trim($output[0]);
+      if ($count > 0)
+      {
+        return $count;
+      }
     }
   }
 
@@ -58,19 +76,32 @@ function bratonien_tools_detect_available_cpu_count()
     }
     $output = array();
     $exit = 1;
-    @exec(escapeshellarg($candidate).' 2>/dev/null', $output, $exit);
+    @exec(escapeshellarg($candidate).' --all 2>/dev/null', $output, $exit);
     if ($exit === 0 && isset($output[0]) && ctype_digit(trim($output[0])))
     {
-      $nproc = (int)trim($output[0]);
-      if ($nproc > 0)
+      $count = (int)trim($output[0]);
+      if ($count > 0)
       {
-        $counts[] = $nproc;
+        return $count;
       }
     }
-    break;
   }
 
-  return empty($counts) ? 1 : max(1, min($counts));
+  return 1;
+}
+
+function bratonien_tools_detect_process_cpu_count()
+{
+  $status = @file_get_contents('/proc/self/status');
+  if ($status !== false && preg_match('/^Cpus_allowed_list:\s*(.+)$/mi', $status, $m))
+  {
+    $allowed = bratonien_tools_count_cpu_list($m[1]);
+    if ($allowed > 0)
+    {
+      return $allowed;
+    }
+  }
+  return bratonien_tools_detect_visible_cpu_count();
 }
 
 function bratonien_tools_get_cache_worker_settings()
@@ -79,7 +110,6 @@ function bratonien_tools_get_cache_worker_settings()
     'auto'=>true,
     'manual_workers'=>6,
     'factor'=>1.0,
-    'max_workers'=>32,
   );
 
   $file = bratonien_tools_cache_worker_settings_file();
@@ -95,22 +125,27 @@ function bratonien_tools_get_cache_worker_settings()
       }
       if (isset($saved['manual_workers']))
       {
-        $settings['manual_workers'] = max(1, min(32, (int)$saved['manual_workers']));
+        $settings['manual_workers'] = max(1, (int)$saved['manual_workers']);
       }
     }
   }
 
-  $settings['cpu_count'] = bratonien_tools_detect_available_cpu_count();
-  $settings['auto_workers'] = max(1, min($settings['max_workers'], $settings['cpu_count']));
+  $settings['cpu_count'] = max(1, bratonien_tools_detect_visible_cpu_count());
+  $settings['process_cpu_count'] = max(1, bratonien_tools_detect_process_cpu_count());
+  $settings['max_workers'] = max(1, $settings['cpu_count'] * 2);
+  $settings['auto_workers'] = min($settings['max_workers'], $settings['cpu_count']);
+  $settings['manual_workers'] = min($settings['max_workers'], $settings['manual_workers']);
   $settings['worker_count'] = $settings['auto'] ? $settings['auto_workers'] : $settings['manual_workers'];
   return $settings;
 }
 
 function bratonien_tools_save_cache_worker_settings()
 {
+  $current = bratonien_tools_get_cache_worker_settings();
+  $max_workers = (int)$current['max_workers'];
   $auto = !empty($_POST['cache_workers_auto']);
-  $manual = isset($_POST['cache_workers_manual']) ? (int)$_POST['cache_workers_manual'] : 6;
-  $manual = max(1, min(32, $manual));
+  $manual = isset($_POST['cache_workers_manual']) ? (int)$_POST['cache_workers_manual'] : (int)$current['manual_workers'];
+  $manual = max(1, min($max_workers, $manual));
 
   $json = json_encode(array('auto'=>$auto, 'manual_workers'=>$manual), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   $file = bratonien_tools_cache_worker_settings_file();
@@ -123,9 +158,10 @@ function bratonien_tools_save_cache_worker_settings()
   $settings = bratonien_tools_get_cache_worker_settings();
   return array(
     'message'=>sprintf(
-      'Cache-Worker gespeichert: %s. %d CPU(s) erkannt, %d Worker aktiv.',
+      'Cache-Worker gespeichert: %s. %d CPU(s) sichtbar, maximal %d Worker, aktuell %d Worker.',
       $settings['auto'] ? 'Automatik 1:1' : 'manuell',
       $settings['cpu_count'],
+      $settings['max_workers'],
       $settings['worker_count']
     ),
   );
