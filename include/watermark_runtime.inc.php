@@ -137,8 +137,73 @@ function bratonien_tools_runtime_profile_version(array $profile)
   return substr(sha1(implode('|', $parts)), 0, 16);
 }
 
+function bratonien_tools_runtime_cache_descriptor($rel_url, array $profile, $params, $source_path, $extension='')
+{
+  if (!$params || !$source_path)
+  {
+    return null;
+  }
+
+  $watermark_path = bratonien_tools_profile_watermark_path($profile);
+  if (!$watermark_path)
+  {
+    return null;
+  }
+
+  $extension = strtolower((string)$extension);
+  if ($extension === '' && preg_match('/\.(jpe?g|png|gif|webp)(?:$|\?)/i', (string)$rel_url, $match))
+  {
+    $extension = strtolower($match[1]);
+  }
+  if (!in_array($extension, array('jpg','jpeg','png','gif','webp'), true))
+  {
+    $extension = 'jpg';
+  }
+
+  $profile_id = (int)($profile['id'] ?? 0);
+  if ($profile_id <= 0)
+  {
+    return null;
+  }
+
+  $scale_percent = isset($profile['scale_percent']) ? max(1.0, min(1000.0, (float)$profile['scale_percent'])) : 100.0;
+  $profile_version = bratonien_tools_runtime_profile_version($profile);
+  $min_size = is_array($params->sizing->min_size) ? implode('x', $params->sizing->min_size) : '';
+  $cache_fingerprint = array(
+    $rel_url,
+    $profile_version,
+    @filemtime($source_path) ?: 0,
+    $params->last_mod_time,
+    $params->sharpen,
+    implode('x', $params->sizing->ideal_size),
+    $params->sizing->max_crop,
+    $min_size,
+    $profile['watermark_file'], $scale_percent, $profile['xpos'], $profile['ypos'],
+    $profile['xrepeat'], $profile['yrepeat'], $profile['opacity'],
+    $profile['min_width'], $profile['min_height'], $profile['active'],
+    @filemtime($watermark_path),
+  );
+
+  $relative_dir = PWG_DERIVATIVE_DIR.'bratonien-watermark/'.$profile_id;
+  $filename = sha1(implode('|', $cache_fingerprint)).'.'.$extension;
+  $relative_path = $relative_dir.'/'.$filename;
+
+  return array(
+    'dir' => PHPWG_ROOT_PATH.$relative_dir,
+    'path' => PHPWG_ROOT_PATH.$relative_path,
+    'relative_path' => $relative_path,
+    'url' => get_root_url().$relative_path,
+    'profile_version' => $profile_version,
+  );
+}
+
 function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_url)
 {
+  if (defined('BRATONIEN_TOOLS_PRECACHE_BUILD') && BRATONIEN_TOOLS_PRECACHE_BUILD)
+  {
+    return $url;
+  }
+
   if (!bratonien_tools_watermark_engine_enabled())
   {
     return $url;
@@ -167,6 +232,15 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
     if ($size && ($size[0] < (int)$profile['min_width'] || $size[1] < (int)$profile['min_height']))
     {
       return $url;
+    }
+  }
+
+  if (is_object($params) && is_object($src_image))
+  {
+    $descriptor = bratonien_tools_runtime_cache_descriptor($rel_url, $profile, $params, $src_image->get_path());
+    if ($descriptor && is_file($descriptor['path']) && is_readable($descriptor['path']))
+    {
+      return $descriptor['url'];
     }
   }
 
