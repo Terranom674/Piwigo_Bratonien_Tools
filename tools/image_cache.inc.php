@@ -6,7 +6,12 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 function bratonien_tools_clear_image_cache()
 {
-  $cache_root = rtrim(PHPWG_ROOT_PATH, '/\\') . '/_data/i';
+  if (!defined('PWG_DERIVATIVE_DIR'))
+  {
+    throw new RuntimeException('PWG_DERIVATIVE_DIR ist nicht definiert.');
+  }
+
+  $cache_root = PHPWG_ROOT_PATH . PWG_DERIVATIVE_DIR;
 
   if (!is_dir($cache_root))
   {
@@ -14,21 +19,125 @@ function bratonien_tools_clear_image_cache()
   }
 
   $real_cache_root = realpath($cache_root);
-  $expected_root = realpath(rtrim(PHPWG_ROOT_PATH, '/\\') . '/_data/i');
+  $real_piwigo_root = realpath(PHPWG_ROOT_PATH);
 
-  if ($real_cache_root === false || $expected_root === false || $real_cache_root !== $expected_root)
+  if ($real_cache_root === false || $real_piwigo_root === false)
   {
     throw new RuntimeException('Sicherheitspruefung des Bildcache-Pfads fehlgeschlagen.');
   }
 
-  $deleted_files = 0;
-  $deleted_bytes = 0;
-  $deleted_custom = 0;
+  $root_prefix = rtrim($real_piwigo_root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+  if (strpos($real_cache_root . DIRECTORY_SEPARATOR, $root_prefix) !== 0)
+  {
+    throw new RuntimeException('Bildcache liegt ausserhalb der Piwigo-Installation. Abbruch.');
+  }
+
+  $before = bratonien_tools_scan_image_cache($real_cache_root);
+
+  if (!function_exists('clear_derivative_cache'))
+  {
+    require_once(PHPWG_ROOT_PATH . 'admin/include/functions.php');
+  }
+
+  if (!function_exists('clear_derivative_cache'))
+  {
+    throw new RuntimeException('Piwigos Funktion clear_derivative_cache() ist nicht verfuegbar.');
+  }
+
+  // Zuerst exakt denselben Mechanismus verwenden wie
+  // Wartung -> Mehrfache Bildgroessen entfernen -> Alles.
+  clear_derivative_cache('all');
+
+  // Danach bewusst ALLE verbleibenden erzeugten Bilddateien im
+  // Derivatverzeichnis entfernen. Damit werden auch Dateien erfasst,
+  // die von Plugins erzeugt wurden oder nicht in Piwigos Typ-Muster passen.
   $failed_files = array();
+  $residual_deleted = 0;
+
+  if (is_dir($real_cache_root))
+  {
+    $iterator = new RecursiveIteratorIterator(
+      new RecursiveDirectoryIterator($real_cache_root, FilesystemIterator::SKIP_DOTS),
+      RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $item)
+    {
+      $path = $item->getPathname();
+
+      if ($item->isDir())
+      {
+        @rmdir($path);
+        continue;
+      }
+
+      if (strtolower($item->getFilename()) === 'index.htm')
+      {
+        continue;
+      }
+
+      if (@unlink($path))
+      {
+        $residual_deleted++;
+      }
+      else
+      {
+        $failed_files[] = $path;
+      }
+    }
+  }
+
+  if (!empty($failed_files))
+  {
+    throw new RuntimeException(
+      sprintf(
+        '%d Dateien konnten nicht geloescht werden. Erste problematische Datei: %s',
+        count($failed_files),
+        $failed_files[0]
+      )
+    );
+  }
+
+  $after = bratonien_tools_scan_image_cache($real_cache_root);
+
+  if ($after['files'] > 0)
+  {
+    throw new RuntimeException(
+      sprintf(
+        'Bildcache wurde nicht vollstaendig geleert. Noch %d Datei(en) vorhanden. Erste Datei: %s',
+        $after['files'],
+        $after['first_file']
+      )
+    );
+  }
+
+  return array(
+    'message' => sprintf(
+      'Bildcache vollstaendig geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate. %d Restdateien wurden zusaetzlich ausserhalb von Piwigos Standard-Löschmustern entfernt.',
+      $before['files'],
+      bratonien_tools_format_bytes($before['bytes']),
+      $before['custom'],
+      $residual_deleted
+    ),
+  );
+}
+
+function bratonien_tools_scan_image_cache($cache_root)
+{
+  $result = array(
+    'files' => 0,
+    'bytes' => 0,
+    'custom' => 0,
+    'first_file' => '',
+  );
+
+  if (!is_dir($cache_root))
+  {
+    return $result;
+  }
 
   $iterator = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($real_cache_root, FilesystemIterator::SKIP_DOTS),
-    RecursiveIteratorIterator::CHILD_FIRST
+    new RecursiveDirectoryIterator($cache_root, FilesystemIterator::SKIP_DOTS)
   );
 
   foreach ($iterator as $item)
@@ -43,73 +152,24 @@ function bratonien_tools_clear_image_cache()
       continue;
     }
 
-    $path = $item->getPathname();
-    $filename = $item->getFilename();
-    $size = $item->isFile() ? $item->getSize() : 0;
-    $is_custom = strpos($filename, '-cu_') !== false;
-
-    if (@unlink($path))
+    $result['files']++;
+    if ($item->isFile())
     {
-      $deleted_files++;
-      $deleted_bytes += $size;
-      if ($is_custom)
-      {
-        $deleted_custom++;
-      }
+      $result['bytes'] += $item->getSize();
     }
-    else
+
+    if (strpos($item->getFilename(), '-cu_') !== false)
     {
-      $failed_files[] = $path;
+      $result['custom']++;
+    }
+
+    if ($result['first_file'] === '')
+    {
+      $result['first_file'] = $item->getPathname();
     }
   }
 
-  if (!empty($failed_files))
-  {
-    throw new RuntimeException(
-      sprintf(
-        '%d Dateien geloescht, %d Dateien konnten nicht geloescht werden. Erste problematische Datei: %s',
-        $deleted_files,
-        count($failed_files),
-        $failed_files[0]
-      )
-    );
-  }
-
-  // Sicherheitskontrolle: Nach dem Leeren darf kein Custom-Derivat mehr
-  // im Piwigo-Bildcache liegen. Damit werden insbesondere gdThumb-Dateien
-  // wie *-cu_s9999x250.jpg erfasst.
-  $remaining_custom = array();
-  $verify_iterator = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($real_cache_root, FilesystemIterator::SKIP_DOTS)
-  );
-
-  foreach ($verify_iterator as $item)
-  {
-    if ($item->isFile() && strpos($item->getFilename(), '-cu_') !== false)
-    {
-      $remaining_custom[] = $item->getPathname();
-      if (count($remaining_custom) >= 5)
-      {
-        break;
-      }
-    }
-  }
-
-  if (!empty($remaining_custom))
-  {
-    throw new RuntimeException(
-      'Bildcache wurde nicht vollstaendig geleert. Verbleibendes Custom-Derivat: ' . $remaining_custom[0]
-    );
-  }
-
-  return array(
-    'message' => sprintf(
-      'Bildcache geleert: %d Dateien (%s) entfernt, davon %d Custom-Derivate.',
-      $deleted_files,
-      bratonien_tools_format_bytes($deleted_bytes),
-      $deleted_custom
-    ),
-  );
+  return $result;
 }
 
 function bratonien_tools_format_bytes($bytes)
