@@ -4,36 +4,24 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_base.inc.php');
+
 function bratonien_tools_get_base_watermark_scale()
 {
-  if (!function_exists('conf_get_param'))
-  {
-    return 100.0;
-  }
-
-  $value = (float)conf_get_param('bratonien_watermark_base_scale_percent', 100);
-  return max(1.0, min(1000.0, $value > 0 ? $value : 100.0));
+  $config = bratonien_tools_get_base_watermark_config();
+  return max(1.0, min(1000.0, (float)$config['scale_percent']));
 }
 
 function bratonien_tools_save_base_watermark_scale($scale_percent)
 {
-  if (!function_exists('conf_update_param'))
-  {
-    throw new RuntimeException('Piwigo-Konfiguration ist nicht verfuegbar.');
-  }
-
-  $scale_percent = max(1.0, min(1000.0, (float)$scale_percent));
-  conf_update_param('bratonien_watermark_base_scale_percent', (string)$scale_percent);
+  $config = bratonien_tools_get_base_watermark_config();
+  $config['scale_percent'] = max(1.0, min(1000.0, (float)$scale_percent));
+  bratonien_tools_save_base_watermark_config($config);
 }
 
 function bratonien_tools_get_watermark_data()
 {
-  if (!class_exists('ImageStdParams'))
-  {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
-  }
-
-  $watermark = ImageStdParams::get_watermark();
+  $watermark = bratonien_tools_get_base_watermark_config();
   $files = array();
   $watermark_dir = PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'watermarks';
 
@@ -53,17 +41,17 @@ function bratonien_tools_get_watermark_data()
   ksort($files, SORT_NATURAL | SORT_FLAG_CASE);
 
   return array(
-    'file' => $watermark->file,
-    'xpos' => (int) $watermark->xpos,
-    'ypos' => (int) $watermark->ypos,
-    'xrepeat' => (int) $watermark->xrepeat,
-    'yrepeat' => (int) $watermark->yrepeat,
-    'opacity' => (int) $watermark->opacity,
-    'minw' => isset($watermark->min_size[0]) ? (int) $watermark->min_size[0] : 0,
-    'minh' => isset($watermark->min_size[1]) ? (int) $watermark->min_size[1] : 0,
+    'file' => (string)$watermark['file'],
+    'xpos' => (int)$watermark['xpos'],
+    'ypos' => (int)$watermark['ypos'],
+    'xrepeat' => (int)$watermark['xrepeat'],
+    'yrepeat' => (int)$watermark['yrepeat'],
+    'opacity' => (int)$watermark['opacity'],
+    'minw' => (int)$watermark['minw'],
+    'minh' => (int)$watermark['minh'],
     'files' => $files,
-    'preview_url' => !empty($watermark->file) ? get_root_url() . $watermark->file : '',
-    'scale_percent' => bratonien_tools_get_base_watermark_scale(),
+    'preview_url' => !empty($watermark['file']) ? get_root_url() . $watermark['file'] : '',
+    'scale_percent' => max(1.0, min(1000.0, (float)$watermark['scale_percent'])),
   );
 }
 
@@ -120,12 +108,8 @@ function bratonien_tools_delete_watermark_file()
     throw new RuntimeException('Die Datei wird noch von folgenden Profilen verwendet: '.implode(', ', $names).'. Bitte dort zuerst eine andere Datei waehlen.');
   }
 
-  if (!class_exists('ImageStdParams'))
-  {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
-  }
-  $current = ImageStdParams::get_watermark();
-  if (ltrim((string)$current->file, '/') === $relative)
+  $current = bratonien_tools_get_base_watermark_config();
+  if (ltrim((string)$current['file'], '/') === $relative)
   {
     throw new RuntimeException('Die Datei ist aktuell als Basis-Wasserzeichen ausgewaehlt. Bitte zuerst eine andere Datei speichern.');
   }
@@ -150,17 +134,8 @@ function bratonien_tools_save_watermark()
     throw new RuntimeException('Nur ein Piwigo-Webmaster darf das Wasserzeichen aendern.');
   }
 
-  if (!class_exists('ImageStdParams'))
-  {
-    require_once(PHPWG_ROOT_PATH . 'include/derivative_std_params.inc.php');
-  }
-  if (!function_exists('clear_derivative_cache'))
-  {
-    require_once(PHPWG_ROOT_PATH . 'admin/include/functions.php');
-  }
-
-  $current = ImageStdParams::get_watermark();
-  $selected_file = isset($_POST['watermark_file']) ? trim((string) $_POST['watermark_file']) : $current->file;
+  $current = bratonien_tools_get_base_watermark_config();
+  $selected_file = isset($_POST['watermark_file']) ? trim((string) $_POST['watermark_file']) : (string)$current['file'];
 
   if (isset($_FILES['watermark_upload']) && !empty($_FILES['watermark_upload']['tmp_name']))
   {
@@ -219,41 +194,32 @@ function bratonien_tools_save_watermark()
     throw new RuntimeException('Das ausgewaehlte Wasserzeichen liegt nicht im erlaubten Wasserzeichen-Verzeichnis.');
   }
 
-  $xpos = bratonien_tools_watermark_int('watermark_xpos', 0, 100, 90);
-  $ypos = bratonien_tools_watermark_int('watermark_ypos', 0, 100, 90);
-  $opacity = bratonien_tools_watermark_int('watermark_opacity', 1, 100, 35);
-  $minw = bratonien_tools_watermark_int('watermark_minw', 0, 100000, 10);
-  $minh = bratonien_tools_watermark_int('watermark_minh', 0, 100000, 10);
-  $xrepeat = bratonien_tools_watermark_int('watermark_xrepeat', 0, 100000, 0);
-  $yrepeat = bratonien_tools_watermark_int('watermark_yrepeat', 0, 100000, 0);
-
-  $scale_percent = isset($_POST['watermark_scale_percent']) ? (float)$_POST['watermark_scale_percent'] : bratonien_tools_get_base_watermark_scale();
+  $scale_percent = isset($_POST['watermark_scale_percent']) ? (float)$_POST['watermark_scale_percent'] : (float)$current['scale_percent'];
   if (!is_finite($scale_percent) || $scale_percent < 1 || $scale_percent > 1000)
   {
     throw new RuntimeException('Die Wasserzeichengroesse muss zwischen 1 und 1000 Prozent liegen.');
   }
-  bratonien_tools_save_base_watermark_scale($scale_percent);
 
-  $watermark = new WatermarkParams();
-  $watermark->file = $selected_file;
-  $watermark->xpos = $xpos;
-  $watermark->ypos = $ypos;
-  $watermark->xrepeat = $xrepeat;
-  $watermark->yrepeat = $yrepeat;
-  $watermark->opacity = $opacity;
-  $watermark->min_size = array($minw, $minh);
+  $config = array(
+    'file' => $selected_file,
+    'xpos' => bratonien_tools_watermark_int('watermark_xpos', 0, 100, 90),
+    'ypos' => bratonien_tools_watermark_int('watermark_ypos', 0, 100, 90),
+    'xrepeat' => bratonien_tools_watermark_int('watermark_xrepeat', 0, 100000, 0),
+    'yrepeat' => bratonien_tools_watermark_int('watermark_yrepeat', 0, 100000, 0),
+    'opacity' => bratonien_tools_watermark_int('watermark_opacity', 1, 100, 35),
+    'minw' => bratonien_tools_watermark_int('watermark_minw', 0, 100000, 10),
+    'minh' => bratonien_tools_watermark_int('watermark_minh', 0, 100000, 10),
+    'scale_percent' => round($scale_percent, 2),
+  );
+  bratonien_tools_save_base_watermark_config($config);
 
-  ImageStdParams::set_watermark($watermark);
-
-  foreach (ImageStdParams::get_defined_type_map() as $type => $params)
+  // If the Bratonien engine is active, native Piwigo watermarking must stay
+  // fully neutralized. In particular the native watermark file must remain
+  // empty because Piwigo derives use_watermark from it for custom derivatives.
+  if (function_exists('bratonien_tools_watermark_engine_enabled') && bratonien_tools_watermark_engine_enabled())
   {
-    ImageStdParams::apply_global($params);
-    if ($params->use_watermark)
-    {
-      $params->last_mod_time = time();
-    }
+    bratonien_tools_disable_piwigo_watermarks();
   }
-  ImageStdParams::save();
 
   $cache_message = '';
   if (!empty($_POST['watermark_clear_cache']))
@@ -269,7 +235,7 @@ function bratonien_tools_save_watermark()
   }
 
   return array(
-    'message' => 'Wasserzeichen gespeichert.' . $cache_message,
+    'message' => 'Basis-Wasserzeichen gespeichert.' . $cache_message,
   );
 }
 
