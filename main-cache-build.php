@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/main-cache-build.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.3';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.4';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -370,6 +370,7 @@ function bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $messag
     }
   }
 
+  $settings = bratonien_tools_get_cache_worker_settings();
   bratonien_tools_write_main_cache_status(array(
     'state'=>$state,
     'message'=>$message,
@@ -379,13 +380,16 @@ function bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $messag
     'cached'=>$sum['cached'],
     'skipped'=>$sum['skipped'],
     'errors'=>$sum['errors'],
-    'current'=>implode(' | ', array_slice($current, 0, 6)),
+    'current'=>implode(' | ', array_slice($current, 0, min(8, $worker_count))),
+    'worker_count'=>$worker_count,
+    'cpu_count'=>(int)$settings['cpu_count'],
   ));
   return $state;
 }
 
 $worker_index = null;
-$worker_count = 6;
+$settings = bratonien_tools_get_cache_worker_settings();
+$worker_count = max(1, (int)$settings['worker_count']);
 $run_id = '';
 foreach ($argv as $arg)
 {
@@ -395,7 +399,7 @@ foreach ($argv as $arg)
   }
   elseif (preg_match('/^--workers=(\d+)$/', $arg, $m))
   {
-    $worker_count = max(1, (int)$m[1]);
+    $worker_count = max(1, min(32, (int)$m[1]));
   }
   elseif (preg_match('/^--run=([A-Za-z0-9_-]+)$/', $arg, $m))
   {
@@ -430,7 +434,13 @@ bratonien_tools_watermark_engine_enabled();
 
 if (!function_exists('proc_open'))
 {
-  bratonien_tools_write_main_cache_status(array('state'=>'error','message'=>'proc_open() ist deaktiviert; sechs parallele Worker koennen nicht gestartet werden.','errors'=>1));
+  bratonien_tools_write_main_cache_status(array(
+    'state'=>'error',
+    'message'=>sprintf('proc_open() ist deaktiviert; %d parallele Worker koennen nicht gestartet werden.', $worker_count),
+    'errors'=>1,
+    'worker_count'=>$worker_count,
+    'cpu_count'=>(int)$settings['cpu_count'],
+  ));
   flock($lock, LOCK_UN);
   fclose($lock);
   exit(1);
@@ -463,10 +473,13 @@ for ($i=0; $i<$worker_count; $i++)
   }
 }
 
+$running_message = sprintf('Piwigo-Bildcache wird mit %d parallelen Worker(n) aufgebaut.', $worker_count);
 bratonien_tools_write_main_cache_status(array(
   'state'=>'running',
-  'message'=>'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.',
+  'message'=>$running_message,
   'current'=>'Worker werden gestartet.',
+  'worker_count'=>$worker_count,
+  'cpu_count'=>(int)$settings['cpu_count'],
 ));
 
 while (true)
@@ -484,7 +497,7 @@ while (true)
   $cancelling = is_file(bratonien_tools_main_cache_cancel_file());
   $message = $cancelling
     ? 'Piwigo-Bildcache wird abgebrochen.'
-    : 'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.';
+    : $running_message;
   $state = bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $message);
   if (!$running && in_array($state, array('complete','error','cancelled'), true))
   {
