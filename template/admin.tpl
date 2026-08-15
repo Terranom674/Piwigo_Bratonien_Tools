@@ -2,8 +2,6 @@
   <h2>Bratonien Tools</h2>
 </div>
 
-<p>Wartungs- und Verwaltungswerkzeuge fuer diese Piwigo-Installation.</p>
-
 {foreach from=$BRATONIEN_MESSAGES item=message}
   <div class="infos"><p>{$message|escape:html}</p></div>
 {/foreach}
@@ -12,62 +10,191 @@
   <div class="errors"><p>{$error|escape:html}</p></div>
 {/foreach}
 
-<div class="bratonien-tools">
-{foreach from=$BRATONIEN_TOOLS key=tool_id item=tool}
-  <fieldset style="margin-bottom:1.5em;">
-    <legend>{$tool.title|escape:html}</legend>
-    <p>{$tool.description|escape:html}</p>
+<fieldset>
+  <legend>Bildcache</legend>
+  <p>Loescht alle von Piwigo erzeugten Bildderivate. Originalbilder bleiben erhalten.</p>
+  <form method="post">
+    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+    <input type="hidden" name="bratonien_tool" value="image_cache_clear">
+    <button class="buttonLike" type="submit" onclick="return confirm('Wirklich den gesamten Bildcache leeren?');">Bildcache leeren</button>
+  </form>
+</fieldset>
 
-    {if $tool_id == 'watermark'}
-      <h3>Wasserzeichenprofile</h3>
-      <p>Profile definieren, welche Wasserzeichen-Einstellungen fuer spaetere Albumregeln verwendet werden.</p>
+<fieldset>
+  <legend>Bratonien-Wasserzeichenverwaltung</legend>
+  <p>Ist die Verwaltung aktiv, wird Piwigos bisherige Wasserzeichen-Nutzung gesichert und unterdrueckt. Beim Deaktivieren wird sie wiederhergestellt.</p>
+  <form method="post">
+    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+    <input type="hidden" name="bratonien_tool" value="watermark_engine">
+    <label>
+      <input type="checkbox" name="engine_enabled" value="1" {if $WATERMARK_ENGINE.enabled}checked{/if}>
+      Bratonien-Wasserzeichenverwaltung aktivieren
+    </label>
+    <p><button class="buttonLike" type="submit">Status speichern</button></p>
+  </form>
+</fieldset>
 
-      <table class="table2">
-        <tr>
-          <th>Name</th>
-          <th>Position</th>
-          <th>Deckkraft</th>
-          <th>Aktion</th>
-        </tr>
-        {foreach from=$WATERMARK_PROFILES item=profile}
-          <tr>
-            <td>{$profile.name|escape:html}</td>
-            <td>{$profile.xpos}/{$profile.ypos}</td>
-            <td>{$profile.opacity}%</td>
-            <td>
-              <form method="post" action="">
-                <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-                <input type="hidden" name="bratonien_tool" value="watermark">
-                <input type="hidden" name="profile_id" value="{$profile.id}">
-                <button class="buttonLike" type="submit">Bearbeiten</button>
-              </form>
-            </td>
-          </tr>
+<fieldset>
+  <legend>Wasserzeichendateien</legend>
+  <p>PNG-Dateien werden im Piwigo-Wasserzeichenordner gespeichert und stehen danach auch den Profilen zur Verfuegung.</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+    <input type="hidden" name="bratonien_tool" value="watermark_save">
+
+    <p>
+      <label>Datei:
+        <select name="watermark_file">
+          {foreach from=$WATERMARK.files key=file item=name}
+            <option value="{$file|escape:html}" {if $file == $WATERMARK.file}selected{/if}>{$name|escape:html}</option>
+          {/foreach}
+        </select>
+      </label>
+      <label> Neues PNG: <input type="file" name="watermark_upload" accept="image/png"></label>
+    </p>
+    <p>
+      X <input type="number" name="watermark_xpos" value="{$WATERMARK.xpos}" min="0" max="100" size="4">
+      Y <input type="number" name="watermark_ypos" value="{$WATERMARK.ypos}" min="0" max="100" size="4">
+      Deckkraft <input type="number" name="watermark_opacity" value="{$WATERMARK.opacity}" min="1" max="100" size="4"> %
+    </p>
+    <p>
+      Mindestgroesse <input type="number" name="watermark_minw" value="{$WATERMARK.minw}" min="0" size="5"> x
+      <input type="number" name="watermark_minh" value="{$WATERMARK.minh}" min="0" size="5">
+      <label><input type="checkbox" name="watermark_clear_cache" value="1"> Bildcache danach leeren</label>
+    </p>
+    <button class="buttonLike" type="submit">Wasserzeichendatei speichern</button>
+  </form>
+</fieldset>
+
+<fieldset>
+  <legend>Wasserzeichenprofile</legend>
+  <p>Profile definieren Datei, Position, Deckkraft und Mindestgroesse. Sie koennen global oder pro Album zugewiesen werden.</p>
+
+  <table class="table2">
+    <thead>
+      <tr><th>Name</th><th>Datei</th><th>Position</th><th>Deckkraft</th><th>Mindestgroesse</th><th>Aktionen</th></tr>
+    </thead>
+    <tbody>
+    {foreach from=$WATERMARK_PROFILES item=profile}
+      <tr>
+        <form method="post">
+          <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          <input type="hidden" name="bratonien_tool" value="watermark_profile_save">
+          <input type="hidden" name="profile_id" value="{$profile.id}">
+          <td><input name="profile_name" value="{$profile.name|escape:html}" size="20"></td>
+          <td>
+            <select name="profile_file">
+              <option value="">Keine Datei</option>
+              {foreach from=$WATERMARK.files key=file item=name}
+                <option value="{$file|escape:html}" {if $file == $profile.watermark_file}selected{/if}>{$name|escape:html}</option>
+              {/foreach}
+            </select>
+          </td>
+          <td>X <input name="profile_xpos" value="{$profile.xpos}" size="3"> Y <input name="profile_ypos" value="{$profile.ypos}" size="3"></td>
+          <td><input name="profile_opacity" value="{$profile.opacity}" size="3">%</td>
+          <td><input name="profile_min_width" value="{$profile.min_width}" size="4"> x <input name="profile_min_height" value="{$profile.min_height}" size="4"></td>
+          <td><button class="buttonLike" type="submit">Speichern</button></td>
+        </form>
+      </tr>
+      <tr>
+        <td colspan="6">
+          <form method="post" style="display:inline-block;margin-right:.5em;">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <input type="hidden" name="bratonien_tool" value="watermark_profile_duplicate">
+            <input type="hidden" name="profile_id" value="{$profile.id}">
+            <button class="buttonLike" type="submit">Duplizieren</button>
+          </form>
+          <form method="post" style="display:inline-block;">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <input type="hidden" name="bratonien_tool" value="watermark_profile_delete">
+            <input type="hidden" name="profile_id" value="{$profile.id}">
+            <button class="buttonLike" type="submit" onclick="return confirm('Profil wirklich loeschen?');">Loeschen</button>
+          </form>
+        </td>
+      </tr>
+    {/foreach}
+    </tbody>
+  </table>
+
+  <h3>Neues Profil</h3>
+  <form method="post">
+    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+    <input type="hidden" name="bratonien_tool" value="watermark_profile_save">
+    <p>Name <input name="profile_name" value="" size="24"></p>
+    <p>
+      Datei
+      <select name="profile_file">
+        <option value="">Keine Datei</option>
+        {foreach from=$WATERMARK.files key=file item=name}
+          <option value="{$file|escape:html}">{$name|escape:html}</option>
         {/foreach}
-      </table>
+      </select>
+    </p>
+    <p>X <input name="profile_xpos" value="90" size="3"> Y <input name="profile_ypos" value="90" size="3"> Deckkraft <input name="profile_opacity" value="35" size="3">%</p>
+    <p>Mindestgroesse <input name="profile_min_width" value="10" size="4"> x <input name="profile_min_height" value="10" size="4"></p>
+    <button class="buttonLike" type="submit">Profil anlegen</button>
+  </form>
+</fieldset>
 
-      <h3>Neues Profil</h3>
-      <form method="post" action="">
-        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-        <input type="hidden" name="bratonien_tool" value="watermark">
-        <p>Name: <input name="profile_name" value=""></p>
-        <p>Datei: <input name="profile_file" value=""></p>
-        <p>X: <input name="profile_xpos" value="90" size="3"> Y: <input name="profile_ypos" value="90" size="3"></p>
-        <p>Deckkraft: <input name="profile_opacity" value="35" size="3">%</p>
-        <p>Mindestgröße: <input name="profile_min_width" value="10" size="4"> x <input name="profile_min_height" value="10" size="4"></p>
-        <button class="buttonLike" type="submit">Profil speichern</button>
-      </form>
-    {/if}
+<fieldset>
+  <legend>Globale Standardregeln</legend>
+  <p>Diese Regeln greifen, wenn kein Album und kein uebergeordnetes Album eine eigene Regel vorgibt.</p>
+  <form method="post">
+    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+    <input type="hidden" name="bratonien_tool" value="watermark_defaults">
+    <p>
+      Oeffentliche Alben:
+      <select name="public_profile">
+        <option value="">Kein Wasserzeichen</option>
+        {foreach from=$WATERMARK_PROFILES item=profile}
+          <option value="{$profile.id}" {if $WATERMARK_DEFAULTS.public_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>
+        {/foreach}
+      </select>
+    </p>
+    <p>
+      Private Alben:
+      <select name="private_profile">
+        <option value="">Kein Wasserzeichen</option>
+        {foreach from=$WATERMARK_PROFILES item=profile}
+          <option value="{$profile.id}" {if $WATERMARK_DEFAULTS.private_profile == $profile.id}selected{/if}>{$profile.name|escape:html}</option>
+        {/foreach}
+      </select>
+    </p>
+    <button class="buttonLike" type="submit">Globale Regeln speichern</button>
+  </form>
+</fieldset>
 
-    <form method="post" action="">
-      <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-      <input type="hidden" name="bratonien_tool" value="{$tool_id|escape:html}">
-      <button
-        type="submit"
-        class="buttonLike"
-        onclick="return confirm('{$tool.confirm|escape:javascript}');"
-      >{$tool.button|escape:html}</button>
-    </form>
-  </fieldset>
-{/foreach}
-</div>
+<fieldset>
+  <legend>Albumregeln</legend>
+  <p>Ein Album kann die globale Regel erben, ein bestimmtes Profil erzwingen oder Wasserzeichen ausschalten. Unteralben erben die naechste explizite Regel ihrer Eltern.</p>
+  <table class="table2">
+    <thead><tr><th>Album</th><th>Sichtbarkeit</th><th>Aktuelle Regel</th><th>Wirksam</th><th>Speichern</th></tr></thead>
+    <tbody>
+    {foreach from=$WATERMARK_CATEGORIES item=category}
+      <tr>
+        <form method="post">
+          <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          <input type="hidden" name="bratonien_tool" value="watermark_rule">
+          <input type="hidden" name="category_id" value="{$category.id}">
+          <td>{$category.display_name|escape:html}</td>
+          <td>{$category.status|escape:html}</td>
+          <td>
+            <select name="rule_mode">
+              <option value="inherit" {if $category.rule.mode == 'inherit'}selected{/if}>Erben</option>
+              <option value="disabled" {if $category.rule.mode == 'disabled'}selected{/if}>Kein Wasserzeichen</option>
+              <option value="profile" {if $category.rule.mode == 'profile'}selected{/if}>Profil verwenden</option>
+            </select>
+            <select name="rule_profile">
+              <option value="">Profil waehlen</option>
+              {foreach from=$WATERMARK_PROFILES item=profile}
+                <option value="{$profile.id}" {if $category.rule.profile_id == $profile.id}selected{/if}>{$profile.name|escape:html}</option>
+              {/foreach}
+            </select>
+          </td>
+          <td>{$category.effective_label|escape:html} ({$category.effective.source|escape:html})</td>
+          <td><button class="buttonLike" type="submit">Speichern</button></td>
+        </form>
+      </tr>
+    {/foreach}
+    </tbody>
+  </table>
+</fieldset>
