@@ -38,9 +38,10 @@ function bratonien_tools_save_album_rule()
 
   if ($mode === 'profile')
   {
-    if ($profile === null || !bratonien_tools_get_watermark_profile($profile))
+    $selected = $profile ? bratonien_tools_get_watermark_profile($profile) : null;
+    if (!$selected || empty($selected['active']))
     {
-      throw new RuntimeException('Bitte ein gueltiges Wasserzeichenprofil auswaehlen.');
+      throw new RuntimeException('Bitte ein gueltiges aktives Wasserzeichenprofil auswaehlen.');
     }
   }
   else
