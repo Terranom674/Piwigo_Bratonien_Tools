@@ -44,4 +44,13 @@ if (!is_array($data))
   exit;
 }
 
+$state = (string)($data['state'] ?? 'idle');
+$updated = (int)($data['updated_at'] ?? 0);
+if (($state === 'running' || $state === 'queued') && $updated > 0 && (time() - $updated) > 45)
+{
+  $data['state'] = 'error';
+  $data['message'] = 'Cache-Aufbau liefert seit mehr als 45 Sekunden keinen Fortschritt. Der Prozess ist vermutlich beendet oder festgefahren.';
+  $data['errors'] = max(1, (int)($data['errors'] ?? 0));
+}
+
 echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
