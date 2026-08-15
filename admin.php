@@ -44,6 +44,7 @@ $defaults = bratonien_tools_get_watermark_defaults();
 $categories = bratonien_tools_get_category_tree();
 $rules = bratonien_tools_get_album_rules();
 $engine = bratonien_tools_get_watermark_engine_config();
+$cache_workers = bratonien_tools_get_cache_worker_settings();
 
 $watermark_options = array();
 $watermark_meta = array();
@@ -115,6 +116,7 @@ $template->assign(array(
   'WATERMARK_DEFAULTS' => $defaults,
   'WATERMARK_CATEGORIES' => $categories,
   'WATERMARK_ENGINE' => $engine,
+  'CACHE_WORKERS' => $cache_workers,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
 ));
 
