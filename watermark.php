@@ -136,25 +136,32 @@ if (!bratonien_tools_watermark_engine_enabled())
 }
 
 $profile_id = (int)($_GET['p'] ?? 0);
+$profile_version = (string)($_GET['v'] ?? '');
 $encoded_url = (string)($_GET['u'] ?? '');
 $signature = (string)($_GET['s'] ?? '');
 $rel_url = bratonien_tools_runtime_b64url_decode($encoded_url);
 
-if ($profile_id <= 0 || $rel_url === false || $rel_url === '')
+if ($profile_id <= 0 || $profile_version === '' || $rel_url === false || $rel_url === '')
 {
   bratonien_tools_watermark_fail(400, 'Invalid request');
-}
-
-$expected = bratonien_tools_runtime_sign($rel_url, $profile_id);
-if (!hash_equals($expected, $signature))
-{
-  bratonien_tools_watermark_fail(403, 'Invalid signature');
 }
 
 $profile = bratonien_tools_get_watermark_profile($profile_id);
 if (!$profile || empty($profile['active']))
 {
   bratonien_tools_watermark_fail(404, 'Watermark profile unavailable');
+}
+
+$current_profile_version = bratonien_tools_runtime_profile_version($profile);
+if (!hash_equals($current_profile_version, $profile_version))
+{
+  bratonien_tools_watermark_fail(410, 'Watermark profile changed');
+}
+
+$expected = bratonien_tools_runtime_sign($rel_url, $profile_id, $profile_version);
+if (!hash_equals($expected, $signature))
+{
+  bratonien_tools_watermark_fail(403, 'Invalid signature');
 }
 
 $watermark_path = bratonien_tools_profile_watermark_path($profile);
@@ -187,6 +194,7 @@ if (!is_dir($cache_dir) && !mkdir($cache_dir, 0755, true) && !is_dir($cache_dir)
 
 $cache_fingerprint = array(
   $rel_url,
+  $profile_version,
   $profile['watermark_file'], $scale_percent, $profile['xpos'], $profile['ypos'],
   $profile['xrepeat'], $profile['yrepeat'], $profile['opacity'],
   $profile['min_width'], $profile['min_height'], $profile['active'],
@@ -221,9 +229,6 @@ if ($wm_width !== $original_wm_width || $wm_height !== $original_wm_height)
   $wm->resize($wm_width, $wm_height);
 }
 
-// A watermark may be deliberately enlarged, but it must never make the image
-// renderer address pixels outside the derivative. If the requested size is
-// larger than the derivative, keep the aspect ratio and fit it to the image.
 if ($width < $wm_width || $height < $wm_height)
 {
   $fit = min($width / $wm_width, $height / $wm_height);
