@@ -52,6 +52,24 @@ function bratonien_tools_runtime_effective_rule($category_id)
   return bratonien_tools_resolve_album_rule((int)$category_id, $categories, $rules, $defaults);
 }
 
+function bratonien_tools_runtime_get_profile($profile_id)
+{
+  static $profiles = array();
+  $profile_id = (int)$profile_id;
+
+  if ($profile_id <= 0)
+  {
+    return null;
+  }
+
+  if (!array_key_exists($profile_id, $profiles))
+  {
+    $profiles[$profile_id] = bratonien_tools_get_watermark_profile($profile_id) ?: null;
+  }
+
+  return $profiles[$profile_id];
+}
+
 function bratonien_tools_runtime_sign($rel_url, $profile_id, $profile_version='')
 {
   global $conf;
@@ -66,15 +84,23 @@ function bratonien_tools_runtime_b64url_encode($value)
 
 function bratonien_tools_profile_watermark_path(array $profile)
 {
+  static $paths = array();
+
   if (empty($profile['watermark_file']))
   {
     return null;
   }
 
   $relative = ltrim((string)$profile['watermark_file'], '/');
+  if (array_key_exists($relative, $paths))
+  {
+    return $paths[$relative];
+  }
+
   $allowed_prefix = trim(PWG_LOCAL_DIR, '/').'/watermarks/';
   if (strpos($relative, $allowed_prefix) !== 0)
   {
+    $paths[$relative] = null;
     return null;
   }
 
@@ -82,9 +108,11 @@ function bratonien_tools_profile_watermark_path(array $profile)
   $path = realpath(PHPWG_ROOT_PATH.$relative);
   if (!$root || !$path || strpos($path, $root.DIRECTORY_SEPARATOR) !== 0 || !is_file($path))
   {
+    $paths[$relative] = null;
     return null;
   }
 
+  $paths[$relative] = $path;
   return $path;
 }
 
@@ -122,7 +150,7 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
     return $url;
   }
 
-  $profile = bratonien_tools_get_watermark_profile((int)$rule['profile_id']);
+  $profile = bratonien_tools_runtime_get_profile((int)$rule['profile_id']);
   if (!$profile || empty($profile['active']))
   {
     return $url;
