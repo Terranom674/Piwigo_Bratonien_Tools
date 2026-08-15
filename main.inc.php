@@ -73,7 +73,7 @@ function bratonien_tools_admin_cache_build_ui()
     wrap.innerHTML=''
       +'<h4>Piwigo-Bildcache vorbereiten</h4>'
       +'<p>Erzeugt die normalen Piwigo-Bildgrößen vorab. Bratonien-Wasserzeichen werden weiterhin nur bei Bedarf erzeugt.</p>'
-      +'<p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Der manuelle Cache-Aufbau erzeugt viele Bildvarianten nacheinander und kann CPU, Arbeitsspeicher und Datenträger des LXC deutlich belasten. Diese Warnung kann entfernt werden, sobald der Ablauf im Dauerbetrieb stabil ist.</p>'
+      +'<p class="bratonien-main-cache__warning"><strong>Experimentell:</strong> Der manuelle Cache-Aufbau verwendet vier parallele Worker und kann CPU, Arbeitsspeicher und Datenträger des LXC deutlich belasten. Diese Warnung wird entfernt, sobald der Ablauf im Dauerbetrieb stabil ist.</p>'
       +'<form method="post"><input type="hidden" name="pwg_token" value="'+String(pwgToken).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"><button class="buttonLike" type="submit" name="bratonien_tool" value="image_cache_build">Piwigo-Bildcache aufbauen</button></form>'
       +'<div class="bratonien-main-cache__progress" data-main-cache-progress>'
       +'<div class="bratonien-main-cache__head"><strong data-cache-title>Cache-Aufbau</strong><strong data-cache-percent>0 %</strong></div>'
