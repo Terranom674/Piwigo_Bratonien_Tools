@@ -81,6 +81,36 @@ function bratonien_tools_output_image($path)
   exit;
 }
 
+function bratonien_tools_output_ajax_url($url)
+{
+  while (ob_get_level() > 0)
+  {
+    @ob_end_clean();
+  }
+
+  http_response_code(200);
+  header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
+  header('X-Bratonien-Watermark: ajaxload');
+  echo json_encode(array('url'=>$url), JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+function bratonien_tools_serve_cache($path, $url)
+{
+  if (isset($_GET['ajaxload']) && $_GET['ajaxload'] === 'true')
+  {
+    clearstatcache(true, $path);
+    if (!is_file($path) || !is_readable($path))
+    {
+      bratonien_tools_watermark_fail(500, 'AJAX image output unavailable');
+    }
+    bratonien_tools_output_ajax_url($url);
+  }
+
+  bratonien_tools_output_image($path);
+}
+
 function bratonien_tools_url_to_size($value)
 {
   $parts = explode('x', (string)$value, 2);
@@ -335,7 +365,7 @@ if (!$descriptor)
 
 if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
-  bratonien_tools_output_image($descriptor['path']);
+  bratonien_tools_serve_cache($descriptor['path'], $descriptor['url']);
 }
 
 if (!is_dir($descriptor['dir']) && !mkdir($descriptor['dir'], 0755, true) && !is_dir($descriptor['dir']))
@@ -358,7 +388,7 @@ if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
   flock($lock, LOCK_UN);
   fclose($lock);
-  bratonien_tools_output_image($descriptor['path']);
+  bratonien_tools_serve_cache($descriptor['path'], $descriptor['url']);
 }
 
 $piwigo_derivative = bratonien_tools_ensure_piwigo_derivative($derivative);
@@ -442,4 +472,4 @@ if (!is_file($descriptor['path']) || !is_readable($descriptor['path']))
   bratonien_tools_watermark_fail(500, 'Generated watermark cache unavailable');
 }
 
-bratonien_tools_output_image($descriptor['path']);
+bratonien_tools_serve_cache($descriptor['path'], $descriptor['url']);
