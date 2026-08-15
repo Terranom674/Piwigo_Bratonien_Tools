@@ -75,7 +75,7 @@ function bratonien_tools_fetch_derivative($rel_url, $physical_path)
       CURLOPT_CONNECTTIMEOUT => 5,
       CURLOPT_TIMEOUT => 30,
       CURLOPT_FAILONERROR => true,
-      CURLOPT_USERAGENT => 'BratonienTools/1.0',
+      CURLOPT_USERAGENT => 'BratonienTools/0.2',
     ));
     $data = curl_exec($ch);
     curl_close($ch);
@@ -101,6 +101,7 @@ function bratonien_tools_fetch_derivative($rel_url, $physical_path)
   {
     $ext = strtolower($m[1]);
   }
+
   $tmp = tempnam(sys_get_temp_dir(), 'btwm_');
   $tmp_with_ext = $tmp.'.'.$ext;
   @rename($tmp, $tmp_with_ext);
@@ -109,17 +110,23 @@ function bratonien_tools_fetch_derivative($rel_url, $physical_path)
   return array('path'=>$tmp_with_ext, 'temporary'=>true);
 }
 
-function bratonien_tools_output_image($path)
+function bratonien_tools_output_image($path, $delete_after=false)
 {
   $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
   $types = array(
     'jpg'=>'image/jpeg', 'jpeg'=>'image/jpeg', 'png'=>'image/png',
     'gif'=>'image/gif', 'webp'=>'image/webp',
   );
+
   header('Content-Type: '.($types[$ext] ?? 'application/octet-stream'));
   header('Content-Length: '.filesize($path));
   header('Cache-Control: public, max-age=604800');
   readfile($path);
+
+  if ($delete_after)
+  {
+    @unlink($path);
+  }
   exit;
 }
 
@@ -145,7 +152,7 @@ if (!hash_equals($expected, $signature))
 }
 
 $profile = bratonien_tools_get_watermark_profile($profile_id);
-if (!$profile || empty($profile['watermark_file']))
+if (!$profile || empty($profile['active']) || empty($profile['watermark_file']))
 {
   bratonien_tools_watermark_fail(404, 'Watermark profile unavailable');
 }
@@ -179,8 +186,10 @@ if (!is_dir($cache_dir) && !mkdir($cache_dir, 0755, true) && !is_dir($cache_dir)
 
 $cache_fingerprint = array(
   $rel_url,
-  $profile['watermark_file'], $profile['xpos'], $profile['ypos'], $profile['opacity'],
-  $profile['min_width'], $profile['min_height'], @filemtime($watermark_path),
+  $profile['watermark_file'], $profile['xpos'], $profile['ypos'],
+  $profile['xrepeat'], $profile['yrepeat'], $profile['opacity'],
+  $profile['min_width'], $profile['min_height'], $profile['active'],
+  @filemtime($watermark_path),
 );
 $cache_path = $cache_dir.'/'.sha1(implode('|', $cache_fingerprint)).'.'.$ext;
 
@@ -197,7 +206,7 @@ $height = $image->get_height();
 if ($width < (int)$profile['min_width'] || $height < (int)$profile['min_height'])
 {
   $image->destroy();
-  bratonien_tools_output_image($source['path']);
+  bratonien_tools_output_image($source['path'], $source['temporary']);
 }
 
 $wm = new pwg_image($watermark_path);
@@ -214,7 +223,36 @@ if ($width < $wm_width || $height < $wm_height)
 
 $x = (int)round(((int)$profile['xpos'] / 100) * ($width - $wm_width));
 $y = (int)round(((int)$profile['ypos'] / 100) * ($height - $wm_height));
-$image->compose($wm, $x, $y, (int)$profile['opacity']);
+$opacity = (int)$profile['opacity'];
+
+$image->compose($wm, $x, $y, $opacity);
+
+$xrepeat = max(0, (int)$profile['xrepeat']);
+$yrepeat = max(0, (int)$profile['yrepeat']);
+if ($xrepeat || $yrepeat)
+{
+  $xpad = $wm_width + max(30, (int)round($wm_width / 4));
+  $ypad = $wm_height + max(30, (int)round($wm_height / 4));
+
+  for ($i=-$xrepeat; $i<=$xrepeat; $i++)
+  {
+    for ($j=-$yrepeat; $j<=$yrepeat; $j++)
+    {
+      if ($i === 0 && $j === 0)
+      {
+        continue;
+      }
+
+      $x2 = $x + $i * $xpad;
+      $y2 = $y + $j * $ypad;
+      if ($x2 >= 0 && $x2 + $wm_width <= $width && $y2 >= 0 && $y2 + $wm_height <= $height)
+      {
+        $image->compose($wm, $x2, $y2, $opacity);
+      }
+    }
+  }
+}
+
 $wm->destroy();
 $image->write($cache_path);
 $image->destroy();
