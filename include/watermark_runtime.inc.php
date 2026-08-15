@@ -55,13 +55,37 @@ function bratonien_tools_runtime_effective_rule($category_id)
 function bratonien_tools_runtime_sign($rel_url, $profile_id)
 {
   global $conf;
-  $key = !empty($conf['secret_key']) ? $conf['secret_key'] : $conf['db_password'];
+  $key = !empty($conf['secret_key']) ? $conf['secret_key'] : ($conf['db_password'] ?? 'bratonien-tools');
   return hash_hmac('sha256', $profile_id.'|'.$rel_url, $key);
 }
 
 function bratonien_tools_runtime_b64url_encode($value)
 {
   return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function bratonien_tools_profile_watermark_path(array $profile)
+{
+  if (empty($profile['watermark_file']))
+  {
+    return null;
+  }
+
+  $relative = ltrim((string)$profile['watermark_file'], '/');
+  $allowed_prefix = trim(PWG_LOCAL_DIR, '/').'/watermarks/';
+  if (strpos($relative, $allowed_prefix) !== 0)
+  {
+    return null;
+  }
+
+  $root = realpath(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'watermarks');
+  $path = realpath(PHPWG_ROOT_PATH.$relative);
+  if (!$root || !$path || strpos($path, $root.DIRECTORY_SEPARATOR) !== 0 || !is_file($path))
+  {
+    return null;
+  }
+
+  return $path;
 }
 
 function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_url)
@@ -78,13 +102,12 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
   }
 
   $profile = bratonien_tools_get_watermark_profile((int)$rule['profile_id']);
-  if (!$profile || empty($profile['active']) || empty($profile['watermark_file']))
+  if (!$profile || empty($profile['active']))
   {
     return $url;
   }
 
-  $watermark_path = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'watermarks/'.$profile['watermark_file'];
-  if (!is_file($watermark_path))
+  if (!bratonien_tools_profile_watermark_path($profile))
   {
     return $url;
   }
