@@ -38,6 +38,7 @@ function bratonien_tools_watermark_fail($code, $message)
 
 function bratonien_tools_output_image($path)
 {
+  clearstatcache(true, $path);
   $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
   $types = array('jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif','webp'=>'image/webp');
   $mtime = @filemtime($path) ?: time();
@@ -60,6 +61,13 @@ function bratonien_tools_output_image($path)
   header('ETag: '.$etag);
   header('Cache-Control: public, max-age=31536000, immutable');
   readfile($path);
+  exit;
+}
+
+function bratonien_tools_redirect_to_cache($url)
+{
+  header('Cache-Control: no-store, max-age=0');
+  header('Location: '.$url, true, 302);
   exit;
 }
 
@@ -249,12 +257,10 @@ function bratonien_tools_ensure_piwigo_derivative(array $derivative)
     $image->sharpen($params->sharpen);
   }
 
-  // Bewusst kein natives Piwigo-Wasserzeichen. Die Bratonien-Engine hält
-  // WatermarkParams.file leer und use_watermark=false. Dieser Cache bleibt
-  // damit auch für private Albumkontexte unverändert nutzbar.
   $image->write($path);
   $image->destroy();
   @chmod($path, 0644);
+  clearstatcache(true, $path);
 
   return is_file($path) && is_readable($path) ? $path : null;
 }
@@ -319,7 +325,7 @@ if (!$descriptor)
 
 if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
-  bratonien_tools_output_image($descriptor['path']);
+  bratonien_tools_redirect_to_cache($descriptor['url']);
 }
 
 if (!is_dir($descriptor['dir']) && !mkdir($descriptor['dir'], 0755, true) && !is_dir($descriptor['dir']))
@@ -342,7 +348,7 @@ if (is_file($descriptor['path']) && is_readable($descriptor['path']))
 {
   flock($lock, LOCK_UN);
   fclose($lock);
-  bratonien_tools_output_image($descriptor['path']);
+  bratonien_tools_redirect_to_cache($descriptor['url']);
 }
 
 $piwigo_derivative = bratonien_tools_ensure_piwigo_derivative($derivative);
@@ -416,8 +422,14 @@ if ($width >= (int)$profile['min_width'] && $height >= (int)$profile['min_height
 $image->write($descriptor['path']);
 $image->destroy();
 @chmod($descriptor['path'], 0644);
+clearstatcache(true, $descriptor['path']);
 
 flock($lock, LOCK_UN);
 fclose($lock);
 
-bratonien_tools_output_image($descriptor['path']);
+if (!is_file($descriptor['path']) || !is_readable($descriptor['path']))
+{
+  bratonien_tools_watermark_fail(500, 'Generated watermark cache unavailable');
+}
+
+bratonien_tools_redirect_to_cache($descriptor['url']);
