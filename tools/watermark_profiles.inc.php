@@ -18,9 +18,9 @@ function bratonien_tools_create_default_watermark_profiles()
 
   if ((int)$count[0] === 0)
   {
-    mass_inserts($table, array('name','watermark_file','xpos','ypos','opacity','min_width','min_height','created'), array(
-      array('name'=>'Oeffentlich','watermark_file'=>'','xpos'=>90,'ypos'=>90,'opacity'=>35,'min_width'=>10,'min_height'=>10,'created'=>date('Y-m-d H:i:s')),
-      array('name'=>'Familie & Freunde','watermark_file'=>'','xpos'=>90,'ypos'=>90,'opacity'=>25,'min_width'=>10,'min_height'=>10,'created'=>date('Y-m-d H:i:s')),
+    mass_inserts($table, array('name','watermark_file','xpos','ypos','xrepeat','yrepeat','opacity','min_width','min_height','active','created'), array(
+      array('name'=>'Oeffentlich','watermark_file'=>'','xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>35,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
+      array('name'=>'Familie & Freunde','watermark_file'=>'','xpos'=>90,'ypos'=>90,'xrepeat'=>0,'yrepeat'=>0,'opacity'=>25,'min_width'=>10,'min_height'=>10,'active'=>1,'created'=>date('Y-m-d H:i:s')),
     ));
   }
 }
@@ -33,6 +33,8 @@ function bratonien_tools_get_watermark_profiles()
 
 function bratonien_tools_get_watermark_profile($id)
 {
+  bratonien_tools_create_default_watermark_profiles();
+
   $id = (int)$id;
   if ($id <= 0)
   {
@@ -70,9 +72,12 @@ function bratonien_tools_save_watermark_profile()
     'watermark_file' => bratonien_tools_validate_profile_file($_POST['profile_file'] ?? ''),
     'xpos' => max(0, min(100, (int)($_POST['profile_xpos'] ?? 90))),
     'ypos' => max(0, min(100, (int)($_POST['profile_ypos'] ?? 90))),
+    'xrepeat' => max(0, min(20, (int)($_POST['profile_xrepeat'] ?? 0))),
+    'yrepeat' => max(0, min(20, (int)($_POST['profile_yrepeat'] ?? 0))),
     'opacity' => max(1, min(100, (int)($_POST['profile_opacity'] ?? 35))),
     'min_width' => max(0, (int)($_POST['profile_min_width'] ?? 10)),
     'min_height' => max(0, (int)($_POST['profile_min_height'] ?? 10)),
+    'active' => !empty($_POST['profile_active']) ? 1 : 0,
   );
 
   if ($data['name'] === '')
