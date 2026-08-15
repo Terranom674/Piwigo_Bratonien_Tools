@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/main-cache-build.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.2';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Cache-Builder/1.3';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -201,6 +201,7 @@ function bratonien_tools_cache_builder_variants()
 function bratonien_tools_cache_builder_worker($worker_index, $worker_count, $run_id)
 {
   $status_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.worker-'.$run_id.'-'.$worker_index.'.json';
+  $cancel_file = bratonien_tools_main_cache_cancel_file();
   $variants = bratonien_tools_cache_builder_variants();
   $rows = array();
   $result = pwg_query('SELECT * FROM '.IMAGES_TABLE.' ORDER BY id');
@@ -231,6 +232,15 @@ function bratonien_tools_cache_builder_worker($worker_index, $worker_count, $run
 
     foreach ($variants as $variant_name => $requested_params)
     {
+      if (is_file($cancel_file))
+      {
+        bratonien_tools_cache_builder_status(
+          $status_file, 'cancelled', 'Worker '.($worker_index + 1).' wurde abgebrochen.',
+          $total, $completed, $generated, $cached, $skipped, $errors, ''
+        );
+        exit(0);
+      }
+
       $completed++;
       $current = 'Worker '.($worker_index + 1).' · Bild #'.$image_id.' · '.$variant_name;
 
@@ -349,7 +359,14 @@ function bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $messag
     }
     if ($all_done)
     {
-      $state = $sum['errors'] > 0 || in_array('error', $states, true) ? 'error' : 'complete';
+      if (in_array('cancelled', $states, true))
+      {
+        $state = 'cancelled';
+      }
+      else
+      {
+        $state = $sum['errors'] > 0 || in_array('error', $states, true) ? 'error' : 'complete';
+      }
     }
   }
 
@@ -396,7 +413,7 @@ if ($worker_index !== null)
   bratonien_tools_cache_builder_worker($worker_index, $worker_count, $run_id);
 }
 
-$lock_path = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.lock';
+$lock_path = bratonien_tools_main_cache_lock_file();
 $lock = @fopen($lock_path, 'c');
 if (!$lock || !flock($lock, LOCK_EX | LOCK_NB))
 {
@@ -408,6 +425,7 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB))
   exit(0);
 }
 
+@unlink(bratonien_tools_main_cache_cancel_file());
 bratonien_tools_watermark_engine_enabled();
 
 if (!function_exists('proc_open'))
@@ -463,8 +481,12 @@ while (true)
     }
   }
 
-  $state = bratonien_tools_cache_builder_aggregate($run_id, $worker_count, 'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.');
-  if (!$running && ($state === 'complete' || $state === 'error'))
+  $cancelling = is_file(bratonien_tools_main_cache_cancel_file());
+  $message = $cancelling
+    ? 'Piwigo-Bildcache wird abgebrochen.'
+    : 'Piwigo-Bildcache wird mit 6 parallelen Workern aufgebaut.';
+  $state = bratonien_tools_cache_builder_aggregate($run_id, $worker_count, $message);
+  if (!$running && in_array($state, array('complete','error','cancelled'), true))
   {
     break;
   }
@@ -481,10 +503,13 @@ foreach ($processes as $process)
   }
 }
 
+$was_cancelled = is_file(bratonien_tools_main_cache_cancel_file());
 $state = bratonien_tools_cache_builder_aggregate(
   $run_id,
   $worker_count,
-  $exit_error ? 'Piwigo-Bildcache beendet; mindestens ein Worker meldete einen Prozessfehler.' : 'Piwigo-Bildcache wurde aufgebaut.'
+  $was_cancelled
+    ? 'Piwigo-Bildcache-Aufbau wurde abgebrochen.'
+    : ($exit_error ? 'Piwigo-Bildcache beendet; mindestens ein Worker meldete einen Prozessfehler.' : 'Piwigo-Bildcache wurde aufgebaut.')
 );
 
 for ($i=0; $i<$worker_count; $i++)
@@ -492,6 +517,7 @@ for ($i=0; $i<$worker_count; $i++)
   @unlink(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-main-cache.worker-'.$run_id.'-'.$i.'.json');
 }
 
+@unlink(bratonien_tools_main_cache_cancel_file());
 flock($lock, LOCK_UN);
 fclose($lock);
 @unlink($lock_path);
