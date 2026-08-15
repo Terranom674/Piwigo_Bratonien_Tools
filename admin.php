@@ -62,6 +62,14 @@ foreach ($watermark['files'] as $file => $name)
   $watermark_meta[$file] = $option;
 }
 
+$current_watermark_meta = isset($watermark_meta[$watermark['file']])
+  ? $watermark_meta[$watermark['file']]
+  : array('width'=>0, 'height'=>0, 'url'=>'');
+$watermark['original_width'] = (int)$current_watermark_meta['width'];
+$watermark['original_height'] = (int)$current_watermark_meta['height'];
+$watermark['preview_url'] = (string)$current_watermark_meta['url'];
+$watermark['scale_percent'] = isset($watermark['scale_percent']) ? (float)$watermark['scale_percent'] : 100.0;
+
 foreach ($profiles as &$profile)
 {
   $file = (string)($profile['watermark_file'] ?? '');
