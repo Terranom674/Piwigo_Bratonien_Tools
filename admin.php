@@ -45,6 +45,34 @@ $categories = bratonien_tools_get_category_tree();
 $rules = bratonien_tools_get_album_rules();
 $engine = bratonien_tools_get_watermark_engine_config();
 
+$watermark_options = array();
+$watermark_meta = array();
+foreach ($watermark['files'] as $file => $name)
+{
+  $absolute = PHPWG_ROOT_PATH.ltrim($file, '/');
+  $size = is_file($absolute) ? @getimagesize($absolute) : false;
+  $option = array(
+    'file' => $file,
+    'name' => $name,
+    'width' => $size ? (int)$size[0] : 0,
+    'height' => $size ? (int)$size[1] : 0,
+    'url' => get_root_url().ltrim($file, '/'),
+  );
+  $watermark_options[] = $option;
+  $watermark_meta[$file] = $option;
+}
+
+foreach ($profiles as &$profile)
+{
+  $file = (string)($profile['watermark_file'] ?? '');
+  $meta = isset($watermark_meta[$file]) ? $watermark_meta[$file] : array('width'=>0,'height'=>0,'url'=>'');
+  $profile['original_width'] = (int)$meta['width'];
+  $profile['original_height'] = (int)$meta['height'];
+  $profile['preview_url'] = (string)$meta['url'];
+  $profile['scale_percent'] = isset($profile['scale_percent']) ? (float)$profile['scale_percent'] : 100.0;
+}
+unset($profile);
+
 $profile_names = array();
 foreach ($profiles as $profile)
 {
@@ -74,6 +102,7 @@ $template->assign(array(
   'BRATONIEN_ERRORS' => $errors,
   'PWG_TOKEN' => get_pwg_token(),
   'WATERMARK' => $watermark,
+  'WATERMARK_OPTIONS' => $watermark_options,
   'WATERMARK_PROFILES' => $profiles,
   'WATERMARK_DEFAULTS' => $defaults,
   'WATERMARK_CATEGORIES' => $categories,
