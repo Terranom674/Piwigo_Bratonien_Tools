@@ -87,11 +87,12 @@ function bratonien_tools_save_watermark_profile()
 {
   $table = bratonien_tools_table('watermark_profiles');
   $id = (int)($_POST['profile_id'] ?? 0);
+  $base_scale = function_exists('bratonien_tools_get_base_watermark_scale') ? bratonien_tools_get_base_watermark_scale() : 100.0;
 
   $data = array(
     'name' => trim((string)($_POST['profile_name'] ?? '')),
     'watermark_file' => bratonien_tools_validate_profile_file($_POST['profile_file'] ?? ''),
-    'scale_percent' => bratonien_tools_profile_scale_percent($_POST['profile_scale_percent'] ?? 100),
+    'scale_percent' => bratonien_tools_profile_scale_percent($_POST['profile_scale_percent'] ?? null, $id > 0 ? 100.0 : $base_scale),
     'xpos' => max(0, min(100, (int)($_POST['profile_xpos'] ?? 90))),
     'ypos' => max(0, min(100, (int)($_POST['profile_ypos'] ?? 90))),
     'xrepeat' => max(0, min(20, (int)($_POST['profile_xrepeat'] ?? 0))),
