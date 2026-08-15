@@ -7,6 +7,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 check_status(ACCESS_ADMINISTRATOR);
 
 require_once(BRATONIEN_TOOLS_PATH . 'include/tool_registry.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 
 $tools = bratonien_tools_get_tools();
 $messages = array();
@@ -39,16 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
   }
 }
 
-if (isset($tools['watermark']))
-{
-  $template->assign('WATERMARK', bratonien_tools_get_watermark_data());
-}
-
 $template->assign(array(
   'BRATONIEN_TOOLS' => $tools,
   'BRATONIEN_MESSAGES' => $messages,
   'BRATONIEN_ERRORS' => $errors,
   'PWG_TOKEN' => get_pwg_token(),
+  'WATERMARK' => bratonien_tools_get_watermark_data(),
+  'WATERMARK_PROFILES' => bratonien_tools_get_watermark_profiles(),
 ));
 
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
