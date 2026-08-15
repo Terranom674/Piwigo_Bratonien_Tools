@@ -23,9 +23,10 @@ function bratonien_tools_validate_default_profile($value)
   }
 
   $id = (int)$value;
-  if ($id <= 0 || !bratonien_tools_get_watermark_profile($id))
+  $profile = $id > 0 ? bratonien_tools_get_watermark_profile($id) : null;
+  if (!$profile || empty($profile['active']))
   {
-    throw new RuntimeException('Ungueltiges Wasserzeichenprofil in den globalen Regeln.');
+    throw new RuntimeException('Ungueltiges oder inaktives Wasserzeichenprofil in den globalen Regeln.');
   }
 
   return $id;
