@@ -64,8 +64,7 @@ function bratonien_tools_album_shares_init()
 
   if (!$authorized && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_share_password']))
   {
-    $password = (string)$_POST['bratonien_share_password'];
-    if (password_verify($password, $share['password_hash']))
+    if (password_verify((string)$_POST['bratonien_share_password'], $share['password_hash']))
     {
       $_SESSION[$session_key] = true;
       $authorized = true;
@@ -92,26 +91,32 @@ function bratonien_tools_album_shares_init()
 function bratonien_tools_get_share_by_token($token)
 {
   $hash = hash('sha256', $token);
-  $query = '\nSELECT s.*, c.name AS category_name\n  FROM '.bratonien_tools_shares_table().' s\n  JOIN '.CATEGORIES_TABLE.' c ON c.id = s.category_id\n  WHERE s.token_hash = \''.pwg_db_real_escape_string($hash).'\'\n    AND s.active = 1\n  LIMIT 1\n;';
+  $query = 'SELECT s.*, c.name AS category_name FROM '.bratonien_tools_shares_table().' s '
+    .'JOIN '.CATEGORIES_TABLE.' c ON c.id = s.category_id '
+    ."WHERE s.token_hash = '".pwg_db_real_escape_string($hash)."' AND s.active = 1 LIMIT 1";
   $result = pwg_query($query);
   return pwg_db_num_rows($result) ? pwg_db_fetch_assoc($result) : null;
 }
 
 function bratonien_tools_get_album_shares()
 {
-  $query = '\nSELECT s.*, c.name AS category_name, u.username AS created_by_name\n  FROM '.bratonien_tools_shares_table().' s\n  LEFT JOIN '.CATEGORIES_TABLE.' c ON c.id = s.category_id\n  LEFT JOIN '.USERS_TABLE.' u ON u.id = s.created_by\n  ORDER BY s.created_at DESC\n;';
+  $query = 'SELECT s.*, c.name AS category_name, u.username AS created_by_name '
+    .'FROM '.bratonien_tools_shares_table().' s '
+    .'LEFT JOIN '.CATEGORIES_TABLE.' c ON c.id = s.category_id '
+    .'LEFT JOIN '.USERS_TABLE.' u ON u.id = s.created_by '
+    .'ORDER BY s.created_at DESC';
   return query2array($query);
 }
 
 function bratonien_tools_get_private_albums()
 {
-  $query = '\nSELECT id, name, uppercats\n  FROM '.CATEGORIES_TABLE.'\n  WHERE status = \'private\'\n  ORDER BY global_rank ASC, name ASC\n;';
+  $query = "SELECT id, name, uppercats FROM ".CATEGORIES_TABLE." WHERE status = 'private' ORDER BY global_rank ASC, name ASC";
   return query2array($query);
 }
 
 function bratonien_tools_create_album_share()
 {
-  global $user, $page;
+  global $user;
 
   $category_id = isset($_POST['share_category_id']) ? (int)$_POST['share_category_id'] : 0;
   $password = (string)($_POST['share_password'] ?? '');
@@ -126,7 +131,7 @@ function bratonien_tools_create_album_share()
     throw new Exception('Für eine geschützte Freigabe ist ein Passwort erforderlich.');
   }
 
-  $query = 'SELECT id FROM '.CATEGORIES_TABLE.' WHERE id = '.$category_id.' AND status = \'private\' LIMIT 1';
+  $query = 'SELECT id FROM '.CATEGORIES_TABLE." WHERE id = $category_id AND status = 'private' LIMIT 1";
   if (pwg_db_num_rows(pwg_query($query)) === 0)
   {
     throw new Exception('Das gewählte Album ist nicht privat oder existiert nicht.');
@@ -158,10 +163,15 @@ function bratonien_tools_create_album_share()
   $token = bin2hex(random_bytes(24));
   $token_hash = hash('sha256', $token);
   $password_hash = password_hash($password, PASSWORD_DEFAULT);
+  $expires_sql = $expires_at === null ? 'NULL' : "'".pwg_db_real_escape_string($expires_at)."'";
 
-  $query = '\nINSERT INTO '.bratonien_tools_shares_table().'\n  (category_id, user_id, token_hash, password_hash, created_by, created_at, expires_at, active)\nVALUES\n  ('.(int)$category_id.', '.(int)$new_user_id.', \' '.pwg_db_real_escape_string($token_hash).'\', \' '.pwg_db_real_escape_string($password_hash).'\', '.(int)$user['id'].', NOW(), '.($expires_at === null ? 'NULL' : '\''.pwg_db_real_escape_string($expires_at).'\'').', 1)\n;';
-  $query = str_replace("' ", "'", $query);
+  $query = 'INSERT INTO '.bratonien_tools_shares_table()
+    .' (category_id, user_id, token_hash, password_hash, created_by, created_at, expires_at, active) VALUES ('
+    .(int)$category_id.', '.(int)$new_user_id.", '".pwg_db_real_escape_string($token_hash)."', '"
+    .pwg_db_real_escape_string($password_hash)."', ".(int)$user['id'].', NOW(), '.$expires_sql.', 1)';
   pwg_query($query);
+
+  invalidate_user_cache();
 
   return array(
     'message' => 'Geschützte Albumfreigabe erstellt: '.get_absolute_root_url().'?brshare='.$token,
@@ -183,7 +193,20 @@ function bratonien_tools_revoke_album_share()
     throw new Exception('Freigabe nicht gefunden.');
   }
   $row = pwg_db_fetch_assoc($result);
-  $user_id = (int)$row['user_id'];
+  bratonien_tools_delete_share_user((int)$row['user_id']);
+  pwg_query('DELETE FROM '.bratonien_tools_shares_table().' WHERE id = '.$share_id.' LIMIT 1');
+  invalidate_user_cache();
+
+  return array('message' => 'Albumfreigabe wurde widerrufen.');
+}
+
+function bratonien_tools_delete_share_user($user_id)
+{
+  $user_id = (int)$user_id;
+  if ($user_id < 1)
+  {
+    return;
+  }
 
   pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE user_id = '.$user_id);
   if (defined('USER_GROUP_TABLE'))
@@ -196,17 +219,12 @@ function bratonien_tools_revoke_album_share()
   {
     delete_user_sessions($user_id);
   }
-
-  pwg_query('DELETE FROM '.bratonien_tools_shares_table().' WHERE id = '.$share_id.' LIMIT 1');
-
-  return array('message' => 'Albumfreigabe wurde widerrufen.');
 }
 
 function bratonien_tools_grant_album_access($user_id, $category_id)
 {
   $user_id = (int)$user_id;
   $category_id = (int)$category_id;
-
   $query = 'SELECT 1 FROM '.USER_ACCESS_TABLE.' WHERE user_id = '.$user_id.' AND cat_id = '.$category_id.' LIMIT 1';
   if (pwg_db_num_rows(pwg_query($query)) === 0)
   {
@@ -223,6 +241,19 @@ function bratonien_tools_ensure_private_album_access($category_id, $user_id = nu
     return;
   }
   bratonien_tools_grant_album_access($uid, (int)$category_id);
+}
+
+function bratonien_tools_album_shares_on_delete_categories($category_ids)
+{
+  foreach ((array)$category_ids as $category_id)
+  {
+    $result = pwg_query('SELECT id, user_id FROM '.bratonien_tools_shares_table().' WHERE category_id = '.(int)$category_id);
+    while ($row = pwg_db_fetch_assoc($result))
+    {
+      bratonien_tools_delete_share_user((int)$row['user_id']);
+      pwg_query('DELETE FROM '.bratonien_tools_shares_table().' WHERE id = '.(int)$row['id'].' LIMIT 1');
+    }
+  }
 }
 
 function bratonien_tools_share_access_page($error = '', $token = '', $show_form = false)
