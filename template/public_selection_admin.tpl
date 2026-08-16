@@ -1,3 +1,6 @@
+{combine_css path='plugins/Piwigo_Bratonien_Tools/css/admin_tabs.css' version=1}
+{combine_script id='bratonien.admin_tabs' path='plugins/Piwigo_Bratonien_Tools/js/admin_tabs.js' load='footer'}
+
 <section class="bratonien-section" id="auswahl-download">
   <h3>Fotoauswahl & Download</h3>
   <p class="bratonien-section__intro">Steuert, wer in der öffentlichen Galerie einzelne Fotos markieren und gesammelt herunterladen darf.</p>
