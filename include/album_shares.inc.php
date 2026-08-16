@@ -34,6 +34,41 @@ function bratonien_tools_drop_album_shares_table()
   pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_shares_table().'`');
 }
 
+/**
+ * Secret used to derive stable, non-guessable share tokens without storing the
+ * raw token in the database. This makes links reproducible for the admin UI.
+ */
+function bratonien_tools_share_secret()
+{
+  $key = 'bratonien_album_share_secret';
+  $secret = function_exists('conf_get_param') ? (string)conf_get_param($key, '') : '';
+
+  if ($secret === '')
+  {
+    $secret = bin2hex(random_bytes(32));
+    if (function_exists('conf_update_param'))
+    {
+      conf_update_param($key, $secret);
+    }
+  }
+
+  return $secret;
+}
+
+function bratonien_tools_share_token($user_id, $category_id)
+{
+  return substr(
+    hash_hmac('sha256', 'share:'.(int)$user_id.':'.(int)$category_id, bratonien_tools_share_secret()),
+    0,
+    48
+  );
+}
+
+function bratonien_tools_share_url($token)
+{
+  return get_absolute_root_url().'?brshare='.$token;
+}
+
 function bratonien_tools_album_shares_init()
 {
   if (!isset($_GET['brshare']))
@@ -58,11 +93,12 @@ function bratonien_tools_album_shares_init()
     bratonien_tools_share_access_page('Diese Freigabe ist abgelaufen.');
   }
 
+  $password_required = !empty($share['password_hash']);
   $session_key = 'bratonien_share_'.(int)$share['id'];
-  $authorized = !empty($_SESSION[$session_key]);
+  $authorized = !$password_required || !empty($_SESSION[$session_key]);
   $error = '';
 
-  if (!$authorized && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_share_password']))
+  if ($password_required && !$authorized && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_share_password']))
   {
     if (password_verify((string)$_POST['bratonien_share_password'], $share['password_hash']))
     {
@@ -105,7 +141,19 @@ function bratonien_tools_get_album_shares()
     .'LEFT JOIN '.CATEGORIES_TABLE.' c ON c.id = s.category_id '
     .'LEFT JOIN '.USERS_TABLE.' u ON u.id = s.created_by '
     .'ORDER BY s.created_at DESC';
-  return query2array($query);
+  $shares = query2array($query);
+
+  foreach ($shares as &$share)
+  {
+    $token = bratonien_tools_share_token((int)$share['user_id'], (int)$share['category_id']);
+    $expected_hash = hash('sha256', $token);
+    $share['password_protected'] = !empty($share['password_hash']);
+    $share['link_copyable'] = hash_equals((string)$share['token_hash'], $expected_hash);
+    $share['share_url'] = $share['link_copyable'] ? bratonien_tools_share_url($token) : '';
+  }
+  unset($share);
+
+  return $shares;
 }
 
 function bratonien_tools_get_private_albums()
@@ -125,10 +173,6 @@ function bratonien_tools_create_album_share()
   if ($category_id < 1)
   {
     throw new Exception('Bitte ein privates Album auswählen.');
-  }
-  if ($password === '')
-  {
-    throw new Exception('Für eine geschützte Freigabe ist ein Passwort erforderlich.');
   }
 
   $query = 'SELECT id FROM '.CATEGORIES_TABLE." WHERE id = $category_id AND status = 'private' LIMIT 1";
@@ -175,9 +219,9 @@ function bratonien_tools_create_album_share()
   pwg_query('UPDATE '.USER_INFOS_TABLE." SET status = 'generic', level = ".$level.' WHERE user_id = '.(int)$new_user_id);
   bratonien_tools_grant_album_access((int)$new_user_id, $category_id);
 
-  $token = bin2hex(random_bytes(24));
+  $token = bratonien_tools_share_token((int)$new_user_id, $category_id);
   $token_hash = hash('sha256', $token);
-  $password_hash = password_hash($password, PASSWORD_DEFAULT);
+  $password_hash = $password === '' ? '' : password_hash($password, PASSWORD_DEFAULT);
   $expires_sql = $expires_at === null ? 'NULL' : "'".pwg_db_real_escape_string($expires_at)."'";
 
   $query = 'INSERT INTO '.bratonien_tools_shares_table()
@@ -189,7 +233,40 @@ function bratonien_tools_create_album_share()
   invalidate_user_cache();
 
   return array(
-    'message' => 'Geschützte Albumfreigabe erstellt: '.get_absolute_root_url().'?brshare='.$token,
+    'message' => ($password === '' ? 'Albumfreigabe' : 'Passwortgeschützte Albumfreigabe').' erstellt: '.bratonien_tools_share_url($token),
+  );
+}
+
+/**
+ * Legacy shares created before reproducible tokens cannot expose their old raw
+ * token because only its hash was stored. Regeneration intentionally replaces
+ * that old token so the link becomes copyable from the admin UI afterwards.
+ */
+function bratonien_tools_regenerate_album_share_link()
+{
+  $share_id = isset($_POST['share_id']) ? (int)$_POST['share_id'] : 0;
+  if ($share_id < 1)
+  {
+    throw new Exception('Ungültige Freigabe.');
+  }
+
+  $query = 'SELECT id, category_id, user_id FROM '.bratonien_tools_shares_table().' WHERE id = '.$share_id.' AND active = 1 LIMIT 1';
+  $result = pwg_query($query);
+  if (!pwg_db_num_rows($result))
+  {
+    throw new Exception('Freigabe nicht gefunden.');
+  }
+
+  $share = pwg_db_fetch_assoc($result);
+  $token = bratonien_tools_share_token((int)$share['user_id'], (int)$share['category_id']);
+  $token_hash = hash('sha256', $token);
+
+  pwg_query(
+    'UPDATE '.bratonien_tools_shares_table()." SET token_hash = '".pwg_db_real_escape_string($token_hash)."' WHERE id = ".$share_id.' LIMIT 1'
+  );
+
+  return array(
+    'message' => 'Neuer Freigabelink erzeugt: '.bratonien_tools_share_url($token),
   );
 }
 
@@ -359,7 +436,7 @@ function bratonien_tools_album_shares_on_delete_categories($category_ids)
 function bratonien_tools_share_access_page($error = '', $token = '', $show_form = false)
 {
   header('Content-Type: text/html; charset=UTF-8');
-  $action = htmlspecialchars(get_absolute_root_url().'?brshare='.$token, ENT_QUOTES, 'UTF-8');
+  $action = htmlspecialchars(bratonien_tools_share_url($token), ENT_QUOTES, 'UTF-8');
   $message = $error !== '' ? '<p class="brshare-error">'.htmlspecialchars($error, ENT_QUOTES, 'UTF-8').'</p>' : '';
   $form = '';
   if ($show_form)
