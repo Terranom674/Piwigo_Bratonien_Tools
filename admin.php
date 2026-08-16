@@ -12,6 +12,21 @@ $tools = bratonien_tools_get_tools();
 $messages = array();
 $errors = array();
 
+// If post_max_size is exceeded, PHP discards both $_POST and $_FILES before
+// the plugin can inspect the upload. Detect that situation explicitly so the
+// admin page does not silently reload without feedback.
+if (
+  $_SERVER['REQUEST_METHOD'] === 'POST'
+  && empty($_POST)
+  && empty($_FILES)
+  && !empty($_SERVER['CONTENT_LENGTH'])
+)
+{
+  $errors[] = 'Upload abgelehnt: Die Anfrage ist groesser als das PHP-Limit post_max_size ('
+    .ini_get('post_max_size').'). Das Datei-Limit upload_max_filesize liegt bei '
+    .ini_get('upload_max_filesize').'.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
 {
   check_pwg_token();
