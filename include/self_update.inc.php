@@ -74,10 +74,16 @@ function bratonien_tools_self_update_check()
 
   if (!empty($info['update_available']))
   {
-    return array('message' => 'Update verfügbar: '.$info['current'].' → '.$info['remote'].'.');
+    return array(
+      'message' => 'Update verfügbar: '.$info['current'].' → '.$info['remote'].'.',
+      'self_update' => $info,
+    );
   }
 
-  return array('message' => 'Bratonien Tools ist aktuell (Version '.$info['current'].').');
+  return array(
+    'message' => 'Bratonien Tools ist aktuell (Version '.$info['current'].').',
+    'self_update' => $info,
+  );
 }
 
 function bratonien_tools_self_update_run()
@@ -104,7 +110,10 @@ function bratonien_tools_self_update_run()
   }
   if (empty($info['update_available']))
   {
-    return array('message' => 'Kein Update nötig. Installiert ist bereits Version '.$info['current'].'.');
+    return array(
+      'message' => 'Kein Update nötig. Installiert ist bereits Version '.$info['current'].'.',
+      'self_update' => $info,
+    );
   }
 
   $work_root = rtrim(PHPWG_ROOT_PATH, '/').'/_data/bratonien-updater';
@@ -210,13 +219,22 @@ function bratonien_tools_self_update_run()
   }
   catch (Throwable $e)
   {
-    // The files are already updated. Keep them and report the post-update issue.
     bratonien_tools_self_update_rrmdir($run_dir);
     throw new RuntimeException('Plugin-Dateien wurden aktualisiert, aber die Nachbereitung meldet: '.$e->getMessage());
   }
 
   bratonien_tools_self_update_rrmdir($run_dir);
-  return array('message' => 'Bratonien Tools wurde auf Version '.$package_version.' aktualisiert. Backup: '.$backup_dir);
+  $updated_info = array(
+    'checked_at' => time(),
+    'current' => $package_version,
+    'remote' => $package_version,
+    'update_available' => false,
+    'error' => null,
+  );
+  return array(
+    'message' => 'Bratonien Tools wurde auf Version '.$package_version.' aktualisiert. Backup: '.$backup_dir,
+    'self_update' => $updated_info,
+  );
 }
 
 function bratonien_tools_self_update_rrmdir($path)
