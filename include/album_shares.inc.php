@@ -260,27 +260,87 @@ function bratonien_tools_ensure_private_album_access($category_id, $user_id = nu
 
 function bratonien_tools_preserve_private_album_access()
 {
-  if (!defined('IN_ADMIN') || $_SERVER['REQUEST_METHOD'] !== 'POST')
-  {
-    return;
-  }
-  if ((string)($_GET['page'] ?? '') !== 'cat_options' || (string)($_GET['section'] ?? '') !== 'status')
-  {
-    return;
-  }
-  if (!isset($_POST['falsify']) || empty($_POST['cat_true']) || !is_array($_POST['cat_true']))
+  global $user;
+
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($user['id']))
   {
     return;
   }
 
-  check_pwg_token();
-  foreach ($_POST['cat_true'] as $category_id)
+  $category_ids = array();
+  $private_intent = false;
+
+  if (
+    defined('IN_ADMIN')
+    && (string)($_GET['page'] ?? '') === 'cat_options'
+    && (string)($_GET['section'] ?? '') === 'status'
+    && isset($_POST['falsify'])
+    && !empty($_POST['cat_true'])
+    && is_array($_POST['cat_true'])
+  )
   {
-    if (preg_match('/^\d+$/', (string)$category_id))
+    $category_ids = $_POST['cat_true'];
+    $private_intent = true;
+  }
+
+  foreach (array('status', 'privacy', 'visibility') as $field)
+  {
+    if (isset($_POST[$field]) && strtolower((string)$_POST[$field]) === 'private')
     {
-      bratonien_tools_ensure_private_album_access((int)$category_id);
+      $private_intent = true;
     }
   }
+
+  if (isset($_POST['category_id']))
+  {
+    $category_ids[] = $_POST['category_id'];
+  }
+  if (isset($_POST['cat_id']))
+  {
+    $category_ids[] = $_POST['cat_id'];
+  }
+  if (isset($_POST['category_ids']) && is_array($_POST['category_ids']))
+  {
+    $category_ids = array_merge($category_ids, $_POST['category_ids']);
+  }
+
+  if (!$private_intent || empty($category_ids))
+  {
+    return;
+  }
+
+  $ids = array_values(array_unique(array_filter(array_map('intval', $category_ids), function ($id) {
+    return $id > 0;
+  })));
+  if (empty($ids))
+  {
+    return;
+  }
+
+  $user_id = (int)$user['id'];
+
+  register_shutdown_function(function () use ($ids, $user_id) {
+    foreach ($ids as $category_id)
+    {
+      $query = 'SELECT status FROM '.CATEGORIES_TABLE.' WHERE id = '.(int)$category_id.' LIMIT 1';
+      $result = pwg_query($query);
+      if (!pwg_db_num_rows($result))
+      {
+        continue;
+      }
+
+      $row = pwg_db_fetch_assoc($result);
+      if ($row['status'] === 'private')
+      {
+        bratonien_tools_grant_album_access($user_id, (int)$category_id);
+      }
+    }
+
+    if (function_exists('invalidate_user_cache'))
+    {
+      invalidate_user_cache();
+    }
+  });
 }
 
 function bratonien_tools_album_shares_on_delete_categories($category_ids)
