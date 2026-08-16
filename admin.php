@@ -69,7 +69,14 @@ $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
 $album_lock_page_number = isset($_GET['br_album_page']) ? max(1, (int)$_GET['br_album_page']) : 1;
-$album_lock_page = bratonien_tools_get_album_lock_page($album_lock_page_number, 10);
+$album_lock_search = isset($_GET['br_album_search']) ? trim((string)$_GET['br_album_search']) : '';
+$album_lock_page = bratonien_tools_get_album_lock_page($album_lock_page_number, 10, $album_lock_search);
+$album_pager_url = get_root_url().'admin.php?page=plugin-'.BRATONIEN_TOOLS_ID;
+if ($album_lock_search !== '')
+{
+  $album_pager_url .= '&amp;br_album_search='.rawurlencode($album_lock_search);
+}
+$album_pager_url .= '&amp;br_album_page=';
 $self_update = is_array($self_update_override) ? $self_update_override : bratonien_tools_remote_update_info(false);
 $self_update_environment = array(
   'webmaster' => function_exists('is_webmaster') ? is_webmaster() : false,
@@ -162,7 +169,8 @@ $template->assign(array(
   'BRATONIEN_ALBUM_SHARES' => $album_shares,
   'BRATONIEN_PRIVATE_ALBUMS' => $private_albums,
   'BRATONIEN_ALBUM_LOCK_PAGE' => $album_lock_page,
-  'BRATONIEN_ALBUM_PAGER_URL' => get_root_url().'admin.php?page=plugin-'.BRATONIEN_TOOLS_ID.'&amp;br_album_page=',
+  'BRATONIEN_ALBUM_PAGER_URL' => $album_pager_url,
+  'BRATONIEN_ALBUM_SEARCH' => $album_lock_search,
   'SELF_UPDATE' => $self_update,
   'SELF_UPDATE_ENV' => $self_update_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
