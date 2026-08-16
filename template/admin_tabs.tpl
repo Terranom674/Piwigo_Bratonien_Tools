@@ -1,3 +1,4 @@
+{literal}
 <style>
 .bratonien-admin { max-width:none !important; width:100%; margin:0 !important; }
 .bratonien-nav { display:none !important; }
@@ -92,3 +93,4 @@
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initBratonienTabs); else initBratonienTabs();
 })();
 </script>
+{/literal}
