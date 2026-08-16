@@ -3,9 +3,8 @@
 }
 
 .bratonien-selection-bar {
-  position:sticky;
-  top:.5rem;
-  z-index:1000;
+  position:relative;
+  z-index:1;
   display:flex;
   flex-wrap:wrap;
   gap:.45rem .7rem;
