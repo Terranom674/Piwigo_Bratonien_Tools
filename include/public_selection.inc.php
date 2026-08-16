@@ -251,8 +251,9 @@ function bratonien_tools_public_selection_render()
   $template->set_filename('bratonien_selection_assets', BRATONIEN_TOOLS_PATH.'template/public_selection_assets.tpl');
   $template->parse('bratonien_selection_assets', false);
 
-  $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-state-default pwg-button" title="Bilder auswählen" aria-label="Bilder auswählen">'
-    .'<span class="pwg-icon fas fa-object-group fa-fw" aria-hidden="true"></span>'
+  $button = '<a href="#" id="bratonien-selection-toggle" class="nav-link" title="Bilder auswählen" aria-label="Bilder auswählen">'
+    .'<i class="fas fa-check-square fa-fw" aria-hidden="true"></i>'
+    .'<span class="d-lg-none ml-2 text-capitalize">Auswahl</span>'
     .'</a>';
 
   $template->add_index_button($button, 49);
