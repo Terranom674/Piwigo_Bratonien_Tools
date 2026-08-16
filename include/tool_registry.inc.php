@@ -12,6 +12,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/asset_manager.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/self_update.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -60,6 +61,12 @@ function bratonien_tools_get_tools()
     ),
     'asset_delete' => array(
       'handler' => 'bratonien_tools_delete_asset',
+    ),
+    'self_update_check' => array(
+      'handler' => 'bratonien_tools_self_update_check',
+    ),
+    'self_update_run' => array(
+      'handler' => 'bratonien_tools_self_update_run',
     ),
   );
 }
