@@ -4,12 +4,20 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_get_album_lock_page($page = 1, $per_page = 10)
+function bratonien_tools_get_album_lock_page($page = 1, $per_page = 10, $search = '')
 {
   $per_page = max(1, min(10, (int)$per_page));
   $page = max(1, (int)$page);
+  $search = trim((string)$search);
 
-  $count_row = pwg_db_fetch_assoc(pwg_query('SELECT COUNT(*) AS total FROM '.CATEGORIES_TABLE));
+  $where = '';
+  if ($search !== '')
+  {
+    $escaped = pwg_db_real_escape_string($search);
+    $where = " WHERE name LIKE '%".$escaped."%'";
+  }
+
+  $count_row = pwg_db_fetch_assoc(pwg_query('SELECT COUNT(*) AS total FROM '.CATEGORIES_TABLE.$where));
   $total = $count_row ? (int)$count_row['total'] : 0;
   $pages = max(1, (int)ceil($total / $per_page));
   if ($page > $pages)
@@ -19,6 +27,7 @@ function bratonien_tools_get_album_lock_page($page = 1, $per_page = 10)
 
   $offset = ($page - 1) * $per_page;
   $query = 'SELECT id, name, uppercats, status FROM '.CATEGORIES_TABLE
+    .$where
     .' ORDER BY global_rank ASC, name ASC'
     .' LIMIT '.$offset.', '.$per_page;
 
@@ -27,6 +36,7 @@ function bratonien_tools_get_album_lock_page($page = 1, $per_page = 10)
     'page' => $page,
     'pages' => $pages,
     'total' => $total,
+    'search' => $search,
     'has_previous' => $page > 1,
     'has_next' => $page < $pages,
     'previous_page' => max(1, $page - 1),
