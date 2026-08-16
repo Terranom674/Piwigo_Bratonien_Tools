@@ -11,6 +11,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/tool_registry.inc.php');
 $tools = bratonien_tools_get_tools();
 $messages = array();
 $errors = array();
+$self_update_override = null;
 
 // If post_max_size is exceeded, PHP discards both $_POST and $_FILES before
 // the plugin can inspect the upload. Detect that situation explicitly so the
@@ -45,6 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
       {
         $messages[] = $result['message'];
       }
+      if (!empty($result['self_update']) && is_array($result['self_update']))
+      {
+        $self_update_override = $result['self_update'];
+      }
     }
     catch (Throwable $e)
     {
@@ -64,7 +69,7 @@ $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
-$self_update = bratonien_tools_remote_update_info(false);
+$self_update = is_array($self_update_override) ? $self_update_override : bratonien_tools_remote_update_info(false);
 $self_update_environment = array(
   'webmaster' => function_exists('is_webmaster') ? is_webmaster() : false,
   'plugins_writable' => is_writable(dirname(rtrim(BRATONIEN_TOOLS_PATH, '/'))),
