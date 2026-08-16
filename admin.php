@@ -47,6 +47,8 @@ $engine = bratonien_tools_get_watermark_engine_config();
 $cache_workers = bratonien_tools_get_cache_worker_settings();
 $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
+$assets = bratonien_tools_get_assets();
+$asset_environment = bratonien_tools_get_asset_environment();
 $selected_public_selection_groups = array_fill_keys($public_selection['groups'], true);
 foreach ($public_selection_groups as &$group)
 {
@@ -127,6 +129,8 @@ $template->assign(array(
   'CACHE_WORKERS' => $cache_workers,
   'PUBLIC_SELECTION' => $public_selection,
   'PUBLIC_SELECTION_GROUPS' => $public_selection_groups,
+  'BRATONIEN_ASSETS' => $assets,
+  'ASSET_ENV' => $asset_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
 ));
 
@@ -135,3 +139,6 @@ $template->assign_var_from_handle('ADMIN_CONTENT', 'plugin_admin_content');
 
 $template->set_filename('public_selection_admin_content', BRATONIEN_TOOLS_PATH . 'template/public_selection_admin.tpl');
 $template->concat('ADMIN_CONTENT', $template->parse('public_selection_admin_content', true));
+
+$template->set_filename('asset_manager_admin_content', BRATONIEN_TOOLS_PATH . 'template/asset_manager_admin.tpl');
+$template->concat('ADMIN_CONTENT', $template->parse('asset_manager_admin_content', true));
