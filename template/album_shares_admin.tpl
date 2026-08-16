@@ -1,6 +1,6 @@
 <section class="bratonien-section" id="freigaben">
   <h3>Geschützte Albumfreigaben</h3>
-  <p class="bratonien-section__intro">Private Alben per individuellem Link und Passwort freigeben – ohne Abhängigkeit von ShareAlbum.</p>
+  <p class="bratonien-section__intro">Private Alben per individuellem Link teilen – optional mit Passwort und Ablaufdatum, ohne Abhängigkeit von ShareAlbum.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
@@ -83,10 +83,10 @@
             {/foreach}
           </select>
 
-          <label for="share_password">Passwort</label>
-          <input id="share_password" type="password" name="share_password" autocomplete="new-password" required>
+          <label for="share_password">Passwort (optional)</label>
+          <input id="share_password" type="password" name="share_password" autocomplete="new-password" placeholder="Leer lassen für Freigabe nur per Link">
 
-          <label for="share_expires_at">Ablaufdatum</label>
+          <label for="share_expires_at">Ablaufdatum (optional)</label>
           <input id="share_expires_at" type="datetime-local" name="share_expires_at">
         </div>
         <div class="bratonien-actions">
@@ -97,23 +97,23 @@
 
     <div class="bratonien-card">
       <h4>Hinweis</h4>
-      <p class="bratonien-muted">Die Freigabe verwendet einen eigenen technischen Piwigo-Benutzer mit Zugriff ausschließlich auf das gewählte private Album. Das sichtbare Freigabepasswort wird nur als Hash gespeichert.</p>
-      <p class="bratonien-muted">Der erzeugte Link wird nach dem Erstellen oben als Meldung angezeigt. Ohne korrektes Passwort erfolgt kein Zugriff.</p>
+      <p class="bratonien-muted">Jede Freigabe erhält einen eigenen, nicht erratbaren Link. Ein Passwort ist optional; ohne Passwort genügt der Link bis zum Widerruf oder Ablaufdatum.</p>
+      <p class="bratonien-muted">Passwörter werden nur als Hash gespeichert. Der Freigabelink bleibt in der Liste unten sichtbar und kann jederzeit kopiert werden.</p>
     </div>
   </div>
 
   <div class="bratonien-card" style="margin-top:16px;">
     <h4>Aktive Freigaben</h4>
     {if empty($BRATONIEN_ALBUM_SHARES)}
-      <p class="bratonien-muted">Noch keine geschützten Freigaben vorhanden.</p>
+      <p class="bratonien-muted">Noch keine Freigaben vorhanden.</p>
     {else}
       <table class="bratonien-rule-table">
         <thead>
           <tr>
             <th>Album</th>
-            <th>Erstellt</th>
+            <th>Schutz</th>
             <th>Ablauf</th>
-            <th>Erstellt von</th>
+            <th>Freigabelink</th>
             <th>Aktion</th>
           </tr>
         </thead>
@@ -121,9 +121,23 @@
           {foreach from=$BRATONIEN_ALBUM_SHARES item=share}
             <tr>
               <td>{$share.category_name|default:'Gelöschtes Album'|escape:html}</td>
-              <td>{$share.created_at|escape:html}</td>
+              <td>{if $share.password_protected}Passwort{else}Nur Link{/if}</td>
               <td>{if $share.expires_at}{$share.expires_at|escape:html}{else}Unbegrenzt{/if}</td>
-              <td>{$share.created_by_name|default:'#'|escape:html}</td>
+              <td style="min-width:360px;">
+                {if $share.link_copyable}
+                  <div class="bratonien-actions" style="align-items:center; gap:6px; flex-wrap:nowrap;">
+                    <input id="br-share-link-{$share.id}" type="text" value="{$share.share_url|escape:html}" readonly style="min-width:260px; flex:1;">
+                    <button class="buttonLike bratonien-copy-share" type="button" data-copy-target="br-share-link-{$share.id}" title="Freigabelink kopieren" aria-label="Freigabelink kopieren"><span class="icon-docs" aria-hidden="true"></span></button>
+                  </div>
+                {else}
+                  <span class="bratonien-muted">Alter Link kann nicht rekonstruiert werden.</span>
+                  <form method="post" style="display:inline; margin-left:6px;">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="share_id" value="{$share.id}">
+                    <button class="buttonLike" type="submit" name="bratonien_tool" value="album_share_regenerate_link" onclick="return confirm('Neuen Freigabelink erzeugen? Der bisherige Link wird dadurch ungültig.');">Neuen Link erzeugen</button>
+                  </form>
+                {/if}
+              </td>
               <td>
                 <form method="post" style="display:inline">
                   <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
@@ -138,3 +152,44 @@
     {/if}
   </div>
 </section>
+
+{literal}
+<script>
+(function () {
+  'use strict';
+
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('.bratonien-copy-share');
+    if (!button) return;
+
+    var input = document.getElementById(button.getAttribute('data-copy-target'));
+    if (!input) return;
+
+    function copied() {
+      var oldTitle = button.getAttribute('title') || 'Freigabelink kopieren';
+      button.setAttribute('title', 'Kopiert');
+      button.setAttribute('aria-label', 'Freigabelink kopiert');
+      setTimeout(function () {
+        button.setAttribute('title', oldTitle);
+        button.setAttribute('aria-label', 'Freigabelink kopieren');
+      }, 1400);
+    }
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(input.value).then(copied).catch(function () {
+        input.focus();
+        input.select();
+        document.execCommand('copy');
+        copied();
+      });
+      return;
+    }
+
+    input.focus();
+    input.select();
+    document.execCommand('copy');
+    copied();
+  });
+})();
+</script>
+{/literal}
