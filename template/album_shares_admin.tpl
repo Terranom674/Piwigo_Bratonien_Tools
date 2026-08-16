@@ -29,7 +29,7 @@
           <thead>
             <tr>
               <th>Album</th>
-              <th style="width:150px; text-align:center;">Zugriff</th>
+              <th style="width:70px; text-align:center;">Zugriff</th>
             </tr>
           </thead>
           <tbody>
@@ -41,9 +41,9 @@
                     <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
                     <input type="hidden" name="lock_category_id" value="{$album.id}">
                     {if $album.status == 'private'}
-                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist privat – klicken zum Entsperren" aria-label="Album entsperren" onclick="return confirm('Dieses Album wieder öffentlich schalten?');"><i class="fas fa-lock-open" aria-hidden="true"></i> Entsperren</button>
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist privat – klicken zum Entsperren" aria-label="Album entsperren" onclick="return confirm('Dieses Album wieder öffentlich schalten?');"><span class="icon-lock" aria-hidden="true"></span></button>
                     {else}
-                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist öffentlich – klicken zum Sperren" aria-label="Album sperren" onclick="return confirm('Dieses Album auf privat stellen?');"><i class="fas fa-lock" aria-hidden="true"></i> Sperren</button>
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist öffentlich – klicken zum Sperren" aria-label="Album sperren" onclick="return confirm('Dieses Album auf privat stellen?');"><span class="icon-eye" aria-hidden="true"></span></button>
                     {/if}
                   </form>
                 </td>
