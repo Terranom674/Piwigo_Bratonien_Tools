@@ -5,7 +5,7 @@
   <div class="bratonien-grid">
     <div class="bratonien-card">
       <h4>Albumzugriff</h4>
-      <p class="bratonien-muted">Mit einem Klick auf das Schloss ein Album privat oder wieder öffentlich schalten. Beim Sperren behält dein eigener Benutzer automatisch Zugriff.</p>
+      <p class="bratonien-muted">Mit einem Klick ein Album privat oder wieder öffentlich schalten. Beim Sperren behält dein eigener Benutzer automatisch Zugriff.</p>
 
       <form method="get" action="admin.php" style="margin-bottom:14px;">
         <input type="hidden" name="page" value="plugin-bratonien_tools">
@@ -29,7 +29,7 @@
           <thead>
             <tr>
               <th>Album</th>
-              <th style="width:90px; text-align:center;">Zugriff</th>
+              <th style="width:150px; text-align:center;">Zugriff</th>
             </tr>
           </thead>
           <tbody>
@@ -41,9 +41,9 @@
                     <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
                     <input type="hidden" name="lock_category_id" value="{$album.id}">
                     {if $album.status == 'private'}
-                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist privat – klicken zum Entsperren" aria-label="Album entsperren" onclick="return confirm('Dieses Album wieder öffentlich schalten?');">🔒</button>
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist privat – klicken zum Entsperren" aria-label="Album entsperren" onclick="return confirm('Dieses Album wieder öffentlich schalten?');"><i class="fas fa-lock-open" aria-hidden="true"></i> Entsperren</button>
                     {else}
-                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist öffentlich – klicken zum Sperren" aria-label="Album sperren" onclick="return confirm('Dieses Album auf privat stellen?');">🔓</button>
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist öffentlich – klicken zum Sperren" aria-label="Album sperren" onclick="return confirm('Dieses Album auf privat stellen?');"><i class="fas fa-lock" aria-hidden="true"></i> Sperren</button>
                     {/if}
                   </form>
                 </td>
