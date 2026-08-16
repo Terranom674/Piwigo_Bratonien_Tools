@@ -4,7 +4,7 @@ Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.11.2**
+Aktuelle Plugin-Version: **0.12.0**
 
 ## Funktionsumfang
 
@@ -58,6 +58,24 @@ Erweitert Albumseiten um die Moeglichkeit, einzelne Bilder fuer einen Download a
 
 Die ZIP-Erstellung wird nicht dupliziert. Bratonien Tools uebergibt lediglich die berechtigten Bild-IDs an Batch Downloader.
 
+### Fortlaufende Bildtitel in der Stapelverarbeitung
+
+Erweitert Piwigos globale Stapelverarbeitung um die Aktion **Fortlaufende Bildtitel**.
+
+- arbeitet ausschliesslich mit der aktuellen Piwigo-Auswahl
+- frei waehlbares Titelpraefix
+- frei waehlbare Startnummer
+- einstellbare Stellenzahl mit fuehrenden Nullen
+- direkte Vorschau des resultierenden Titelformats
+- wahlweise alle ausgewaehlten Titel ueberschreiben oder nur leere beziehungsweise typische Kamera-/Importtitel ersetzen
+- Reihenfolge nach Dateiname, Aufnahmedatum oder aktueller Albumreihenfolge
+- vorhandene individuelle Titel koennen gezielt geschuetzt werden
+- physische Dateinamen werden nicht veraendert
+
+Beispiel: `Samt 2026 - 001`, `Samt 2026 - 002`, `Samt 2026 - 003`.
+
+Die Albumreihenfolge steht nur zur Verfuegung, wenn die Stapelverarbeitung auf genau ein Album ohne rekursive Unteralben gefiltert ist.
+
 ### Erweiterte Bildnavigation
 
 Auf der Bilddetailseite werden die vorhandenen Piwigo-Image-Maps weiterverwendet und responsiv neu aufgeteilt.
@@ -95,7 +113,7 @@ Der Status wird nach Update-Pruefungen und Aktionen direkt neu eingelesen, damit
 
 ## Architektur
 
-Das Plugin ist modular aufgebaut. Administrative Werkzeuge werden getrennt implementiert und ueber eine zentrale Registry eingebunden. Frontend-Erweiterungen liegen ebenfalls in eigenen Modulen.
+Das Plugin ist modular aufgebaut. Administrative Werkzeuge werden getrennt implementiert und ueber eine zentrale Registry eingebunden. Frontend- und Piwigo-Integrationen liegen ebenfalls in eigenen Modulen.
 
 Wichtige Bestandteile:
 
@@ -104,6 +122,7 @@ Wichtige Bestandteile:
 - `include/tool_registry.inc.php` - Registry der administrativen Aktionen
 - `include/public_selection.inc.php` - oeffentliche Fotoauswahl und Batch-Downloader-Anbindung
 - `include/picture_navigation.inc.php` - Einbindung der erweiterten Bildnavigation
+- `include/batch_titles.inc.php` - fortlaufende Titelvergabe in Piwigos Stapelverarbeitung
 - `include/watermark_*.inc.php` - Wasserzeichen-Engine und Runtime
 - `include/self_update.inc.php` - Selbstaktualisierung
 - `tools/` - administrative Werkzeugmodule
@@ -129,6 +148,7 @@ Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
 
 - Validierung von Cache- und Dateipfaden
 - Filterung ausgewaehlter Bild-IDs gegen die aktuell berechtigte Bildmenge
+- Nutzung der von Piwigos Stapelverarbeitung validierten Auswahl fuer die fortlaufende Titelvergabe
 - Beibehaltung bestehender Piwigo- und Plugin-Berechtigungen
 - kontrollierte Uploadziele und Uploadgrenzen
 - kein Zugriff auf Originalbilder beim Leeren des Bildcaches
