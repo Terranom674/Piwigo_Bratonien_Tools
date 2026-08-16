@@ -83,8 +83,16 @@
             {/foreach}
           </select>
 
+          <label for="share_tag">Freigabe-Tag (optional)</label>
+          <input id="share_tag" type="text" name="share_tag" maxlength="255" placeholder="z. B. Max Mustermann · August 2026">
+
           <label for="share_password">Passwort (optional)</label>
-          <input id="share_password" type="password" name="share_password" autocomplete="new-password" placeholder="Leer lassen für Freigabe nur per Link">
+          <div class="bratonien-actions" style="align-items:center; gap:6px; flex-wrap:nowrap;">
+            <input id="share_password" type="password" name="share_password" autocomplete="new-password" placeholder="Leer lassen für Freigabe nur per Link" style="flex:1; min-width:180px;">
+            <button id="br-generate-share-password" class="buttonLike" type="button" title="Sicheres Passwort erzeugen"><span class="icon-key" aria-hidden="true"></span> Generieren</button>
+            <button id="br-toggle-share-password" class="buttonLike" type="button" title="Passwort anzeigen/verbergen" aria-label="Passwort anzeigen oder verbergen"><span class="icon-eye" aria-hidden="true"></span></button>
+            <button id="br-copy-share-password" class="buttonLike" type="button" title="Passwort kopieren" aria-label="Passwort kopieren"><span class="icon-docs" aria-hidden="true"></span></button>
+          </div>
 
           <label for="share_expires_at">Ablaufdatum (optional)</label>
           <input id="share_expires_at" type="datetime-local" name="share_expires_at">
@@ -98,7 +106,7 @@
     <div class="bratonien-card">
       <h4>Hinweis</h4>
       <p class="bratonien-muted">Jede Freigabe erhält einen eigenen, nicht erratbaren Link. Ein Passwort ist optional; ohne Passwort genügt der Link bis zum Widerruf oder Ablaufdatum.</p>
-      <p class="bratonien-muted">Passwörter werden nur als Hash gespeichert. Der Freigabelink bleibt in der Liste unten sichtbar und kann jederzeit kopiert werden.</p>
+      <p class="bratonien-muted">Mit dem Freigabe-Tag kannst du mehrere Freigaben desselben Albums auseinanderhalten. Passwörter werden nach dem Erstellen nur als Hash gespeichert.</p>
     </div>
   </div>
 
@@ -111,6 +119,7 @@
         <thead>
           <tr>
             <th>Album</th>
+            <th>Tag</th>
             <th>Schutz</th>
             <th>Ablauf</th>
             <th>Freigabelink</th>
@@ -121,6 +130,7 @@
           {foreach from=$BRATONIEN_ALBUM_SHARES item=share}
             <tr>
               <td>{$share.category_name|default:'Gelöschtes Album'|escape:html}</td>
+              <td>{if $share.share_tag != ''}{$share.share_tag|escape:html}{else}<span class="bratonien-muted">–</span>{/if}</td>
               <td>{if $share.password_protected}Passwort{else}Nur Link{/if}</td>
               <td>{if $share.expires_at}{$share.expires_at|escape:html}{else}Unbegrenzt{/if}</td>
               <td style="min-width:360px;">
@@ -158,21 +168,14 @@
 (function () {
   'use strict';
 
-  document.addEventListener('click', function (event) {
-    var button = event.target.closest('.bratonien-copy-share');
-    if (!button) return;
-
-    var input = document.getElementById(button.getAttribute('data-copy-target'));
-    if (!input) return;
+  function copyInput(input, button) {
+    if (!input || !input.value) return;
 
     function copied() {
-      var oldTitle = button.getAttribute('title') || 'Freigabelink kopieren';
+      if (!button) return;
+      var oldTitle = button.getAttribute('title') || 'Kopieren';
       button.setAttribute('title', 'Kopiert');
-      button.setAttribute('aria-label', 'Freigabelink kopiert');
-      setTimeout(function () {
-        button.setAttribute('title', oldTitle);
-        button.setAttribute('aria-label', 'Freigabelink kopieren');
-      }, 1400);
+      setTimeout(function () { button.setAttribute('title', oldTitle); }, 1400);
     }
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -189,7 +192,71 @@
     input.select();
     document.execCommand('copy');
     copied();
+  }
+
+  document.addEventListener('click', function (event) {
+    var shareCopy = event.target.closest('.bratonien-copy-share');
+    if (shareCopy) {
+      copyInput(document.getElementById(shareCopy.getAttribute('data-copy-target')), shareCopy);
+      return;
+    }
+
+    var generate = event.target.closest('#br-generate-share-password');
+    if (generate) {
+      var input = document.getElementById('share_password');
+      if (!input) return;
+
+      var lower = 'abcdefghijkmnopqrstuvwxyz';
+      var upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+      var digits = '23456789';
+      var symbols = '!@#$%&*+-=?';
+      var all = lower + upper + digits + symbols;
+      var chars = [
+        lower[randomIndex(lower.length)],
+        upper[randomIndex(upper.length)],
+        digits[randomIndex(digits.length)],
+        symbols[randomIndex(symbols.length)]
+      ];
+      while (chars.length < 18) chars.push(all[randomIndex(all.length)]);
+      secureShuffle(chars);
+      input.value = chars.join('');
+      input.type = 'text';
+      input.focus();
+      input.select();
+      return;
+    }
+
+    var toggle = event.target.closest('#br-toggle-share-password');
+    if (toggle) {
+      var password = document.getElementById('share_password');
+      if (password) password.type = password.type === 'password' ? 'text' : 'password';
+      return;
+    }
+
+    var copyPassword = event.target.closest('#br-copy-share-password');
+    if (copyPassword) {
+      copyInput(document.getElementById('share_password'), copyPassword);
+    }
   });
+
+  function randomIndex(max) {
+    if (window.crypto && window.crypto.getRandomValues) {
+      var limit = Math.floor(0x100000000 / max) * max;
+      var values = new Uint32Array(1);
+      do { window.crypto.getRandomValues(values); } while (values[0] >= limit);
+      return values[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  }
+
+  function secureShuffle(values) {
+    for (var i = values.length - 1; i > 0; i--) {
+      var j = randomIndex(i + 1);
+      var tmp = values[i];
+      values[i] = values[j];
+      values[j] = tmp;
+    }
+  }
 })();
 </script>
 {/literal}
