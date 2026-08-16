@@ -86,6 +86,92 @@ function bratonien_tools_self_update_check()
   );
 }
 
+function bratonien_tools_download_update_archive($url, &$data, &$details)
+{
+  $data = '';
+  $details = '';
+
+  if (function_exists('curl_init'))
+  {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, array(
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_FOLLOWLOCATION => true,
+      CURLOPT_MAXREDIRS => 5,
+      CURLOPT_CONNECTTIMEOUT => 15,
+      CURLOPT_TIMEOUT => 60,
+      CURLOPT_USERAGENT => 'Bratonien-Tools-Updater/'.bratonien_tools_current_version(),
+      CURLOPT_HTTPHEADER => array('Accept: application/zip, application/octet-stream;q=0.9, */*;q=0.8'),
+    ));
+
+    $response = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    $http_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $content_type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    $effective_url = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    curl_close($ch);
+
+    if ($response !== false)
+    {
+      $data = (string)$response;
+    }
+
+    if ($errno !== 0)
+    {
+      $details = 'cURL-Fehler '.$errno.': '.$error;
+      return false;
+    }
+
+    if ($http_code < 200 || $http_code >= 300)
+    {
+      $details = 'HTTP '.$http_code;
+      if ($content_type !== '')
+      {
+        $details .= ', Content-Type '.$content_type;
+      }
+      if ($effective_url !== '' && $effective_url !== $url)
+      {
+        $details .= ', Ziel '.$effective_url;
+      }
+      return false;
+    }
+
+    if (strlen($data) < 1000)
+    {
+      $details = 'Antwort war ungewöhnlich klein ('.strlen($data).' Byte)';
+      if ($content_type !== '')
+      {
+        $details .= ', Content-Type '.$content_type;
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  if (!function_exists('fetchRemote'))
+  {
+    $details = 'Weder cURL noch Piwigos fetchRemote() sind verfügbar.';
+    return false;
+  }
+
+  $ok = fetchRemote($url, $data);
+  if (!$ok)
+  {
+    $details = 'Piwigos fetchRemote() hat den Download ohne weitere Fehlerdetails abgebrochen.';
+    return false;
+  }
+
+  if (strlen((string)$data) < 1000)
+  {
+    $details = 'Piwigos fetchRemote() lieferte nur '.strlen((string)$data).' Byte.';
+    return false;
+  }
+
+  return true;
+}
+
 function bratonien_tools_self_update_run()
 {
   global $template;
@@ -129,27 +215,33 @@ function bratonien_tools_self_update_run()
   }
 
   $zip_data = '';
-  if (!function_exists('fetchRemote') || !fetchRemote('https://codeload.github.com/Terranom674/Piwigo_Bratonien_Tools/zip/refs/heads/main', $zip_data) || strlen((string)$zip_data) < 1000)
+  $download_details = '';
+  $archive_url = 'https://codeload.github.com/Terranom674/Piwigo_Bratonien_Tools/zip/refs/heads/main';
+  if (!bratonien_tools_download_update_archive($archive_url, $zip_data, $download_details))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Das Update-Archiv konnte nicht von GitHub geladen werden.');
+    throw new RuntimeException(
+      'Das Update-Archiv konnte nicht von GitHub geladen werden.'
+      .($download_details !== '' ? ' Details: '.$download_details : '')
+    );
   }
 
   $zip_file = $run_dir.'/update.zip';
   if (@file_put_contents($zip_file, $zip_data) === false)
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Das Update-Archiv konnte nicht gespeichert werden.');
+    throw new RuntimeException('Das Update-Archiv konnte nicht gespeichert werden. Ziel: '.$zip_file);
   }
 
   $extract_dir = $run_dir.'/extract';
   @mkdir($extract_dir, 0755, true);
   $zip = new ZipArchive();
-  if ($zip->open($zip_file) !== true || !$zip->extractTo($extract_dir))
+  $zip_open_result = $zip->open($zip_file);
+  if ($zip_open_result !== true || !$zip->extractTo($extract_dir))
   {
     if ($zip instanceof ZipArchive) { @$zip->close(); }
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Das Update-Archiv konnte nicht entpackt werden.');
+    throw new RuntimeException('Das Update-Archiv konnte nicht entpackt werden. ZipArchive-Code: '.var_export($zip_open_result, true).'.');
   }
   $zip->close();
 
@@ -158,14 +250,14 @@ function bratonien_tools_self_update_run()
   if (!is_file($source_main))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Das geladene Archiv enthält kein gültiges Bratonien-Tools-Plugin.');
+    throw new RuntimeException('Das geladene Archiv enthält kein gültiges Bratonien-Tools-Plugin. Erwartet wurde: '.$source_main);
   }
 
   $remote_main = @file_get_contents($source_main);
   if (!$remote_main || !preg_match('/Plugin Name:\s*Bratonien Tools/i', $remote_main) || !preg_match('/Version:\s*([\w.-]+)/i', $remote_main, $vm))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Die geladene Plugin-Version konnte nicht verifiziert werden.');
+    throw new RuntimeException('Die geladene Plugin-Version konnte nicht verifiziert werden. main.inc.php fehlt oder enthält keine lesbare Plugin-/Versionsangabe.');
   }
   $package_version = trim($vm[1]);
   if ($package_version !== $info['remote'])
@@ -179,21 +271,21 @@ function bratonien_tools_self_update_run()
   if (!is_dir($backup_root) && !@mkdir($backup_root, 0755, true))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Backup-Verzeichnis konnte nicht angelegt werden.');
+    throw new RuntimeException('Backup-Verzeichnis konnte nicht angelegt werden: '.$backup_root);
   }
   $backup_dir = $backup_root.'/'.basename($plugin_dir).'-'.$info['current'].'-'.date('Ymd-His');
 
   if (!@rename($plugin_dir, $backup_dir))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Die bestehende Plugin-Version konnte nicht gesichert werden.');
+    throw new RuntimeException('Die bestehende Plugin-Version konnte nicht gesichert werden. Quelle: '.$plugin_dir.'; Ziel: '.$backup_dir);
   }
 
   if (!@rename($source, $plugin_dir))
   {
     @rename($backup_dir, $plugin_dir);
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Die neue Plugin-Version konnte nicht aktiviert werden. Das Backup wurde wiederhergestellt.');
+    throw new RuntimeException('Die neue Plugin-Version konnte nicht aktiviert werden. Das Backup wurde wiederhergestellt. Quelle: '.$source.'; Ziel: '.$plugin_dir);
   }
 
   try
