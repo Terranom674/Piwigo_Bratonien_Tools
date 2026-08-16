@@ -21,7 +21,7 @@
           {if $PUBLIC_SELECTION_GROUPS|@count}
             {foreach from=$PUBLIC_SELECTION_GROUPS item=group}
               <label style="display:block;margin-bottom:5px;">
-                <input type="checkbox" name="selection_groups[]" value="{$group.id}" {if in_array($group.id, $PUBLIC_SELECTION.groups)}checked{/if}>
+                <input type="checkbox" name="selection_groups[]" value="{$group.id}" {if $group.selected}checked{/if}>
                 {$group.name|escape:html}
               </label>
             {/foreach}
