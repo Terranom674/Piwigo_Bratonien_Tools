@@ -105,10 +105,6 @@ function bratonien_tools_public_selection_access_allowed()
   return pwg_db_num_rows($result) > 0;
 }
 
-/**
- * Adds a public multi-photo selection mode to album thumbnail pages.
- * The actual ZIP generation remains handled by Batch Downloader.
- */
 function bratonien_tools_public_selection_init()
 {
   if (defined('IN_ADMIN'))
@@ -116,40 +112,143 @@ function bratonien_tools_public_selection_init()
     return;
   }
 
+  // Run before Batch Downloader's own index-button handler (+10). This lets us
+  // answer selection download requests without reloading the album page first.
+  add_event_handler('loc_end_index', 'bratonien_tools_public_selection_download_request', EVENT_HANDLER_PRIORITY_NEUTRAL + 5);
   add_event_handler('loc_end_index', 'bratonien_tools_public_selection_render', EVENT_HANDLER_PRIORITY_NEUTRAL + 30);
   add_event_handler('batchdownload_get_set_info', 'bratonien_tools_public_selection_filter_set', EVENT_HANDLER_PRIORITY_NEUTRAL + 30, 1);
 }
 
-function bratonien_tools_public_selection_render()
+function bratonien_tools_public_selection_page_allowed()
 {
-  global $page, $template;
+  global $page;
 
   if (!defined('BATCH_DOWNLOAD_PATH') || !function_exists('check_download_access'))
   {
-    return;
+    return false;
   }
 
   if (check_download_access() === false || !bratonien_tools_public_selection_access_allowed())
   {
-    return;
+    return false;
   }
 
   if (empty($page['items']) || empty($page['section']) || $page['section'] !== 'categories' || empty($page['category']))
+  {
+    return false;
+  }
+
+  if (defined('DLPERMS_PATH') && function_exists('check_album_download_access') && !check_album_download_access($page['category']['id']))
+  {
+    return false;
+  }
+
+  return true;
+}
+
+function bratonien_tools_public_selection_download_request()
+{
+  global $page, $conf;
+
+  if (empty($_POST['bratonien_selection_download']))
+  {
+    return;
+  }
+
+  header('Content-Type: application/json; charset=utf-8');
+
+  try
+  {
+    if (!bratonien_tools_public_selection_page_allowed())
+    {
+      throw new RuntimeException('Download ist fuer diese Auswahl nicht erlaubt.');
+    }
+
+    if (function_exists('check_pwg_token'))
+    {
+      check_pwg_token();
+    }
+
+    $raw = isset($_POST['image_ids']) ? (string)$_POST['image_ids'] : '';
+    $selected = array_values(array_unique(array_filter(array_map('intval', preg_split('/[^0-9]+/', $raw)))));
+    if (empty($selected))
+    {
+      throw new RuntimeException('Es wurden keine Bilder ausgewaehlt.');
+    }
+
+    // Never trust IDs received from the browser. Only images present in the
+    // currently accessible Piwigo result set may enter the download set.
+    $allowed = array_fill_keys(array_map('intval', $page['items']), true);
+    $filtered = array();
+    foreach ($selected as $image_id)
+    {
+      if (isset($allowed[$image_id]))
+      {
+        $filtered[] = $image_id;
+      }
+    }
+
+    if (empty($filtered))
+    {
+      throw new RuntimeException('Die Auswahl enthaelt keine herunterladbaren Bilder.');
+    }
+
+    if (!class_exists('BatchDownloader'))
+    {
+      throw new RuntimeException('Batch Downloader ist nicht verfuegbar.');
+    }
+
+    $set = new BatchDownloader('new', $filtered, 'category', $page['category']['id'], 'original');
+    if ((int)$set->getParam('nb_images') < 1)
+    {
+      $set->delete();
+      throw new RuntimeException('Fuer die Auswahl konnte kein Download erzeugt werden.');
+    }
+
+    if (
+      (int)$set->getParam('nb_images') <= (int)$conf['batch_download']['max_elements']
+      && $set->getParam('size') === 'original'
+      && $set->getEstimatedArchiveNumber() === 1
+    )
+    {
+      $set->createNextArchive(true);
+      $target = get_root_url().BATCH_DOWNLOAD_PATH.'download.php?set_id='.$set->getParam('id').'&zip=1';
+      echo json_encode(array('ok' => true, 'download_url' => $target));
+      exit;
+    }
+
+    $target = add_url_params(BATCH_DOWNLOAD_PUBLIC.'init_zip', array('set_id' => $set->getParam('id')));
+    echo json_encode(array('ok' => true, 'download_url' => $target));
+    exit;
+  }
+  catch (Exception $e)
+  {
+    http_response_code(400);
+    echo json_encode(array('ok' => false, 'error' => $e->getMessage()));
+    exit;
+  }
+}
+
+function bratonien_tools_public_selection_render()
+{
+  global $template;
+
+  if (!bratonien_tools_public_selection_page_allowed())
   {
     return;
   }
 
   $template->assign(array(
     'BRATONIEN_SELECTION_PATH' => 'plugins/'.BRATONIEN_TOOLS_ID,
-    'BRATONIEN_SELECTION_DOWNLOAD_URL' => bratonien_tools_public_selection_download_url(),
+    'BRATONIEN_SELECTION_DOWNLOAD_URL' => duplicate_index_url(),
+    'BRATONIEN_SELECTION_TOKEN' => function_exists('get_pwg_token') ? get_pwg_token() : '',
   ));
 
   $template->set_filename('bratonien_selection_assets', BRATONIEN_TOOLS_PATH.'template/public_selection_assets.tpl');
   $template->parse('bratonien_selection_assets', false);
 
-  $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-icon" title="Bilder auswaehlen">'
-    .'<span class="fas fa-check-square" aria-hidden="true"></span>'
-    .'<span class="bratonien-selection-toolbar-label">Auswahl</span>'
+  $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-state-default pwg-button" title="Bilder auswaehlen" aria-label="Bilder auswaehlen">'
+    .'<span class="pwg-icon fas fa-check-square fa-fw" aria-hidden="true"></span>'
     .'</a>';
 
   $template->add_index_button($button, 49);
@@ -161,11 +260,6 @@ function bratonien_tools_public_selection_download_url()
   return add_url_params($url, array('action' => 'advdown_set'));
 }
 
-/**
- * Restricts the Batch Downloader set to the image IDs selected in the public UI.
- * The intersection with the current Piwigo set prevents downloading images that
- * are not part of the currently accessible album/result set.
- */
 function bratonien_tools_public_selection_filter_set($set)
 {
   if (!is_array($set))
