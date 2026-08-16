@@ -49,6 +49,13 @@ $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
+$self_update = bratonien_tools_remote_update_info(false);
+$self_update_environment = array(
+  'webmaster' => function_exists('is_webmaster') ? is_webmaster() : false,
+  'plugins_writable' => is_writable(dirname(rtrim(BRATONIEN_TOOLS_PATH, '/'))),
+  'zip' => class_exists('ZipArchive'),
+);
+
 $selected_public_selection_groups = array_fill_keys($public_selection['groups'], true);
 foreach ($public_selection_groups as &$group)
 {
@@ -131,6 +138,8 @@ $template->assign(array(
   'PUBLIC_SELECTION_GROUPS' => $public_selection_groups,
   'BRATONIEN_ASSETS' => $assets,
   'ASSET_ENV' => $asset_environment,
+  'SELF_UPDATE' => $self_update,
+  'SELF_UPDATE_ENV' => $self_update_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
 ));
 
@@ -138,9 +147,11 @@ $template->set_filename('admin_tabs_content', BRATONIEN_TOOLS_PATH . 'template/a
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
 $template->set_filename('public_selection_admin_content', BRATONIEN_TOOLS_PATH . 'template/public_selection_admin.tpl');
 $template->set_filename('asset_manager_admin_content', BRATONIEN_TOOLS_PATH . 'template/asset_manager_admin.tpl');
+$template->set_filename('system_admin_content', BRATONIEN_TOOLS_PATH . 'template/system_admin.tpl');
 
 $admin_content = $template->parse('admin_tabs_content', true);
 $admin_content .= $template->parse('plugin_admin_content', true);
 $admin_content .= $template->parse('public_selection_admin_content', true);
 $admin_content .= $template->parse('asset_manager_admin_content', true);
+$admin_content .= $template->parse('system_admin_content', true);
 $template->assign('ADMIN_CONTENT', $admin_content);
