@@ -4,7 +4,7 @@ Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.13.0**
+Aktuelle Plugin-Version: **0.13.10**
 
 ## Funktionsumfang
 
@@ -45,7 +45,7 @@ Verwaltung eigener Bilddateien fuer die Piwigo-Installation.
 
 ### Oeffentliche Bildauswahl fuer Batch Downloader
 
-Erweitert Albumseiten um die Moeglichkeit, einzelne Bilder fuer einen Download auszuwählen.
+Erweitert Albumseiten um die Moeglichkeit, einzelne Bilder fuer einen Download auszuwaehlen.
 
 - Auswahlmodus direkt in der Albumansicht
 - einzelne Bilder markieren
@@ -76,20 +76,38 @@ Beispiel: `Samt 2026 - 001`, `Samt 2026 - 002`, `Samt 2026 - 003`.
 
 Die Albumreihenfolge steht nur zur Verfuegung, wenn die Stapelverarbeitung auf genau ein Album ohne rekursive Unteralben gefiltert ist.
 
-### Passwortgeschuetzte Albumfreigaben
+### Albumzugriff verwalten
+
+In der Administrationsoberflaeche koennen Alben direkt zwischen **oeffentlich** und **privat** umgeschaltet werden.
+
+- Albumliste mit Suchfeld
+- paginierte Darstellung
+- Umschalten des Zugriffs direkt aus Bratonien Tools
+- Verwendung nativer Piwigo-Icons fuer den Zugriffsstatus
+- beim Sperren eines Albums behaelt der aktuell handelnde Benutzer automatisch direkten Zugriff
+
+Der Schutz vor versehentlichem Selbstaussperren greift auch dann, wenn ein Album ueber Piwigos eigene Album-Zugriffsverwaltung von oeffentlich auf privat gesetzt wird.
+
+### Geschuetzte Albumfreigaben
 
 Private Alben koennen direkt mit Bratonien Tools geteilt werden. ShareAlbum oder ein anderes Freigabe-Plugin ist dafuer nicht erforderlich.
 
 - eigener individueller Freigabelink pro Freigabe
-- Passwort ist verpflichtend und wird nur als Hash gespeichert
+- Passwort **optional**; ohne Passwort reicht der nicht erratbare Link
+- Passwoerter werden nur als Hash gespeichert
+- integrierter Generator fuer sichere Passwoerter
+- erzeugte Passwoerter koennen angezeigt und kopiert werden
 - optionales Ablaufdatum
+- optionaler Freigabe-Tag, um mehrere Freigaben desselben Albums auseinanderzuhalten
 - eigener technischer Piwigo-Benutzer pro Freigabe
 - der technische Benutzer erhaelt nur Zugriff auf das freigegebene private Album
+- aktive Freigabelinks werden in der Administration angezeigt und koennen direkt kopiert werden
+- bei aelteren, nicht rekonstruierbaren Links kann ein neuer Link erzeugt werden; der bisherige Link wird dabei ungueltig
 - Freigaben koennen einzeln widerrufen werden
 - beim Widerruf wird der technische Benutzer samt Sitzungen und Albumrecht entfernt
 - wird das Album geloescht, werden zugehoerige Freigaben automatisch bereinigt
 
-Zusaetzlich schuetzt Bratonien Tools den Administrator vor versehentlichem Selbstaussperren: Wird ein Album ueber Piwigos Album-Zugriffsverwaltung von oeffentlich auf privat gesetzt, erhaelt der aktuell handelnde Benutzer automatisch ein direktes Zugriffsrecht auf dieses Album.
+Freigabe-Tokens werden nicht im Klartext gespeichert. Fuer aktuelle Freigaben kann der Link deterministisch aus dem technischen Freigabebenutzer, dem Album und einem lokal gespeicherten Secret rekonstruiert werden; in der Datenbank liegt nur der Hash des Tokens.
 
 ### Erweiterte Bildnavigation
 
@@ -124,7 +142,13 @@ Die Icons verwenden vorhandene Font-Awesome-Klassen des aktiven Frontends.
 
 Bratonien Tools kann den aktuellen Stand des GitHub-Repositories pruefen und sich aus der Administration heraus aktualisieren.
 
-Der Status wird nach Update-Pruefungen und Aktionen direkt neu eingelesen, damit die Administrationsseite nicht mit veralteten Versionsinformationen weiterarbeitet.
+- Versionspruefung gegen `main.inc.php` im GitHub-Repository
+- Update-Pruefung wird kurzzeitig zwischengespeichert
+- Updates duerfen nur vom Piwigo-Webmaster ausgefuehrt werden
+- Download des aktuellen `main`-Branches als ZIP
+- Pruefung auf `ZipArchive` und Schreibrechte des Plugin-Verzeichnisses
+- detailliertere Downloadfehler, unter anderem cURL-, HTTP- und Content-Type-Informationen
+- Status wird nach Update-Pruefungen und Aktionen neu eingelesen, damit die Administrationsseite nicht mit veralteten Versionsinformationen weiterarbeitet
 
 ## Architektur
 
@@ -138,10 +162,18 @@ Wichtige Bestandteile:
 - `include/public_selection.inc.php` - oeffentliche Fotoauswahl und Batch-Downloader-Anbindung
 - `include/picture_navigation.inc.php` - Einbindung der erweiterten Bildnavigation
 - `include/batch_titles.inc.php` - fortlaufende Titelvergabe in Piwigos Stapelverarbeitung
-- `include/album_shares.inc.php` - Passwortfreigaben und Schutz vor Selbstaussperren bei privaten Alben
+- `include/album_lock.inc.php` - Laden und Umschalten des Album-Zugriffsstatus
+- `include/album_shares.inc.php` - Albumfreigaben, Freigabetokens und Schutz vor Selbstaussperren bei privaten Alben
+- `include/cache_worker_settings.inc.php` - Einstellungen fuer den Cache-Worker
+- `include/dependencies.inc.php` - Abhaengigkeitspruefungen
 - `include/watermark_*.inc.php` - Wasserzeichen-Engine und Runtime
-- `include/self_update.inc.php` - Selbstaktualisierung
-- `tools/` - administrative Werkzeugmodule
+- `include/self_update.inc.php` - Versionspruefung und Selbstaktualisierung
+- `tools/album_rules.inc.php` - albumbezogene Regeln
+- `tools/asset_manager.inc.php` - Verwaltung eigener Bilddateien
+- `tools/image_cache.inc.php` - Cache-Verwaltung
+- `tools/watermark*.inc.php` - administrative Wasserzeichenmodule
+- `main-cache-build.php` - Cache-Aufbau im Worker-Prozess
+- `main-cache-status.php` - Statusschnittstelle fuer den Cache-Worker
 - `js/` - Frontend- und Admin-JavaScript
 - `css/` - strukturelles Plugin-CSS
 - `template/` - Admin- und Frontend-Templates
@@ -165,12 +197,15 @@ Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
 - Validierung von Cache- und Dateipfaden
 - Filterung ausgewaehlter Bild-IDs gegen die aktuell berechtigte Bildmenge
 - Nutzung der von Piwigos Stapelverarbeitung validierten Auswahl fuer die fortlaufende Titelvergabe
-- gehashte Passwoerter und zufaellige Freigabetokens fuer geschuetzte Albumfreigaben
+- gehashte Passwoerter und gehashte Freigabetokens fuer Albumfreigaben
+- nicht erratbare Freigabelinks auf Basis eines lokal erzeugten Secrets
 - eigene technische Benutzer mit minimalem Albumzugriff fuer Freigaben
 - automatische Bereinigung widerrufener und geloeschter Albumfreigaben
+- automatischer Erhalt des eigenen Zugriffs beim Umschalten eines Albums auf privat
 - Beibehaltung bestehender Piwigo- und Plugin-Berechtigungen
 - kontrollierte Uploadziele und Uploadgrenzen
 - kein Zugriff auf Originalbilder beim Leeren des Bildcaches
+- Webmaster-Pruefung, Schreibbarkeitspruefung und kontrolliertes temporaeres Arbeitsverzeichnis bei Selbstupdates
 
 ## Styling und Anpassung
 
