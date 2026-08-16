@@ -157,7 +157,22 @@ function bratonien_tools_create_album_share()
     throw new Exception('Der Freigabebenutzer konnte nicht erstellt werden.');
   }
 
-  pwg_query('UPDATE '.USER_INFOS_TABLE." SET status = 'generic' WHERE user_id = ".(int)$new_user_id);
+  if (defined('USER_GROUP_TABLE'))
+  {
+    pwg_query('DELETE FROM '.USER_GROUP_TABLE.' WHERE user_id = '.(int)$new_user_id);
+  }
+
+  $level = 0;
+  $level_query = 'SELECT MAX(i.level) AS max_level FROM '.IMAGES_TABLE.' i '
+    .'JOIN '.IMAGE_CATEGORY_TABLE.' ic ON ic.image_id = i.id '
+    .'WHERE ic.category_id = '.$category_id;
+  $level_row = pwg_db_fetch_assoc(pwg_query($level_query));
+  if ($level_row && $level_row['max_level'] !== null)
+  {
+    $level = (int)$level_row['max_level'];
+  }
+
+  pwg_query('UPDATE '.USER_INFOS_TABLE." SET status = 'generic', level = ".$level.' WHERE user_id = '.(int)$new_user_id);
   bratonien_tools_grant_album_access((int)$new_user_id, $category_id);
 
   $token = bin2hex(random_bytes(24));
