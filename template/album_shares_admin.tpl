@@ -7,8 +7,23 @@
       <h4>Albumzugriff</h4>
       <p class="bratonien-muted">Mit einem Klick auf das Schloss ein Album privat oder wieder öffentlich schalten. Beim Sperren behält dein eigener Benutzer automatisch Zugriff.</p>
 
+      <form method="get" action="admin.php" style="margin-bottom:14px;">
+        <input type="hidden" name="page" value="plugin-bratonien_tools">
+        <div class="bratonien-actions" style="align-items:center; gap:8px;">
+          <input type="search" name="br_album_search" value="{$BRATONIEN_ALBUM_SEARCH|escape:html}" placeholder="Album suchen …" aria-label="Album suchen" style="min-width:240px; flex:1;">
+          <button class="buttonLike" type="submit">Suchen</button>
+          {if $BRATONIEN_ALBUM_SEARCH != ''}
+            <a class="buttonLike" href="admin.php?page=plugin-bratonien_tools#freigaben">Zurücksetzen</a>
+          {/if}
+        </div>
+      </form>
+
       {if empty($BRATONIEN_ALBUM_LOCK_PAGE.albums)}
-        <p class="bratonien-muted">Keine Alben vorhanden.</p>
+        {if $BRATONIEN_ALBUM_SEARCH != ''}
+          <p class="bratonien-muted">Keine Alben für „{$BRATONIEN_ALBUM_SEARCH|escape:html}“ gefunden.</p>
+        {else}
+          <p class="bratonien-muted">Keine Alben vorhanden.</p>
+        {/if}
       {else}
         <table class="bratonien-rule-table">
           <thead>
