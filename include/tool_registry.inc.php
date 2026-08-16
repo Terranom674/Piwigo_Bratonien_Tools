@@ -9,6 +9,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'tools/asset_manager.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 
@@ -53,6 +54,12 @@ function bratonien_tools_get_tools()
     ),
     'public_selection_settings' => array(
       'handler' => 'bratonien_tools_save_public_selection_settings',
+    ),
+    'asset_upload' => array(
+      'handler' => 'bratonien_tools_upload_asset',
+    ),
+    'asset_delete' => array(
+      'handler' => 'bratonien_tools_delete_asset',
     ),
   );
 }
