@@ -4,7 +4,7 @@ Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.12.0**
+Aktuelle Plugin-Version: **0.12.1**
 
 ## Funktionsumfang
 
