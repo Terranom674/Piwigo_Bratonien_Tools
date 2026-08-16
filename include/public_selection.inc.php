@@ -146,7 +146,7 @@ function bratonien_tools_public_selection_page_allowed()
 
 function bratonien_tools_batch_download_init_url($set_id)
 {
-  $base = BATCH_DOWNLOAD_PUBLIC.'init_zip';
+  $base = rtrim(BATCH_DOWNLOAD_PUBLIC, '/').'/init_zip';
   $separator = strpos($base, '?') === false ? '?' : '&';
   return $base.$separator.'set_id='.(int)$set_id;
 }
@@ -221,9 +221,6 @@ function bratonien_tools_public_selection_download_request()
       exit;
     }
 
-    // Do not use add_url_params here. Piwigo can run with query-string based
-    // pretty URLs (index.php?/download/...), where set_id must remain a real
-    // GET parameter for Batch Downloader's download.inc.php.
     $target = bratonien_tools_batch_download_init_url($set_id);
     echo json_encode(array('ok' => true, 'download_url' => $target, 'set_id' => $set_id));
     exit;
@@ -254,8 +251,8 @@ function bratonien_tools_public_selection_render()
   $template->set_filename('bratonien_selection_assets', BRATONIEN_TOOLS_PATH.'template/public_selection_assets.tpl');
   $template->parse('bratonien_selection_assets', false);
 
-  $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-state-default pwg-button" title="Bilder auswaehlen" aria-label="Bilder auswaehlen">'
-    .'<span class="pwg-icon fas fa-check-double fa-fw" aria-hidden="true"></span>'
+  $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-state-default pwg-button" title="Bilder auswählen" aria-label="Bilder auswählen">'
+    .'<span class="pwg-icon fas fa-object-group fa-fw" aria-hidden="true"></span>'
     .'</a>';
 
   $template->add_index_button($button, 49);
