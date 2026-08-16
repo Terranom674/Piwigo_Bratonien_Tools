@@ -196,9 +196,104 @@ function bratonien_tools_get_assets()
   return $assets;
 }
 
+function bratonien_tools_upload_user_ini_path()
+{
+  $filename = trim((string)ini_get('user_ini.filename'));
+  if ($filename === '')
+  {
+    return '';
+  }
+  return rtrim(PHPWG_ROOT_PATH, '/').'/'.basename($filename);
+}
+
+function bratonien_tools_upload_limits_configurable()
+{
+  $path = bratonien_tools_upload_user_ini_path();
+  if ($path === '')
+  {
+    return false;
+  }
+
+  $sapi = strtolower((string)PHP_SAPI);
+  if (strpos($sapi, 'fpm') === false && strpos($sapi, 'cgi') === false)
+  {
+    return false;
+  }
+
+  return file_exists($path) ? is_writable($path) : is_writable(PHPWG_ROOT_PATH);
+}
+
+function bratonien_tools_save_upload_limits()
+{
+  if (!bratonien_tools_upload_limits_configurable())
+  {
+    throw new RuntimeException('Die PHP-Upload-Limits koennen in dieser Serverkonfiguration nicht automatisch ueber .user.ini angepasst werden.');
+  }
+
+  $upload_mb = isset($_POST['upload_max_mb']) ? (int)$_POST['upload_max_mb'] : 0;
+  $post_mb = isset($_POST['post_max_mb']) ? (int)$_POST['post_max_mb'] : 0;
+
+  if ($upload_mb < 1 || $upload_mb > 1024)
+  {
+    throw new RuntimeException('Das Datei-Limit muss zwischen 1 und 1024 MB liegen.');
+  }
+  if ($post_mb < 1 || $post_mb > 2048)
+  {
+    throw new RuntimeException('Das POST-Limit muss zwischen 1 und 2048 MB liegen.');
+  }
+  if ($post_mb < $upload_mb)
+  {
+    throw new RuntimeException('post_max_size muss mindestens so gross wie upload_max_filesize sein.');
+  }
+
+  $path = bratonien_tools_upload_user_ini_path();
+  $existing = is_file($path) ? (string)@file_get_contents($path) : '';
+  $start = '; BEGIN Bratonien Tools upload limits';
+  $end = '; END Bratonien Tools upload limits';
+  $block = $start."\n"
+    .'upload_max_filesize = '.$upload_mb."M\n"
+    .'post_max_size = '.$post_mb."M\n"
+    .$end;
+
+  $pattern = '/'.preg_quote($start, '/').'.*?'.preg_quote($end, '/').'/s';
+  if (preg_match($pattern, $existing))
+  {
+    $updated = preg_replace($pattern, $block, $existing, 1);
+  }
+  else
+  {
+    $updated = rtrim($existing).($existing !== '' ? "\n\n" : '').$block."\n";
+  }
+
+  if (@file_put_contents($path, $updated, LOCK_EX) === false)
+  {
+    throw new RuntimeException('Die PHP-Benutzerkonfiguration konnte nicht geschrieben werden: '.$path);
+  }
+
+  $ttl = (int)ini_get('user_ini.cache_ttl');
+  $suffix = $ttl > 0
+    ? ' PHP uebernimmt die neuen Werte spaetestens nach etwa '.$ttl.' Sekunden.'
+    : ' Die neuen Werte werden von PHP bei der naechsten Einlesung der Benutzerkonfiguration uebernommen.';
+
+  return array('message' => 'Upload-Limits gespeichert: Datei '.$upload_mb.' MB, POST '.$post_mb.' MB.'.$suffix);
+}
+
+function bratonien_tools_ini_size_to_mb($value)
+{
+  $value = trim((string)$value);
+  if ($value === '') return 0;
+  $number = (float)$value;
+  $unit = strtolower(substr($value, -1));
+  if ($unit === 'g') return (int)round($number * 1024);
+  if ($unit === 'k') return (int)max(1, round($number / 1024));
+  if ($unit === 'm') return (int)round($number);
+  return (int)max(1, round($number / 1048576));
+}
+
 function bratonien_tools_get_asset_environment()
 {
   $absolute = bratonien_tools_asset_absolute_dir();
+  $user_ini_path = bratonien_tools_upload_user_ini_path();
   return array(
     'root' => PHPWG_ROOT_PATH,
     'relative_dir' => bratonien_tools_asset_relative_dir(),
@@ -207,5 +302,10 @@ function bratonien_tools_get_asset_environment()
     'writable' => is_dir($absolute) && is_writable($absolute),
     'upload_max' => ini_get('upload_max_filesize'),
     'post_max' => ini_get('post_max_size'),
+    'upload_max_mb' => bratonien_tools_ini_size_to_mb(ini_get('upload_max_filesize')),
+    'post_max_mb' => bratonien_tools_ini_size_to_mb(ini_get('post_max_size')),
+    'upload_limits_configurable' => bratonien_tools_upload_limits_configurable(),
+    'user_ini_path' => $user_ini_path,
+    'user_ini_cache_ttl' => (int)ini_get('user_ini.cache_ttl'),
   );
 }
