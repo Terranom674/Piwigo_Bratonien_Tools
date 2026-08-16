@@ -4,23 +4,55 @@
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
-      <h4>Album sperren</h4>
-      <p class="bratonien-muted">Ein öffentliches Album mit einem Klick auf privat stellen. Dein eigener Benutzer erhält dabei automatisch Zugriff.</p>
-      <form method="post">
-        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-        <div class="bratonien-form-grid">
-          <label for="lock_category_id">Öffentliches Album</label>
-          <select id="lock_category_id" name="lock_category_id" required>
-            <option value="">Album auswählen</option>
-            {foreach from=$BRATONIEN_PUBLIC_ALBUMS item=album}
-              <option value="{$album.id}">{$album.name|escape:html}</option>
+      <h4>Albumzugriff</h4>
+      <p class="bratonien-muted">Mit einem Klick auf das Schloss ein Album privat oder wieder öffentlich schalten. Beim Sperren behält dein eigener Benutzer automatisch Zugriff.</p>
+
+      {if empty($BRATONIEN_ALBUM_LOCK_PAGE.albums)}
+        <p class="bratonien-muted">Keine Alben vorhanden.</p>
+      {else}
+        <table class="bratonien-rule-table">
+          <thead>
+            <tr>
+              <th>Album</th>
+              <th style="width:90px; text-align:center;">Zugriff</th>
+            </tr>
+          </thead>
+          <tbody>
+            {foreach from=$BRATONIEN_ALBUM_LOCK_PAGE.albums item=album}
+              <tr>
+                <td>{$album.name|escape:html}</td>
+                <td style="text-align:center;">
+                  <form method="post" style="display:inline;">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="lock_category_id" value="{$album.id}">
+                    {if $album.status == 'private'}
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist privat – klicken zum Entsperren" aria-label="Album entsperren" onclick="return confirm('Dieses Album wieder öffentlich schalten?');">🔒</button>
+                    {else}
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock_toggle" title="Album ist öffentlich – klicken zum Sperren" aria-label="Album sperren" onclick="return confirm('Dieses Album auf privat stellen?');">🔓</button>
+                    {/if}
+                  </form>
+                </td>
+              </tr>
             {/foreach}
-          </select>
-        </div>
-        <div class="bratonien-actions">
-          <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock" onclick="return confirm('Dieses Album wirklich auf privat stellen?');">Album sperren</button>
-        </div>
-      </form>
+          </tbody>
+        </table>
+
+        {if $BRATONIEN_ALBUM_LOCK_PAGE.pages > 1}
+          <div class="bratonien-actions" style="justify-content:space-between; align-items:center; margin-top:12px;">
+            <div>
+              {if $BRATONIEN_ALBUM_LOCK_PAGE.has_previous}
+                <a class="buttonLike" href="{$BRATONIEN_ALBUM_PAGER_URL}{$BRATONIEN_ALBUM_LOCK_PAGE.previous_page}#freigaben">Zurück</a>
+              {/if}
+            </div>
+            <span class="bratonien-muted">Seite {$BRATONIEN_ALBUM_LOCK_PAGE.page} von {$BRATONIEN_ALBUM_LOCK_PAGE.pages}</span>
+            <div>
+              {if $BRATONIEN_ALBUM_LOCK_PAGE.has_next}
+                <a class="buttonLike" href="{$BRATONIEN_ALBUM_PAGER_URL}{$BRATONIEN_ALBUM_LOCK_PAGE.next_page}#freigaben">Weiter</a>
+              {/if}
+            </div>
+          </div>
+        {/if}
+      {/if}
     </div>
 
     <div class="bratonien-card">
