@@ -15,6 +15,7 @@ function bratonien_tools_create_album_shares_table()
   pwg_query("CREATE TABLE IF NOT EXISTS `$table` (
     id int(11) NOT NULL AUTO_INCREMENT,
     category_id int(11) NOT NULL,
+    share_tag varchar(255) NOT NULL DEFAULT '',
     user_id mediumint(8) unsigned NOT NULL,
     token_hash char(64) NOT NULL,
     password_hash varchar(255) NOT NULL,
@@ -27,6 +28,12 @@ function bratonien_tools_create_album_shares_table()
     KEY category_id (category_id),
     KEY user_id (user_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+  $column = pwg_query("SHOW COLUMNS FROM `$table` LIKE 'share_tag'");
+  if (pwg_db_num_rows($column) === 0)
+  {
+    pwg_query("ALTER TABLE `$table` ADD share_tag varchar(255) NOT NULL DEFAULT '' AFTER category_id");
+  }
 }
 
 function bratonien_tools_drop_album_shares_table()
@@ -34,10 +41,6 @@ function bratonien_tools_drop_album_shares_table()
   pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_shares_table().'`');
 }
 
-/**
- * Secret used to derive stable, non-guessable share tokens without storing the
- * raw token in the database. This makes links reproducible for the admin UI.
- */
 function bratonien_tools_share_secret()
 {
   $key = 'bratonien_album_share_secret';
@@ -167,12 +170,21 @@ function bratonien_tools_create_album_share()
   global $user;
 
   $category_id = isset($_POST['share_category_id']) ? (int)$_POST['share_category_id'] : 0;
+  $share_tag = trim((string)($_POST['share_tag'] ?? ''));
   $password = (string)($_POST['share_password'] ?? '');
   $expires = trim((string)($_POST['share_expires_at'] ?? ''));
 
   if ($category_id < 1)
   {
     throw new Exception('Bitte ein privates Album auswählen.');
+  }
+  if (function_exists('mb_strlen') && mb_strlen($share_tag, 'UTF-8') > 255)
+  {
+    throw new Exception('Der Freigabe-Tag darf maximal 255 Zeichen lang sein.');
+  }
+  if (!function_exists('mb_strlen') && strlen($share_tag) > 255)
+  {
+    throw new Exception('Der Freigabe-Tag darf maximal 255 Zeichen lang sein.');
   }
 
   $query = 'SELECT id FROM '.CATEGORIES_TABLE." WHERE id = $category_id AND status = 'private' LIMIT 1";
@@ -225,9 +237,10 @@ function bratonien_tools_create_album_share()
   $expires_sql = $expires_at === null ? 'NULL' : "'".pwg_db_real_escape_string($expires_at)."'";
 
   $query = 'INSERT INTO '.bratonien_tools_shares_table()
-    .' (category_id, user_id, token_hash, password_hash, created_by, created_at, expires_at, active) VALUES ('
-    .(int)$category_id.', '.(int)$new_user_id.", '".pwg_db_real_escape_string($token_hash)."', '"
-    .pwg_db_real_escape_string($password_hash)."', ".(int)$user['id'].', NOW(), '.$expires_sql.', 1)';
+    .' (category_id, share_tag, user_id, token_hash, password_hash, created_by, created_at, expires_at, active) VALUES ('
+    .(int)$category_id.", '".pwg_db_real_escape_string($share_tag)."', ".(int)$new_user_id.", '"
+    .pwg_db_real_escape_string($token_hash)."', '".pwg_db_real_escape_string($password_hash)."', "
+    .(int)$user['id'].', NOW(), '.$expires_sql.', 1)';
   pwg_query($query);
 
   invalidate_user_cache();
@@ -237,11 +250,6 @@ function bratonien_tools_create_album_share()
   );
 }
 
-/**
- * Legacy shares created before reproducible tokens cannot expose their old raw
- * token because only its hash was stored. Regeneration intentionally replaces
- * that old token so the link becomes copyable from the admin UI afterwards.
- */
 function bratonien_tools_regenerate_album_share_link()
 {
   $share_id = isset($_POST['share_id']) ? (int)$_POST['share_id'] : 0;
