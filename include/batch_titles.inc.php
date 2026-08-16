@@ -212,15 +212,18 @@ function bratonien_tools_batch_titles_is_replaceable($image)
     return true;
   }
 
-  $file = (string)($image['file'] ?? '');
+  $file = trim((string)($image['file'] ?? ''));
   $file_base = pathinfo($file, PATHINFO_FILENAME);
-  if ($file_base !== '' && strcasecmp($title, $file_base) === 0)
+  if (
+    ($file !== '' && strcasecmp($title, $file) === 0)
+    || ($file_base !== '' && strcasecmp($title, $file_base) === 0)
+  )
   {
     return true;
   }
 
   return (bool)preg_match(
-    '/^(?:DSC[F]?|IMG|PXL|DCIM|SAM|PIC|PHOTO|IMAGE)[-_ ]?\d+(?:[-_ ].*)?$/i',
+    '/^(?:DSC[F]?|IMG|PXL|DCIM|SAM|PIC|PHOTO|IMAGE)[-_ ]?\d+(?:[-_ ].*)?(?:\.[A-Z0-9]{2,5})?$/i',
     $title
   );
 }
