@@ -4,7 +4,7 @@ Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.12.1**
+Aktuelle Plugin-Version: **0.13.0**
 
 ## Funktionsumfang
 
@@ -76,6 +76,21 @@ Beispiel: `Samt 2026 - 001`, `Samt 2026 - 002`, `Samt 2026 - 003`.
 
 Die Albumreihenfolge steht nur zur Verfuegung, wenn die Stapelverarbeitung auf genau ein Album ohne rekursive Unteralben gefiltert ist.
 
+### Passwortgeschuetzte Albumfreigaben
+
+Private Alben koennen direkt mit Bratonien Tools geteilt werden. ShareAlbum oder ein anderes Freigabe-Plugin ist dafuer nicht erforderlich.
+
+- eigener individueller Freigabelink pro Freigabe
+- Passwort ist verpflichtend und wird nur als Hash gespeichert
+- optionales Ablaufdatum
+- eigener technischer Piwigo-Benutzer pro Freigabe
+- der technische Benutzer erhaelt nur Zugriff auf das freigegebene private Album
+- Freigaben koennen einzeln widerrufen werden
+- beim Widerruf wird der technische Benutzer samt Sitzungen und Albumrecht entfernt
+- wird das Album geloescht, werden zugehoerige Freigaben automatisch bereinigt
+
+Zusaetzlich schuetzt Bratonien Tools den Administrator vor versehentlichem Selbstaussperren: Wird ein Album ueber Piwigos Album-Zugriffsverwaltung von oeffentlich auf privat gesetzt, erhaelt der aktuell handelnde Benutzer automatisch ein direktes Zugriffsrecht auf dieses Album.
+
 ### Erweiterte Bildnavigation
 
 Auf der Bilddetailseite werden die vorhandenen Piwigo-Image-Maps weiterverwendet und responsiv neu aufgeteilt.
@@ -123,6 +138,7 @@ Wichtige Bestandteile:
 - `include/public_selection.inc.php` - oeffentliche Fotoauswahl und Batch-Downloader-Anbindung
 - `include/picture_navigation.inc.php` - Einbindung der erweiterten Bildnavigation
 - `include/batch_titles.inc.php` - fortlaufende Titelvergabe in Piwigos Stapelverarbeitung
+- `include/album_shares.inc.php` - Passwortfreigaben und Schutz vor Selbstaussperren bei privaten Alben
 - `include/watermark_*.inc.php` - Wasserzeichen-Engine und Runtime
 - `include/self_update.inc.php` - Selbstaktualisierung
 - `tools/` - administrative Werkzeugmodule
@@ -149,6 +165,9 @@ Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
 - Validierung von Cache- und Dateipfaden
 - Filterung ausgewaehlter Bild-IDs gegen die aktuell berechtigte Bildmenge
 - Nutzung der von Piwigos Stapelverarbeitung validierten Auswahl fuer die fortlaufende Titelvergabe
+- gehashte Passwoerter und zufaellige Freigabetokens fuer geschuetzte Albumfreigaben
+- eigene technische Benutzer mit minimalem Albumzugriff fuer Freigaben
+- automatische Bereinigung widerrufener und geloeschter Albumfreigaben
 - Beibehaltung bestehender Piwigo- und Plugin-Berechtigungen
 - kontrollierte Uploadziele und Uploadgrenzen
 - kein Zugriff auf Originalbilder beim Leeren des Bildcaches
