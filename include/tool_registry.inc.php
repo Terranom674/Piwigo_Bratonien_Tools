@@ -62,6 +62,9 @@ function bratonien_tools_get_tools()
     'asset_delete' => array(
       'handler' => 'bratonien_tools_delete_asset',
     ),
+    'asset_upload_limits' => array(
+      'handler' => 'bratonien_tools_save_upload_limits',
+    ),
     'self_update_check' => array(
       'handler' => 'bratonien_tools_self_update_check',
     ),
