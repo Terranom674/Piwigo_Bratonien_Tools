@@ -10,6 +10,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -49,6 +50,9 @@ function bratonien_tools_get_tools()
     ),
     'watermark_rule' => array(
       'handler' => 'bratonien_tools_save_album_rule',
+    ),
+    'public_selection_settings' => array(
+      'handler' => 'bratonien_tools_save_public_selection_settings',
     ),
   );
 }
