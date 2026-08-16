@@ -29,6 +29,27 @@
   </div>
 
   <div class="bratonien-card" style="margin-top:16px;">
+    <h4>Upload-Limits</h4>
+    {if $ASSET_ENV.upload_limits_configurable}
+      <form method="post">
+        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+        <div class="bratonien-form-grid">
+          <label class="bratonien-label" for="upload_max_mb">Maximale Dateigroesse</label>
+          <div><input id="upload_max_mb" type="number" name="upload_max_mb" min="1" max="1024" step="1" value="{$ASSET_ENV.upload_max_mb|escape:html}" style="width:110px;"> MB</div>
+          <label class="bratonien-label" for="post_max_mb">Maximale POST-Groesse</label>
+          <div><input id="post_max_mb" type="number" name="post_max_mb" min="1" max="2048" step="1" value="{$ASSET_ENV.post_max_mb|escape:html}" style="width:110px;"> MB</div>
+        </div>
+        <div class="bratonien-actions">
+          <button class="buttonLike" type="submit" name="bratonien_tool" value="asset_upload_limits">Upload-Limits speichern</button>
+        </div>
+      </form>
+      <p class="bratonien-base-note">Die Werte werden in <code>{$ASSET_ENV.user_ini_path|escape:html}</code> verwaltet. Das POST-Limit muss mindestens so gross wie das Datei-Limit sein. PHP kann neue Werte wegen seines User-INI-Caches erst nach bis zu {$ASSET_ENV.user_ini_cache_ttl|escape:html} Sekunden anzeigen.</p>
+    {else}
+      <p class="bratonien-muted">Diese PHP-Konfiguration erlaubt keine automatische Anpassung ueber eine beschreibbare <code>.user.ini</code>. Die Limits muessen dann serverseitig gesetzt werden.</p>
+    {/if}
+  </div>
+
+  <div class="bratonien-card" style="margin-top:16px;">
     <h4>Vorhandene Bilddateien</h4>
     {if $BRATONIEN_ASSETS|@count}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">
