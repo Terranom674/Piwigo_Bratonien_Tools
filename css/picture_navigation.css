@@ -1,0 +1,64 @@
+.bratonien-picture-zones {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bratonien-picture-zone {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+  pointer-events: none;
+}
+
+.bratonien-picture-zone.is-active {
+  opacity: 1;
+}
+
+.bratonien-picture-zone-previous {
+  background: linear-gradient(
+    90deg,
+    rgba(212, 175, 55, 0.24) 0%,
+    rgba(212, 175, 55, 0.10) 55%,
+    rgba(212, 175, 55, 0.00) 100%
+  );
+}
+
+.bratonien-picture-zone-next {
+  background: linear-gradient(
+    270deg,
+    rgba(212, 175, 55, 0.24) 0%,
+    rgba(212, 175, 55, 0.10) 55%,
+    rgba(212, 175, 55, 0.00) 100%
+  );
+}
+
+.bratonien-picture-zone-thumbnails {
+  background: linear-gradient(
+    180deg,
+    rgba(212, 175, 55, 0.24) 0%,
+    rgba(212, 175, 55, 0.10) 55%,
+    rgba(212, 175, 55, 0.00) 100%
+  );
+}
+
+.bratonien-picture-zone-photoswipe {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(212, 175, 55, 0.16) 0%,
+    rgba(212, 175, 55, 0.07) 45%,
+    rgba(212, 175, 55, 0.00) 78%
+  );
+}
+
+.bratonien-picture-zone i {
+  color: #d4af37;
+  font-size: clamp(1.6rem, 3vw, 2.8rem);
+  text-shadow:
+    1px 1px 0 #6f5818,
+    0 0 4px rgba(0, 0, 0, 0.65);
+}
