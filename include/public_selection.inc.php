@@ -4,6 +4,107 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+function bratonien_tools_get_public_selection_settings()
+{
+  $default = array(
+    'enabled' => true,
+    'allow_guests' => true,
+    'allow_registered' => true,
+    'groups' => array(),
+  );
+
+  if (!function_exists('conf_get_param'))
+  {
+    return $default;
+  }
+
+  $stored = conf_get_param('bratonien_public_selection', null);
+  if (empty($stored))
+  {
+    return $default;
+  }
+
+  $decoded = json_decode($stored, true);
+  if (!is_array($decoded))
+  {
+    return $default;
+  }
+
+  $settings = array_merge($default, $decoded);
+  $settings['groups'] = array_values(array_unique(array_map('intval', is_array($settings['groups']) ? $settings['groups'] : array())));
+
+  return $settings;
+}
+
+function bratonien_tools_save_public_selection_settings()
+{
+  if (!function_exists('conf_update_param'))
+  {
+    throw new RuntimeException('Piwigo-Konfiguration ist nicht verfuegbar.');
+  }
+
+  $groups = isset($_POST['selection_groups']) && is_array($_POST['selection_groups'])
+    ? array_values(array_unique(array_filter(array_map('intval', $_POST['selection_groups']))))
+    : array();
+
+  $settings = array(
+    'enabled' => !empty($_POST['selection_enabled']),
+    'allow_guests' => !empty($_POST['selection_allow_guests']),
+    'allow_registered' => !empty($_POST['selection_allow_registered']),
+    'groups' => $groups,
+  );
+
+  conf_update_param('bratonien_public_selection', json_encode($settings));
+
+  return array('message' => 'Zugriffsrechte fuer die Fotoauswahl gespeichert.');
+}
+
+function bratonien_tools_get_piwigo_groups()
+{
+  if (!defined('GROUPS_TABLE'))
+  {
+    return array();
+  }
+
+  return query2array('SELECT id, name FROM '.GROUPS_TABLE.' ORDER BY name');
+}
+
+function bratonien_tools_public_selection_access_allowed()
+{
+  global $user;
+
+  $settings = bratonien_tools_get_public_selection_settings();
+  if (empty($settings['enabled']))
+  {
+    return false;
+  }
+
+  if (function_exists('is_admin') && is_admin())
+  {
+    return true;
+  }
+
+  if (function_exists('is_a_guest') && is_a_guest())
+  {
+    return !empty($settings['allow_guests']);
+  }
+
+  if (!empty($settings['allow_registered']))
+  {
+    return true;
+  }
+
+  if (empty($settings['groups']) || empty($user['id']) || !defined('USER_GROUP_TABLE'))
+  {
+    return false;
+  }
+
+  $query = 'SELECT 1 FROM '.USER_GROUP_TABLE.' WHERE user_id='.(int)$user['id'].' AND group_id IN('.implode(',', $settings['groups']).') LIMIT 1';
+  $result = pwg_query($query);
+
+  return pwg_db_num_rows($result) > 0;
+}
+
 /**
  * Adds a public multi-photo selection mode to album thumbnail pages.
  * The actual ZIP generation remains handled by Batch Downloader.
@@ -28,7 +129,7 @@ function bratonien_tools_public_selection_render()
     return;
   }
 
-  if (check_download_access() === false)
+  if (check_download_access() === false || !bratonien_tools_public_selection_access_allowed())
   {
     return;
   }
@@ -74,6 +175,12 @@ function bratonien_tools_public_selection_filter_set($set)
 
   if (empty($_GET['action']) || $_GET['action'] !== 'advdown_set' || !isset($_GET['bratonien_selection']))
   {
+    return $set;
+  }
+
+  if (!bratonien_tools_public_selection_access_allowed())
+  {
+    $set['items'] = array();
     return $set;
   }
 
