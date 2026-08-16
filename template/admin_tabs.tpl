@@ -23,7 +23,8 @@
       { id:'regeln', label:'Albumregeln' },
       { id:'auswahl-download', label:'Fotoauswahl & Downloads' },
       { id:'bilddateien', label:'Bilddateien & Pfade' },
-      { id:'wartung', label:'Wartung / Cache' }
+      { id:'wartung', label:'Wartung / Cache' },
+      { id:'system', label:'System & Updates' }
     ];
     var panels = [];
     definitions.forEach(function (d) {
