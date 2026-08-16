@@ -68,6 +68,7 @@ $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
+$public_albums = bratonien_tools_get_public_albums();
 $self_update = is_array($self_update_override) ? $self_update_override : bratonien_tools_remote_update_info(false);
 $self_update_environment = array(
   'webmaster' => function_exists('is_webmaster') ? is_webmaster() : false,
@@ -159,6 +160,7 @@ $template->assign(array(
   'ASSET_ENV' => $asset_environment,
   'BRATONIEN_ALBUM_SHARES' => $album_shares,
   'BRATONIEN_PRIVATE_ALBUMS' => $private_albums,
+  'BRATONIEN_PUBLIC_ALBUMS' => $public_albums,
   'SELF_UPDATE' => $self_update,
   'SELF_UPDATE_ENV' => $self_update_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
