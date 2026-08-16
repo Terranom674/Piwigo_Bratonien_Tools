@@ -1,0 +1,71 @@
+.bratonien-admin {
+  max-width: none !important;
+  width: 100%;
+  margin: 0 !important;
+}
+
+.bratonien-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  border-bottom: 1px solid rgba(255,255,255,.14);
+}
+
+.bratonien-tab {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,.16);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: rgba(0,0,0,.08);
+  color: #d7d7d7;
+  padding: 10px 14px;
+  margin: 0 0 -1px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.bratonien-tab:hover,
+.bratonien-tab:focus {
+  color: #f0a646;
+  border-color: rgba(240,166,70,.55);
+  outline: none;
+}
+
+.bratonien-tab.is-active {
+  color: #f0a646;
+  background: rgba(240,166,70,.07);
+  border-color: rgba(240,166,70,.65);
+  box-shadow: inset 0 2px 0 rgba(240,166,70,.75);
+}
+
+.bratonien-tab-panel {
+  width: 100%;
+  max-width: none;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.bratonien-tab-panel[hidden] {
+  display: none !important;
+}
+
+.bratonien-card {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+@media (max-width: 760px) {
+  .bratonien-tabs {
+    gap: 5px;
+  }
+
+  .bratonien-tab {
+    border-bottom: 1px solid rgba(255,255,255,.16);
+    border-radius: 4px;
+    margin-bottom: 0;
+    padding: 9px 11px;
+  }
+}
