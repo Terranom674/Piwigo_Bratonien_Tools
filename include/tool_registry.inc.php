@@ -13,6 +13,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'tools/asset_manager.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/self_update.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -64,6 +65,12 @@ function bratonien_tools_get_tools()
     ),
     'asset_upload_limits' => array(
       'handler' => 'bratonien_tools_save_upload_limits',
+    ),
+    'album_share_create' => array(
+      'handler' => 'bratonien_tools_create_album_share',
+    ),
+    'album_share_revoke' => array(
+      'handler' => 'bratonien_tools_revoke_album_share',
     ),
     'self_update_check' => array(
       'handler' => 'bratonien_tools_self_update_check',
