@@ -73,6 +73,9 @@ function bratonien_tools_get_tools()
     'album_share_create' => array(
       'handler' => 'bratonien_tools_create_album_share',
     ),
+    'album_share_regenerate_link' => array(
+      'handler' => 'bratonien_tools_regenerate_album_share_link',
+    ),
     'album_share_revoke' => array(
       'handler' => 'bratonien_tools_revoke_album_share',
     ),
