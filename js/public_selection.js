@@ -187,12 +187,7 @@
     });
   });
 
-  // The native Batch Downloader button downloads the whole current set and
-  // performs a page round-trip first. When Bratonien selection is available,
-  // the selection mode replaces that control; "Alle auswählen" covers the
-  // complete visible album without the confusing duplicate button.
   $(function () {
-    $('#batchDownloadLink, #batchDownloadRequest').closest('a').hide();
     $('#bratonien-selection-toggle').attr('aria-pressed', 'false');
   });
 
