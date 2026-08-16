@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.4.10
+Version: 0.5.0
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -16,6 +16,7 @@ define('BRATONIEN_TOOLS_ID', basename(dirname(__FILE__)));
 define('BRATONIEN_TOOLS_PATH', PHPWG_PLUGINS_PATH . BRATONIEN_TOOLS_ID . '/');
 
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 
 add_event_handler('get_admin_plugin_menu_links', 'bratonien_tools_admin_menu');
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL, 4);
