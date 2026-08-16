@@ -112,8 +112,6 @@ function bratonien_tools_public_selection_init()
     return;
   }
 
-  // Run before Batch Downloader's own index-button handler (+10). This lets us
-  // answer selection download requests without reloading the album page first.
   add_event_handler('loc_end_index', 'bratonien_tools_public_selection_download_request', EVENT_HANDLER_PRIORITY_NEUTRAL + 5);
   add_event_handler('loc_end_index', 'bratonien_tools_public_selection_render', EVENT_HANDLER_PRIORITY_NEUTRAL + 30);
   add_event_handler('batchdownload_get_set_info', 'bratonien_tools_public_selection_filter_set', EVENT_HANDLER_PRIORITY_NEUTRAL + 30, 1);
@@ -146,6 +144,13 @@ function bratonien_tools_public_selection_page_allowed()
   return true;
 }
 
+function bratonien_tools_batch_download_init_url($set_id)
+{
+  $base = BATCH_DOWNLOAD_PUBLIC.'init_zip';
+  $separator = strpos($base, '?') === false ? '?' : '&';
+  return $base.$separator.'set_id='.(int)$set_id;
+}
+
 function bratonien_tools_public_selection_download_request()
 {
   global $page, $conf;
@@ -176,8 +181,6 @@ function bratonien_tools_public_selection_download_request()
       throw new RuntimeException('Es wurden keine Bilder ausgewaehlt.');
     }
 
-    // Never trust IDs received from the browser. Only images present in the
-    // currently accessible Piwigo result set may enter the download set.
     $allowed = array_fill_keys(array_map('intval', $page['items']), true);
     $filtered = array();
     foreach ($selected as $image_id)
@@ -199,7 +202,8 @@ function bratonien_tools_public_selection_download_request()
     }
 
     $set = new BatchDownloader('new', $filtered, 'category', $page['category']['id'], 'original');
-    if ((int)$set->getParam('nb_images') < 1)
+    $set_id = (int)$set->getParam('id');
+    if ($set_id < 1 || (int)$set->getParam('nb_images') < 1)
     {
       $set->delete();
       throw new RuntimeException('Fuer die Auswahl konnte kein Download erzeugt werden.');
@@ -212,16 +216,19 @@ function bratonien_tools_public_selection_download_request()
     )
     {
       $set->createNextArchive(true);
-      $target = get_root_url().BATCH_DOWNLOAD_PATH.'download.php?set_id='.$set->getParam('id').'&zip=1';
-      echo json_encode(array('ok' => true, 'download_url' => $target));
+      $target = get_root_url().BATCH_DOWNLOAD_PATH.'download.php?set_id='.$set_id.'&zip=1';
+      echo json_encode(array('ok' => true, 'download_url' => $target, 'set_id' => $set_id));
       exit;
     }
 
-    $target = add_url_params(BATCH_DOWNLOAD_PUBLIC.'init_zip', array('set_id' => $set->getParam('id')));
-    echo json_encode(array('ok' => true, 'download_url' => $target));
+    // Do not use add_url_params here. Piwigo can run with query-string based
+    // pretty URLs (index.php?/download/...), where set_id must remain a real
+    // GET parameter for Batch Downloader's download.inc.php.
+    $target = bratonien_tools_batch_download_init_url($set_id);
+    echo json_encode(array('ok' => true, 'download_url' => $target, 'set_id' => $set_id));
     exit;
   }
-  catch (Exception $e)
+  catch (Throwable $e)
   {
     http_response_code(400);
     echo json_encode(array('ok' => false, 'error' => $e->getMessage()));
@@ -248,7 +255,7 @@ function bratonien_tools_public_selection_render()
   $template->parse('bratonien_selection_assets', false);
 
   $button = '<a href="#" id="bratonien-selection-toggle" class="pwg-state-default pwg-button" title="Bilder auswaehlen" aria-label="Bilder auswaehlen">'
-    .'<span class="pwg-icon fas fa-check-square fa-fw" aria-hidden="true"></span>'
+    .'<span class="pwg-icon fas fa-check-double fa-fw" aria-hidden="true"></span>'
     .'</a>';
 
   $template->add_index_button($button, 49);
