@@ -13,9 +13,6 @@ $messages = array();
 $errors = array();
 $self_update_override = null;
 
-// If post_max_size is exceeded, PHP discards both $_POST and $_FILES before
-// the plugin can inspect the upload. Detect that situation explicitly so the
-// admin page does not silently reload without feedback.
 if (
   $_SERVER['REQUEST_METHOD'] === 'POST'
   && empty($_POST)
@@ -69,6 +66,8 @@ $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
+$album_shares = bratonien_tools_get_album_shares();
+$private_albums = bratonien_tools_get_private_albums();
 $self_update = is_array($self_update_override) ? $self_update_override : bratonien_tools_remote_update_info(false);
 $self_update_environment = array(
   'webmaster' => function_exists('is_webmaster') ? is_webmaster() : false,
@@ -158,6 +157,8 @@ $template->assign(array(
   'PUBLIC_SELECTION_GROUPS' => $public_selection_groups,
   'BRATONIEN_ASSETS' => $assets,
   'ASSET_ENV' => $asset_environment,
+  'BRATONIEN_ALBUM_SHARES' => $album_shares,
+  'BRATONIEN_PRIVATE_ALBUMS' => $private_albums,
   'SELF_UPDATE' => $self_update,
   'SELF_UPDATE_ENV' => $self_update_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
@@ -167,11 +168,13 @@ $template->set_filename('admin_tabs_content', BRATONIEN_TOOLS_PATH . 'template/a
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
 $template->set_filename('public_selection_admin_content', BRATONIEN_TOOLS_PATH . 'template/public_selection_admin.tpl');
 $template->set_filename('asset_manager_admin_content', BRATONIEN_TOOLS_PATH . 'template/asset_manager_admin.tpl');
+$template->set_filename('album_shares_admin_content', BRATONIEN_TOOLS_PATH . 'template/album_shares_admin.tpl');
 $template->set_filename('system_admin_content', BRATONIEN_TOOLS_PATH . 'template/system_admin.tpl');
 
 $admin_content = $template->parse('admin_tabs_content', true);
 $admin_content .= $template->parse('plugin_admin_content', true);
 $admin_content .= $template->parse('public_selection_admin_content', true);
 $admin_content .= $template->parse('asset_manager_admin_content', true);
+$admin_content .= $template->parse('album_shares_admin_content', true);
 $admin_content .= $template->parse('system_admin_content', true);
 $template->assign('ADMIN_CONTENT', $admin_content);
