@@ -4,6 +4,26 @@
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
+      <h4>Album sperren</h4>
+      <p class="bratonien-muted">Ein öffentliches Album mit einem Klick auf privat stellen. Dein eigener Benutzer erhält dabei automatisch Zugriff.</p>
+      <form method="post">
+        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+        <div class="bratonien-form-grid">
+          <label for="lock_category_id">Öffentliches Album</label>
+          <select id="lock_category_id" name="lock_category_id" required>
+            <option value="">Album auswählen</option>
+            {foreach from=$BRATONIEN_PUBLIC_ALBUMS item=album}
+              <option value="{$album.id}">{$album.name|escape:html}</option>
+            {/foreach}
+          </select>
+        </div>
+        <div class="bratonien-actions">
+          <button class="buttonLike" type="submit" name="bratonien_tool" value="album_lock" onclick="return confirm('Dieses Album wirklich auf privat stellen?');">Album sperren</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="bratonien-card">
       <h4>Neue Freigabe</h4>
       <form method="post">
         <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
