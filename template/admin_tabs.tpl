@@ -19,9 +19,7 @@
   'use strict';
   function initBratonienTabs() {
     var definitions = [
-      { id:'uebersicht', label:'Übersicht' },
-      { id:'wasserzeichen', label:'Wasserzeichen' },
-      { id:'regeln', label:'Albumregeln' },
+      { id:'wasserzeichen', label:'Wasserzeichen', sections:['uebersicht','wasserzeichen','regeln'] },
       { id:'auswahl-download', label:'Fotoauswahl & Downloads' },
       { id:'bilddateien', label:'Bilddateien & Pfade' },
       { id:'wartung', label:'Wartung / Cache' },
@@ -29,11 +27,10 @@
     ];
     var panels = [];
     definitions.forEach(function (d) {
-      var panel = document.getElementById(d.id);
-      if (!panel) return;
-      panel.classList.add('bratonien-tab-panel');
-      panel.setAttribute('role','tabpanel');
-      panels.push({definition:d,panel:panel});
+      var ids=d.sections||[d.id], elements=[];
+      ids.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.add('bratonien-tab-panel');elements.push(el);}});
+      if (!elements.length) return;
+      panels.push({definition:d,elements:elements});
     });
     if (!panels.length) return;
 
@@ -51,10 +48,9 @@
       b.id='bratonien-tab-'+item.definition.id;
       b.dataset.tab=item.definition.id;
       b.setAttribute('role','tab');
-      b.setAttribute('aria-controls',item.definition.id);
       b.textContent=item.definition.label;
       tabs.appendChild(b);
-      item.panel.setAttribute('aria-labelledby',b.id);
+      item.elements.forEach(function(el){el.setAttribute('role','tabpanel');el.setAttribute('aria-labelledby',b.id);});
     });
     anchor.replaceWith(tabs);
 
@@ -62,7 +58,7 @@
       var valid=false;
       panels.forEach(function (item) {
         var active=item.definition.id===id;
-        item.panel.hidden=!active;
+        item.elements.forEach(function(el){el.hidden=!active;});
         var b=tabs.querySelector('[data-tab="'+item.definition.id+'"]');
         if (b) {
           b.classList.toggle('is-active',active);
@@ -85,7 +81,8 @@
     });
 
     var initial='';
-    if(location.hash && panels.some(function(i){return i.definition.id===location.hash.slice(1)})) initial=location.hash.slice(1);
+    var hash=location.hash?location.hash.slice(1):'';
+    panels.forEach(function(item){if(item.definition.id===hash||(item.definition.sections||[]).indexOf(hash)!==-1)initial=item.definition.id;});
     if(!initial){ try { initial=localStorage.getItem('bratonien-tools-active-tab')||''; } catch(e){} }
     if(!panels.some(function(i){return i.definition.id===initial})) initial=panels[0].definition.id;
     activate(initial,false);
