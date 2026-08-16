@@ -174,7 +174,14 @@ function bratonien_tools_batch_titles_get_images($ids, $sort)
       $order_by = ' ORDER BY '.$category_info['image_order'];
     }
 
-    $query = '\nSELECT id, name, file, date_creation\n  FROM '.IMAGES_TABLE.'\n  JOIN '.IMAGE_CATEGORY_TABLE.' ON id = image_id\n  WHERE id IN ('.$id_list.')\n    AND category_id = '.$category_id.'\n  '.$order_by.'\n;';
+    $query = '
+SELECT id, name, file, date_creation
+  FROM '.IMAGES_TABLE.'
+  JOIN '.IMAGE_CATEGORY_TABLE.' ON id = image_id
+  WHERE id IN ('.$id_list.')
+    AND category_id = '.$category_id.'
+  '.$order_by.'
+;';
   }
   else
   {
@@ -187,7 +194,12 @@ function bratonien_tools_batch_titles_get_images($ids, $sort)
       $order_by = ' ORDER BY file ASC, id ASC';
     }
 
-    $query = '\nSELECT id, name, file, date_creation\n  FROM '.IMAGES_TABLE.'\n  WHERE id IN ('.$id_list.')\n  '.$order_by.'\n;';
+    $query = '
+SELECT id, name, file, date_creation
+  FROM '.IMAGES_TABLE.'
+  WHERE id IN ('.$id_list.')
+  '.$order_by.'
+;';
   }
 
   $result = pwg_query($query);
