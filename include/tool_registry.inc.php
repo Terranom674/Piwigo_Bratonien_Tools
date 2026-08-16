@@ -67,8 +67,8 @@ function bratonien_tools_get_tools()
     'asset_upload_limits' => array(
       'handler' => 'bratonien_tools_save_upload_limits',
     ),
-    'album_lock' => array(
-      'handler' => 'bratonien_tools_lock_album',
+    'album_lock_toggle' => array(
+      'handler' => 'bratonien_tools_toggle_album_lock',
     ),
     'album_share_create' => array(
       'handler' => 'bratonien_tools_create_album_share',
