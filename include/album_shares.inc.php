@@ -243,6 +243,31 @@ function bratonien_tools_ensure_private_album_access($category_id, $user_id = nu
   bratonien_tools_grant_album_access($uid, (int)$category_id);
 }
 
+function bratonien_tools_preserve_private_album_access()
+{
+  if (!defined('IN_ADMIN') || $_SERVER['REQUEST_METHOD'] !== 'POST')
+  {
+    return;
+  }
+  if ((string)($_GET['page'] ?? '') !== 'cat_options' || (string)($_GET['section'] ?? '') !== 'status')
+  {
+    return;
+  }
+  if (!isset($_POST['falsify']) || empty($_POST['cat_true']) || !is_array($_POST['cat_true']))
+  {
+    return;
+  }
+
+  check_pwg_token();
+  foreach ($_POST['cat_true'] as $category_id)
+  {
+    if (preg_match('/^\d+$/', (string)$category_id))
+    {
+      bratonien_tools_ensure_private_album_access((int)$category_id);
+    }
+  }
+}
+
 function bratonien_tools_album_shares_on_delete_categories($category_ids)
 {
   foreach ((array)$category_ids as $category_id)
