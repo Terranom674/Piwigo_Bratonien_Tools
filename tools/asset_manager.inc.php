@@ -96,6 +96,18 @@ function bratonien_tools_upload_asset()
   if (!isset($file['error']) || (int)$file['error'] !== UPLOAD_ERR_OK)
   {
     $code = isset($file['error']) ? (int)$file['error'] : -1;
+    if ($code === UPLOAD_ERR_INI_SIZE)
+    {
+      throw new RuntimeException('Upload abgelehnt: Die Datei ist groesser als das PHP-Limit upload_max_filesize ('.ini_get('upload_max_filesize').').');
+    }
+    if ($code === UPLOAD_ERR_FORM_SIZE)
+    {
+      throw new RuntimeException('Upload abgelehnt: Die Datei ueberschreitet das erlaubte Upload-Limit des Formulars.');
+    }
+    if ($code === UPLOAD_ERR_PARTIAL)
+    {
+      throw new RuntimeException('Upload fehlgeschlagen: Die Datei wurde nur teilweise uebertragen.');
+    }
     throw new RuntimeException('Upload fehlgeschlagen (PHP-Uploadcode '.$code.').');
   }
 
