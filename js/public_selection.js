@@ -88,9 +88,23 @@
     updateBar();
   }
 
+  function placeSelectionBar() {
+    var $bar = $('#bratonien-selection-bar');
+    var $toggle = $('#bratonien-selection-toggle');
+    if (!$bar.length || !$toggle.length) {
+      return;
+    }
+
+    var $navbar = $toggle.closest('nav.navbar, .navbar, nav').first();
+    if ($navbar.length) {
+      $bar.insertAfter($navbar);
+    }
+  }
+
   function setActive(value) {
     active = value;
     $('body').toggleClass('bratonien-selection-active', active);
+    placeSelectionBar();
     $('#bratonien-selection-bar').prop('hidden', !active);
     $('#bratonien-selection-toggle').toggleClass('active', active).attr('aria-pressed', active ? 'true' : 'false');
     refreshSelectableItems();
@@ -189,9 +203,11 @@
 
   $(function () {
     $('#bratonien-selection-toggle').attr('aria-pressed', 'false');
+    placeSelectionBar();
   });
 
   $(document).ajaxComplete(function () {
+    placeSelectionBar();
     if (active) {
       refreshSelectableItems();
     }
