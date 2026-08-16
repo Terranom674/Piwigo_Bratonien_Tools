@@ -47,6 +47,12 @@ $engine = bratonien_tools_get_watermark_engine_config();
 $cache_workers = bratonien_tools_get_cache_worker_settings();
 $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
+$selected_public_selection_groups = array_fill_keys($public_selection['groups'], true);
+foreach ($public_selection_groups as &$group)
+{
+  $group['selected'] = isset($selected_public_selection_groups[(int)$group['id']]);
+}
+unset($group);
 
 $watermark_options = array();
 $watermark_meta = array();
