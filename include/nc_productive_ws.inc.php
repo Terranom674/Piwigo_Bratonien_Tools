@@ -55,6 +55,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   $saved_post = $_POST;
   $saved_request_method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : null;
   $saved_default_status = isset($conf['newcat_default_status']) ? $conf['newcat_default_status'] : null;
+  $saved_template_dirs = null;
   $output = '';
   $counts = array();
 
@@ -63,6 +64,15 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     if (!defined('IN_ADMIN'))
     {
       define('IN_ADMIN', true);
+    }
+
+    // ws.php uses the gallery template context. Piwigo's admin/site_update.php
+    // also initializes the admin tabsheet and therefore needs the admin
+    // template directory (tabsheet.tpl, site_update.tpl, ...).
+    if (is_object($template) && isset($template->smarty) && method_exists($template, 'set_template_dir'))
+    {
+      $saved_template_dirs = $template->smarty->getTemplateDir();
+      $template->set_template_dir(PHPWG_ROOT_PATH.'admin/themes/default/template');
     }
 
     $conf['newcat_default_status'] = 'private';
@@ -98,6 +108,12 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   {
     $_GET = $saved_get;
     $_POST = $saved_post;
+
+    if ($saved_template_dirs !== null && is_object($template) && isset($template->smarty))
+    {
+      $template->smarty->setTemplateDir($saved_template_dirs);
+    }
+
     if ($saved_default_status === null)
     {
       unset($conf['newcat_default_status']);
