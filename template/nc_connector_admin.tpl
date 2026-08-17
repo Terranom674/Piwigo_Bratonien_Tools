@@ -104,6 +104,7 @@
                   </ul>
                   {if $connection.takeover_state == 'ready'}
                     <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die spätere kontrollierte Übergabe vorgemerkt. Der Connector ist weiterhin deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
+                    <p class="bratonien-base-note"><strong>Erfolgskriterium für den ersten Connector-Lauf:</strong> Sowohl „Änderungen verarbeitet“ als auch „keine Änderungen gefunden“ gelten als erfolgreicher Lauf. Nur ein technischer Fehler gilt als fehlgeschlagen und darf einen Rückfall auf den Legacy-Sync auslösen.</p>
                   {elseif $connection.verified_ok}
                     <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
                   {else}
