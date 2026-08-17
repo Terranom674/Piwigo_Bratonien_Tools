@@ -4,19 +4,20 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.12**
+- Aktuelle Plugin-Version: **0.9.3.13**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-- Aktuelle Versionsanhebung: `0.9.3.12`
-- `runtime/lib/activity_gate.py` prüft nicht mehr ausschließlich `piwigo_showcase_activity`, sondern zusätzlich einen Fingerprint der aktuellen Source-View.
+- Aktuelle Versionsanhebung: `0.9.3.13`
+- `runtime/sync.sh` bleibt jetzt mit bereits bestehenden `connection-*.conf` kompatibel, die `NC_ACTIVITY_VIEW` noch nicht enthalten.
+- Fehlt `NC_ACTIVITY_VIEW`, wird automatisch `piwigo_showcase_activity` verwendet.
+- Fehlt `NC_DB_VIEW`, wird automatisch `piwigo_showcase_sources` verwendet.
+- Die in `0.9.3.12` ergänzte Share-Fingerprint-Prüfung des Activity-Gates bleibt aktiv.
 - Neue oder entfernte Shares können damit einen Lauf direkt auslösen, auch wenn Nextcloud dafür keinen passenden Activity-Eintrag liefert.
-- `runtime/sync.sh` übergibt Source- und Activity-View explizit an den Gate.
-- Für bestehende Installationen wurde im Proxmox-Scripts-Repo eine upgrade-sichere Nextcloud-View-Migration ergänzt. Sie erweitert die Source-View auf `folder` und `file`, ohne das Passwort von `piwigo_reader` zu verändern.
-- Der Proxmox-Piwigo-Updater führt diese Migration künftig automatisch im erkannten Nextcloud-LXC aus.
+- Für bestehende Installationen existiert im Proxmox-Scripts-Repo eine upgrade-sichere Nextcloud-View-Migration auf `folder` und `file`, ohne das Passwort von `piwigo_reader` zu verändern.
 
 ## Architektur NC Connector
 
@@ -80,7 +81,7 @@ Der API-Weg soll später der bevorzugte Weg werden. Der klassische Admin-Weg ble
 
 Ein einzelnes Bild liegt bereits im Nextcloud-Stammverzeichnis und ist als einzelne Datei geteilt.
 
-Der nächste Test soll nach Installation von `0.9.3.12` und Anwendung der automatischen Nextcloud-View-Migration die komplette Kette prüfen:
+Der nächste Test soll nach Installation von `0.9.3.13` die komplette Kette prüfen:
 
 `Nextcloud-View -> Activity/Share-Gate -> Manifest -> Shadow Tree -> Piwigo-API-Simulation`
 
