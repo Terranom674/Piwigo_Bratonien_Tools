@@ -113,7 +113,7 @@ function bratonien_tools_nc_connector_connection_last_status(array $connection)
   $candidates = array();
   if ($connection_id > 0)
   {
-    $candidates[] = '/var/lib/bratonien-tools/nc-connector-status/connection-'.$connection_id.'.json';
+    $candidates[] = rtrim(PHPWG_ROOT_PATH, '/').'/_data/bratonien-tools/nc-connector-status/connection-'.$connection_id.'.json';
   }
 
   $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
@@ -127,21 +127,20 @@ function bratonien_tools_nc_connector_connection_last_status(array $connection)
     $candidates[] = $state_dir.'/connector-status.json';
   }
 
-  $status_path = '';
+  $decoded = null;
   foreach ($candidates as $candidate)
   {
-    if (is_readable($candidate))
+    if (!is_readable($candidate))
     {
-      $status_path = $candidate;
+      continue;
+    }
+    $value = json_decode((string)@file_get_contents($candidate), true);
+    if (is_array($value))
+    {
+      $decoded = $value;
       break;
     }
   }
-  if ($status_path === '')
-  {
-    return $empty;
-  }
-
-  $decoded = json_decode((string)@file_get_contents($status_path), true);
   if (!is_array($decoded))
   {
     return $empty;
