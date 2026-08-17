@@ -77,6 +77,7 @@ $private_albums = bratonien_tools_get_private_albums();
 $nc_connector = bratonien_tools_nc_connector_status();
 foreach ($nc_connector['connections'] as &$nc_connection)
 {
+  $nc_connection['last_sync'] = bratonien_tools_nc_connector_connection_last_status($nc_connection);
   if (!empty($nc_connection['fallback_stored']))
   {
     $nc_connection['name'] .= ' · Fallback gespeichert';
@@ -97,6 +98,12 @@ $nc_system_defaults = array(
   'last_run_label' => 'Nicht verfügbar',
   'last_run_state' => '',
   'last_run_message' => '',
+  'last_run_auth_mode' => '',
+  'last_run_api_state' => '',
+  'last_run_api_message' => '',
+  'last_run_fallback_state' => '',
+  'last_run_fallback_message' => '',
+  'last_run_error_detail' => '',
   'next_run_timestamp' => 0,
   'next_run_label' => 'Nicht verfügbar',
   'legacy_runtime_exists' => false,
