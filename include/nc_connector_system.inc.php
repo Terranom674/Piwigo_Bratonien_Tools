@@ -111,6 +111,12 @@ function bratonien_tools_nc_connector_connection_last_status(array $connection)
 
   $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
   $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+
+  if ($state_dir === '' && !empty($connection['id']))
+  {
+    $state_dir = '/var/lib/bratonien-tools/nc-connector/connection-'.(int)$connection['id'];
+  }
+
   if ($state_dir === '')
   {
     return $empty;
