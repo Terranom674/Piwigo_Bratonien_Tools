@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -13,14 +14,29 @@ import time
 from pathlib import Path
 
 
-def load(path: Path) -> dict[str, int]:
+def load(path: Path) -> dict[str, object]:
+    defaults: dict[str, object] = {
+        "processed": 0,
+        "observed": 0,
+        "pending_since": 0,
+        "last_change": 0,
+        "last_full": 0,
+        "source_signature": "",
+    }
     if not path.exists():
-        return {"processed": 0, "observed": 0, "pending_since": 0, "last_change": 0, "last_full": 0}
+        return defaults
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {key: int(data.get(key, 0)) for key in ("processed", "observed", "pending_since", "last_change", "last_full")}
+    return {
+        "processed": int(data.get("processed", 0)),
+        "observed": int(data.get("observed", 0)),
+        "pending_since": int(data.get("pending_since", 0)),
+        "last_change": int(data.get("last_change", 0)),
+        "last_full": int(data.get("last_full", 0)),
+        "source_signature": str(data.get("source_signature", "")),
+    }
 
 
-def save(path: Path, state: dict[str, int]) -> None:
+def save(path: Path, state: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(dir=path.parent)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -29,12 +45,22 @@ def save(path: Path, state: dict[str, int]) -> None:
     Path(name).replace(path)
 
 
-def latest(args: argparse.Namespace) -> int:
+def query(args: argparse.Namespace, sql: str) -> str:
     env = os.environ.copy()
     env["PGPASSWORD"] = args.password_file.read_text(encoding="utf-8").strip()
-    sql = f"SELECT COALESCE(MAX(activity_id), 0) FROM {args.view}"
     command = ["psql", "-XAt", "-h", args.host, "-p", str(args.port), "-U", args.user, "-d", args.database, "-c", sql]
-    return int(subprocess.run(command, env=env, check=True, text=True, capture_output=True).stdout.strip())
+    return subprocess.run(command, env=env, check=True, text=True, capture_output=True).stdout
+
+
+def latest(args: argparse.Namespace) -> int:
+    return int(query(args, f"SELECT COALESCE(MAX(activity_id), 0) FROM {args.view}").strip())
+
+
+def source_signature(args: argparse.Namespace) -> str:
+    if not args.source_view:
+        return ""
+    payload = query(args, f"SELECT share_id, display_name, storage_id, source_path FROM {args.source_view} ORDER BY share_id")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def main() -> int:
@@ -47,6 +73,7 @@ def main() -> int:
     parser.add_argument("--user", required=True)
     parser.add_argument("--password-file", required=True, type=Path)
     parser.add_argument("--view", default="piwigo_showcase_activity")
+    parser.add_argument("--source-view", default="")
     parser.add_argument("--quiet", type=int, default=120)
     parser.add_argument("--max-wait", type=int, default=900)
     parser.add_argument("--full-after", type=int, default=86400)
@@ -56,23 +83,27 @@ def main() -> int:
         state = load(args.state)
         now = int(time.time())
         current = latest(args)
+        current_source = source_signature(args)
+
         if args.action == "commit":
-            state.update(processed=current, observed=current, pending_since=0, last_change=0, last_full=now)
+            state.update(processed=current, observed=current, pending_since=0, last_change=0, last_full=now, source_signature=current_source)
             save(args.state, state)
             return 0
 
-        if not state["last_full"]:
+        if not int(state["last_full"]):
             return 0
-        if current > state["observed"]:
+        if current_source and current_source != str(state["source_signature"]):
+            return 0
+        if current > int(state["observed"]):
             state["observed"] = current
             state["last_change"] = now
-            state["pending_since"] = state["pending_since"] or now
+            state["pending_since"] = int(state["pending_since"]) or now
             save(args.state, state)
-        if now - state["last_full"] >= args.full_after:
+        if now - int(state["last_full"]) >= args.full_after:
             return 0
-        if state["observed"] <= state["processed"]:
+        if int(state["observed"]) <= int(state["processed"]):
             return 3
-        if now - state["last_change"] >= args.quiet or now - state["pending_since"] >= args.max_wait:
+        if now - int(state["last_change"]) >= args.quiet or now - int(state["pending_since"]) >= args.max_wait:
             return 0
         return 3
     except Exception as error:
