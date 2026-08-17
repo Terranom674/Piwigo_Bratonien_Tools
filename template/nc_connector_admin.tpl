@@ -30,12 +30,14 @@
 
     <div class="bratonien-card" style="grid-column:1/-1">
       <h4>Piwigo API prüfen</h4>
-      <p class="bratonien-base-note">Diese Diagnose prüft ausschließlich, ob ein Piwigo-API-Key funktioniert, zu welchem Benutzer er gehört, welche Rolle dieser Benutzer hat und ob die Web-API mögliche Sync-/Site-Methoden anbietet. Der Key wird nicht gespeichert und es wird keine Synchronisation ausgelöst.</p>
+      <p class="bratonien-base-note">Die API-Schlüssel-ID und das Geheimnis werden getrennt eingegeben. Bratonien Tools setzt daraus intern exakt den von Piwigo erwarteten Header <code>ID:Geheimnis</code> zusammen. Beide Werte werden nur für diesen Test verwendet, nicht gespeichert und es wird keine Synchronisation ausgelöst.</p>
       <form method="post">
         <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
         <div class="bratonien-form-grid">
-          <label class="bratonien-label" for="nc_piwigo_api_key">API-Key</label>
-          <input id="nc_piwigo_api_key" name="nc_piwigo_api_key" type="password" autocomplete="off" required>
+          <label class="bratonien-label" for="nc_piwigo_api_key_id">API-Schlüssel-ID</label>
+          <input id="nc_piwigo_api_key_id" name="nc_piwigo_api_key_id" type="text" autocomplete="off" placeholder="pkid-..." required>
+          <label class="bratonien-label" for="nc_piwigo_api_key_secret">API-Geheimnis</label>
+          <input id="nc_piwigo_api_key_secret" name="nc_piwigo_api_key_secret" type="password" autocomplete="off" required>
         </div>
         <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_piwigo_api_test">API prüfen</button></p>
       </form>
