@@ -310,6 +310,11 @@ function bratonien_tools_nc_connector_status()
 
   $connections = bratonien_tools_nc_connector_connections();
   $bundle_path = bratonien_tools_nc_connector_import_bundle_path();
+  $helper_path = realpath(BRATONIEN_TOOLS_PATH.'nc-connector-migrate.php');
+  if ($helper_path === false)
+  {
+    $helper_path = BRATONIEN_TOOLS_PATH.'nc-connector-migrate.php';
+  }
 
   return array(
     'phase' => 'Migration',
@@ -340,6 +345,6 @@ function bratonien_tools_nc_connector_status()
     'connection_count' => count($connections),
     'migration_bundle_available' => is_readable($bundle_path),
     'migration_bundle_path' => $bundle_path,
-    'migration_command' => 'sudo php '.PHPWG_ROOT_PATH.'plugins/'.BRATONIEN_TOOLS_ID.'/nc-connector-migrate.php',
+    'migration_command' => 'sudo php '.$helper_path,
   );
 }
