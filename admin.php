@@ -75,6 +75,19 @@ $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
 $nc_connector = bratonien_tools_nc_connector_status();
+foreach ($nc_connector['connections'] as &$nc_connection)
+{
+  if (!empty($nc_connection['fallback_stored']))
+  {
+    $nc_connection['name'] .= ' · Fallback gespeichert';
+    $nc_connection['verification_checks'][] = array(
+      'name' => 'Piwigo-Fallback',
+      'ok' => true,
+      'detail' => 'Benutzername/Passwort verschluesselt gespeichert',
+    );
+  }
+}
+unset($nc_connection);
 $nc_connector['piwigo_api_test'] = $nc_piwigo_api_test;
 $nc_system_defaults = array(
   'timer_name' => 'bratonien-nc-connector.timer',
