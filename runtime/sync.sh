@@ -9,6 +9,12 @@ PIWIGO_SYNC_OVERRIDE_VALUE="${PIWIGO_SYNC_OVERRIDE-}"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
+# Existing connection configs created before the source-share-aware activity gate
+# do not contain NC_ACTIVITY_VIEW yet. Keep them compatible without requiring a
+# manual config migration.
+NC_ACTIVITY_VIEW="${NC_ACTIVITY_VIEW:-piwigo_showcase_activity}"
+NC_DB_VIEW="${NC_DB_VIEW:-piwigo_showcase_sources}"
+
 if [[ -n "$PIWIGO_SYNC_OVERRIDE_VALUE" ]]; then
     case "$PIWIGO_SYNC_OVERRIDE_VALUE" in
         0|1) PIWIGO_SYNC_ENABLED="$PIWIGO_SYNC_OVERRIDE_VALUE" ;;
