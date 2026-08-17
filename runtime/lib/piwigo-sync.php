@@ -11,6 +11,48 @@ function fail_sync($message)
   throw new RuntimeException($message);
 }
 
+function http_error_detail($body)
+{
+  $body = trim((string)$body);
+  if ($body === '')
+  {
+    return '';
+  }
+
+  $decoded = json_decode($body, true);
+  if (is_array($decoded))
+  {
+    $detail = (string)($decoded['message'] ?? $decoded['err'] ?? '');
+    if ($detail !== '')
+    {
+      return $detail;
+    }
+  }
+
+  if (function_exists('simplexml_load_string'))
+  {
+    $previous = libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($body);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    if ($xml !== false)
+    {
+      $detail = trim((string)($xml->message ?? $xml->err ?? ''));
+      if ($detail !== '')
+      {
+        return $detail;
+      }
+    }
+  }
+
+  $plain = trim(preg_replace('/\s+/', ' ', strip_tags($body)));
+  if ($plain === '')
+  {
+    return '';
+  }
+  return mb_substr($plain, 0, 500);
+}
+
 function http_request($url, array $fields, array $headers = array(), $cookie_file = null)
 {
   $ch = curl_init($url);
@@ -21,7 +63,7 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 900,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.19',
+    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.26',
   );
   if ($headers)
   {
@@ -45,7 +87,8 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
   }
   if ($http < 200 || $http >= 300)
   {
-    fail_sync('HTTP-Aufruf antwortete mit Status '.$http.'.');
+    $detail = http_error_detail((string)$body);
+    fail_sync('HTTP-Aufruf antwortete mit Status '.$http.($detail !== '' ? ': '.$detail : '.'));
   }
 
   return (string)$body;
