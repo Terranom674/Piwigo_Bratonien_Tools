@@ -80,6 +80,9 @@ function bratonien_tools_get_tools()
     'album_share_revoke' => array(
       'handler' => 'bratonien_tools_revoke_album_share',
     ),
+    'nc_connector_import_legacy' => array(
+      'handler' => 'bratonien_tools_nc_connector_import_legacy',
+    ),
     'self_update_check' => array(
       'handler' => 'bratonien_tools_self_update_check',
     ),
