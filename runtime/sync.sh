@@ -37,6 +37,10 @@ if [[ -z "$CONNECTION_ID" ]]; then
     fi
 fi
 
+PUBLIC_STATUS_DIR="/var/lib/bratonien-tools/nc-connector-status"
+PUBLIC_STATUS_FILE="$PUBLIC_STATUS_DIR/connection-$CONNECTION_ID.json"
+install -d -m 0755 "$PUBLIC_STATUS_DIR"
+
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
@@ -49,11 +53,10 @@ ERROR_DETAIL=""
 
 write_status() {
     local state="$1" message="$2"
-    python3 - "$STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$ERROR_DETAIL" <<'PY'
+    python3 - "$STATUS_FILE" "$PUBLIC_STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$ERROR_DETAIL" <<'PY'
 import json, os, sys, tempfile, time
-(path, state, message, auth_mode, api_state, api_message,
+(path, public_path, state, message, auth_mode, api_state, api_message,
  fallback_state, fallback_message, error_detail) = sys.argv[1:]
-os.makedirs(os.path.dirname(path), exist_ok=True)
 payload = {
     "state": state,
     "message": message,
@@ -63,12 +66,18 @@ payload = {
     "fallback": {"state": fallback_state, "message": fallback_message},
     "error_detail": error_detail,
 }
-fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(payload, handle, ensure_ascii=False)
-    handle.write("\n")
-os.chmod(temporary, 0o644)
-os.replace(temporary, path)
+
+def write_json(target):
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=os.path.dirname(target))
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+        handle.write("\n")
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, target)
+
+write_json(path)
+write_json(public_path)
 PY
 }
 
