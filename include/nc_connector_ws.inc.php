@@ -93,7 +93,11 @@ function bratonien_tools_ws_nc_sync($params, &$service)
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
   include_once(PHPWG_ROOT_PATH.'admin/site_reader_local.php');
 
-  $query = '\nSELECT galleries_url\n  FROM '.SITES_TABLE.'\n  WHERE id = '.$site_id.'\n  LIMIT 1';
+  $query = '
+SELECT galleries_url
+  FROM '.SITES_TABLE.'
+  WHERE id = '.$site_id.'
+  LIMIT 1';
   $result = pwg_query($query);
   if (!pwg_db_num_rows($result))
   {
@@ -127,7 +131,11 @@ function bratonien_tools_ws_nc_sync($params, &$service)
   // -------------------------------------------------------------------
   // Directories / physical categories
   // -------------------------------------------------------------------
-  $query = '\nSELECT id, uppercats, global_rank, status, visible\n  FROM '.CATEGORIES_TABLE.'\n  WHERE dir IS NOT NULL\n    AND site_id = '.$site_id;
+  $query = '
+SELECT id, uppercats, global_rank, status, visible
+  FROM '.CATEGORIES_TABLE.'
+  WHERE dir IS NOT NULL
+    AND site_id = '.$site_id;
   $db_categories = hash_from_query($query, 'id');
   $db_fulldirs = get_fulldirs(array_keys($db_categories));
   $basedir = preg_replace('#/*$#', '', $site_url);
@@ -145,9 +153,6 @@ function bratonien_tools_ws_nc_sync($params, &$service)
       continue;
     }
 
-    // site_update.php also adds newly discovered categories to its in-memory
-    // maps during simulation so files below them can be detected in the same
-    // run. Synthetic IDs reproduce that behavior without database writes.
     $virtual_id = $next_id++;
     $db_fulldirs[$fulldir] = $virtual_id;
     $db_categories[$virtual_id] = array('id'=>$virtual_id);
@@ -157,8 +162,6 @@ function bratonien_tools_ws_nc_sync($params, &$service)
   $to_delete = array();
   foreach (array_diff(array_keys($db_fulldirs), $fs_fulldirs) as $fulldir)
   {
-    // A just-added virtual directory is always in $fs_fulldirs and therefore
-    // cannot land here.
     $to_delete[] = $db_fulldirs[$fulldir];
   }
   $counts['del_categories'] = count($to_delete);
@@ -172,7 +175,10 @@ function bratonien_tools_ws_nc_sync($params, &$service)
 
   if (count($cat_ids) > 0)
   {
-    $query = '\nSELECT id, path\n  FROM '.IMAGES_TABLE.'\n  WHERE storage_category_id IN ('.wordwrap(implode(', ', $cat_ids), 160, "\n").')';
+    $query = '
+SELECT id, path
+  FROM '.IMAGES_TABLE.'
+  WHERE storage_category_id IN ('.wordwrap(implode(', ', $cat_ids), 160, "\n").')';
     $db_elements = simple_hash_from_query($query, 'id', 'path');
   }
 
@@ -210,7 +216,10 @@ function bratonien_tools_ws_nc_sync($params, &$service)
     if (count($existing_ids) > 0)
     {
       $db_formats = array();
-      $query = '\nSELECT *\n  FROM '.IMAGE_FORMAT_TABLE.'\n  WHERE image_id IN ('.implode(',', $existing_ids).')';
+      $query = '
+SELECT *
+  FROM '.IMAGE_FORMAT_TABLE.'
+  WHERE image_id IN ('.implode(',', $existing_ids).')';
       $result = pwg_query($query);
       while ($row = pwg_db_fetch_assoc($result))
       {
@@ -240,9 +249,6 @@ function bratonien_tools_ws_nc_sync($params, &$service)
 
   $counts['del_elements'] = count(array_diff($db_elements, array_keys($fs)));
 
-  // site_update.php updates representative_ext for all currently registered
-  // files. In simulation newly found files/categories are not yet in the DB,
-  // so get_filelist() intentionally sees only the current database state.
   $files = get_filelist('', $site_id, true, false);
   $update_count = 0;
   foreach ($files as $id => $file)
@@ -255,8 +261,6 @@ function bratonien_tools_ws_nc_sync($params, &$service)
   }
   $counts['upd_elements'] = $update_count;
 
-  // The connector does not set meta_all. Piwigo therefore processes only
-  // files whose date_metadata_update is still NULL.
   $metadata_files = get_filelist('', $site_id, true, true);
   $counts['metadata_candidates'] = count($metadata_files);
 
