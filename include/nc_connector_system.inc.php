@@ -17,7 +17,8 @@ function bratonien_tools_nc_connector_systemctl_value(array $args)
     1 => array('pipe', 'w'),
     2 => array('pipe', 'w'),
   );
-  $process = @proc_open($command, $spec, $pipes);
+  $environment = array_merge($_ENV, array('LC_ALL'=>'C', 'LANG'=>'C'));
+  $process = @proc_open($command, $spec, $pipes, null, $environment);
   if (!is_resource($process))
   {
     return '';
@@ -41,9 +42,19 @@ function bratonien_tools_nc_connector_parse_systemd_time($value)
   return $parsed === false ? 0 : (int)$parsed;
 }
 
-function bratonien_tools_nc_connector_monotonic_to_timestamp($microseconds)
+function bratonien_tools_nc_connector_monotonic_to_timestamp($value)
 {
-  if (!preg_match('/^([0-9]+)(?:us)?$/', trim((string)$microseconds), $matches))
+  $value = trim((string)$value);
+  if ($value === '' || $value === '0' || strtolower($value) === 'n/a')
+  {
+    return 0;
+  }
+
+  if (preg_match('/^([0-9]+)(?:us)?$/', $value, $matches))
+  {
+    $next_boot_seconds = ((float)$matches[1]) / 1000000;
+  }
+  else
   {
     return 0;
   }
@@ -54,15 +65,33 @@ function bratonien_tools_nc_connector_monotonic_to_timestamp($microseconds)
     return 0;
   }
 
-  $next_boot_seconds = ((float)$matches[1]) / 1000000;
-  $uptime_seconds = (float)$uptime_match[1];
-  $remaining = $next_boot_seconds - $uptime_seconds;
+  $remaining = $next_boot_seconds - (float)$uptime_match[1];
   if ($remaining < -1)
   {
     return 0;
   }
 
   return (int)round(time() + max(0, $remaining));
+}
+
+function bratonien_tools_nc_connector_next_from_timer_list($timer)
+{
+  $line = bratonien_tools_nc_connector_systemctl_value(array(
+    'list-timers', '--all', '--no-pager', '--no-legend', $timer,
+  ));
+  if ($line === '')
+  {
+    return 0;
+  }
+
+  $first_line = trim((string)strtok($line, "\n"));
+  if (preg_match('/^(\S+\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\S+)/', $first_line, $matches))
+  {
+    $parsed = strtotime($matches[1]);
+    return $parsed === false ? 0 : (int)$parsed;
+  }
+
+  return 0;
 }
 
 function bratonien_tools_nc_connector_last_status(array $connections)
@@ -93,9 +122,8 @@ function bratonien_tools_nc_connector_last_status(array $connections)
       continue;
     }
 
-    $timestamp = (int)($decoded['timestamp'] ?? 0);
     return array(
-      'timestamp' => $timestamp,
+      'timestamp' => (int)($decoded['timestamp'] ?? 0),
       'state' => (string)($decoded['state'] ?? ''),
       'message' => (string)($decoded['message'] ?? ''),
     );
@@ -116,6 +144,11 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
   {
     $next_monotonic_raw = bratonien_tools_nc_connector_systemctl_value(array('show', $timer, '--property=NextElapseUSecMonotonic', '--value'));
     $next_timestamp = bratonien_tools_nc_connector_monotonic_to_timestamp($next_monotonic_raw);
+  }
+
+  if ($next_timestamp <= 0)
+  {
+    $next_timestamp = bratonien_tools_nc_connector_next_from_timer_list($timer);
   }
 
   $active = bratonien_tools_nc_connector_systemctl_value(array('is-active', $timer));
