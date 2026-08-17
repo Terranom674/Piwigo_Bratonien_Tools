@@ -4,16 +4,17 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.10**
+- Aktuelle Plugin-Version: **0.9.3.11**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-- Aktuelle Versionsanhebung: `0.9.3.10`
-- Anlass: Nextcloud-Showcase-View im zugehörigen Provisioning wurde auf `folder` und `file` vereinheitlicht; damit entspricht die vom Connector genutzte Infrastruktur dem bereits vorhandenen Plugin-Stand.
-- Zugehöriger Proxmox-Scripts-Commit: `440173936071240935fd38f4158d8030e9b2e546`
+- Aktuelle Versionsanhebung: `0.9.3.11`
+- Anlass: `runtime/lib/build_manifest.py` kann jetzt neben der neuen Source-View mit `item_type` auch bestehende Legacy-Views ohne diese Spalte lesen.
+- Bei Legacy-Views wird `folder` bzw. `file` anhand des tatsächlich aufgelösten Quellpfads bestimmt.
+- Die vorhandene `0.9.3.10`-Anpassung für `folder` und `file` im Provisioning bleibt bestehen.
 
 ## Architektur NC Connector
 
@@ -31,9 +32,7 @@ Für Showcase gelten zwei Fälle:
 1. komplette Ordner werden geteilt;
 2. einzelne Bilder werden direkt in das Nextcloud-Stammverzeichnis geteilt.
 
-Die bisherige View filterte ausschließlich `item_type = 'folder'`. Dadurch wurden einzeln geteilte Bilder im Stammverzeichnis vom Connector nicht gesehen.
-
-Der neue Stand erweitert den Connector auf `folder` und `file`:
+Der Connector unterstützt `folder` und `file`:
 
 - Ordner werden weiterhin als Verzeichnisbaum gespiegelt.
 - Einzeldateien werden direkt als Symlink im Galerie-/Shadow-Root angelegt.
@@ -41,14 +40,19 @@ Der neue Stand erweitert den Connector auf `folder` und `file`:
 
 ## Manifest / Shadow Tree
 
-`runtime/lib/build_manifest.py` wurde auf die Unterscheidung `folder` / `file` erweitert.
+`runtime/lib/build_manifest.py` unterstützt jetzt zwei View-Schemata:
 
-Das Manifest führt dabei die Freigabeart mit, damit `runtime/lib/shadow_tree.py` unterscheiden kann:
+- modern: `share_id, item_type, display_name, storage_id, source_path`;
+- legacy: `share_id, display_name, storage_id, source_path`.
+
+Bei einer Legacy-View wird der Typ nach Auflösung des Storage-Pfads über Datei/Verzeichnis bestimmt. Das Manifest führt danach in beiden Fällen vier Spalten:
+
+`share_id, item_type, display_name, source_path`
+
+`runtime/lib/shadow_tree.py` verarbeitet daraus:
 
 - `folder` -> Verzeichnisstruktur spiegeln;
 - `file` -> Symlink direkt im Galerie-Root.
-
-Die SQL-View-Anpassung wurde so überarbeitet, dass die bestehende Spaltenreihenfolge bei einem Upgrade erhalten bleibt und `item_type` migrationssicher ergänzt werden kann.
 
 ## Piwigo-Synchronisation
 
@@ -58,9 +62,7 @@ Der produktive Fallback benutzt weiterhin den bestehenden Admin-Sync über `runt
 
 ### API-Weg
 
-Es existiert der eigene Webservice-Endpunkt:
-
-`bratonien.nc.sync`
+Es existiert der eigene Webservice-Endpunkt `bratonien.nc.sync`.
 
 Aktueller Zustand:
 
@@ -72,40 +74,20 @@ Aktueller Zustand:
 
 Der API-Weg soll später der bevorzugte Weg werden. Der klassische Admin-Weg bleibt als Fallback erhalten.
 
-## Fallback-Zugangsdaten
-
-Für den späteren Admin-Fallback gilt:
-
-- bereits dauerhaft gespeicherte Admin-Zugangsdaten dürfen genutzt werden;
-- wenn keine gespeichert sind, muss die UI die Eingabe für den Fallback anbieten;
-- es muss ausdrücklich die Option **„nur vorübergehend verwenden“** geben;
-- temporär eingegebene Zugangsdaten dürfen nicht stillschweigend gespeichert werden;
-- dauerhafte Speicherung nur nach ausdrücklicher Auswahl und verschlüsselt.
-
-## Bisherige Tests
-
-Bestätigt:
-
-- stabile Ordnerfreigaben funktionieren;
-- Entfernen einer Ordnerfreigabe wurde korrekt als zu entfernende Kategorie erkannt;
-- Wiederherstellung der Freigabe stellte den Shadow Tree wieder her;
-- API-Simulation und originale Admin-Simulation waren bei den bisherigen Tests deckungsgleich;
-- Piwigo selbst unterstützt Dateien direkt im Galerie-Root; die frühere Nichterkennung einzelner Bilder kam vom Nextcloud-View, nicht von Piwigo.
-
 ## Aktuell offener Test
 
 Ein einzelnes Bild liegt bereits im Nextcloud-Stammverzeichnis und ist als einzelne Datei geteilt.
 
-Der nächste Test soll die komplette neue Kette prüfen:
+Der nächste Test soll die komplette Kette prüfen:
 
 `Nextcloud-View -> Manifest -> Shadow Tree -> Piwigo-API-Simulation`
 
 Erwartung:
 
-- das Bild erscheint in der View als `item_type = file`;
-- es erscheint im Manifest als Datei-Freigabe;
-- es wird direkt im Galerie-/Shadow-Root als Symlink angelegt;
-- die Piwigo-Simulation erkennt es anschließend als neues Element.
+- die Freigabe wird vom Manifest-Crawler verarbeitet;
+- sie erscheint im Manifest als `file`;
+- sie wird direkt im Galerie-/Shadow-Root als Symlink angelegt;
+- die Piwigo-Simulation erkennt sie anschließend als neues Element.
 
 ## Testmodus / Sicherheit
 
