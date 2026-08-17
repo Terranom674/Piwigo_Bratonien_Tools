@@ -1,6 +1,6 @@
 <section class="bratonien-section" id="nc-connector">
   <h3>NC Connector</h3>
-  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während Migration, Verifikation und Übergabevorbereitung unverändert aktiv.</p>
+  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Bis zum kontrollierten Cutover bleibt der produktive Legacy-Sync unverändert aktiv.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
@@ -36,7 +36,7 @@
           <p class="bratonien-main-cache__warning">Noch kein Migrationspaket vorhanden. Nach Ausführen des Befehls diese Seite neu laden.</p>
         {/if}
       {else}
-        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Verifizierte Verbindungen können nun für eine spätere kontrollierte Übergabe vorbereitet werden.</p>
+        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Verifizierte Verbindungen können kontrolliert an den Connector übergeben werden.</p>
       {/if}
     </div>
 
@@ -103,8 +103,18 @@
                     {/foreach}
                   </ul>
                   {if $connection.takeover_state == 'ready'}
-                    <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die spätere kontrollierte Übergabe vorgemerkt. Der Connector ist weiterhin deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
-                    <p class="bratonien-base-note"><strong>Erfolgskriterium für den ersten Connector-Lauf:</strong> Sowohl „Änderungen verarbeitet“ als auch „keine Änderungen gefunden“ gelten als erfolgreicher Lauf. Nur ein technischer Fehler gilt als fehlgeschlagen und darf einen Rückfall auf den Legacy-Sync auslösen.</p>
+                    <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die kontrollierte Übergabe bereit. Der Connector ist noch deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
+                    <p><strong>Cutover im Piwigo-LXC als root:</strong></p>
+                    <p><code>sudo php /var/www/piwigo/plugins/bratonien_tools/nc-connector-cutover.php {$connection.id|escape:html}</code></p>
+                    <p class="bratonien-base-note"><strong>Ablauf:</strong> Legacy-Timer stoppen → laufenden Legacy-Sync auslaufen lassen → erster Connector-Lauf → bei Erfolg Connector-Timer aktivieren und Legacy-Timer deaktivieren. Sowohl „Änderungen verarbeitet“ als auch „keine Änderungen gefunden“ gelten als Erfolg. Nur ein technischer Fehler löst den Rückfall aus.</p>
+                  {elseif $connection.takeover_state == 'active'}
+                    <p class="bratonien-base-note"><strong>Connector aktiv.</strong> Der Legacy-Timer wurde beim Cutover deaktiviert und der Connector-Timer übernimmt die regelmäßige Prüfung.</p>
+                    {if isset($connection.config.takeover.first_run.result)}
+                      <p class="bratonien-base-note">Erster Connector-Lauf: <strong>{$connection.config.takeover.first_run.result|escape:html}</strong>{if isset($connection.config.takeover.first_run.checked_at)} · {$connection.config.takeover.first_run.checked_at|escape:html}{/if}</p>
+                    {/if}
+                    {if isset($connection.config.takeover.runtime) && $connection.config.takeover.runtime == 'legacy-runtime-transition'}
+                      <p class="bratonien-main-cache__warning">Übergangszustand: Die Zeitsteuerung gehört bereits dem NC Connector, die eigentliche Sync-Runtime wird in diesem Schritt noch aus <code>/opt/piwigo-sync</code> verwendet. Diese Runtime wird im nächsten Migrationsschritt in den Connector übernommen.</p>
+                    {/if}
                   {elseif $connection.verified_ok}
                     <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
                   {else}
@@ -136,12 +146,12 @@
     <div class="bratonien-card">
       <h4>Migrationsschutz</h4>
       <ul>
-        <li>kein Stoppen oder Ändern des bestehenden <code>piwigo-sync</code></li>
+        <li>vor dem Cutover keine Änderung am bestehenden <code>piwigo-sync</code></li>
         <li>keine Änderung an PostgreSQL, Views, <code>pg_hba.conf</code> oder Reader-Rechten</li>
         <li>keine Änderung an bestehenden Mounts</li>
-        <li>kein Neuaufbau des Gallery-/Shadow-Trees</li>
-        <li><code>ready</code> ist nur eine interne Übergabevormerkung und aktiviert noch keinen Connector-Sync</li>
-        <li>die Übergabevorbereitung kann jederzeit wieder auf <code>verified</code> zurückgesetzt werden</li>
+        <li>der Cutover wartet einen bereits laufenden Legacy-Sync ab, statt ihn abzubrechen</li>
+        <li>nur ein technischer Fehler reaktiviert automatisch den Legacy-Timer</li>
+        <li><code>no_changes</code> ist ausdrücklich ein erfolgreicher erster Connector-Lauf</li>
       </ul>
     </div>
   </div>
