@@ -40,13 +40,29 @@ fi
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
+AUTH_MODE=""
+API_STATE="not_run"
+API_MESSAGE=""
+FALLBACK_STATE="not_run"
+FALLBACK_MESSAGE=""
+ERROR_DETAIL=""
+
 write_status() {
     local state="$1" message="$2"
-    python3 - "$STATUS_FILE" "$state" "$message" <<'PY'
+    python3 - "$STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$ERROR_DETAIL" <<'PY'
 import json, os, sys, tempfile, time
-path, state, message = sys.argv[1:]
+(path, state, message, auth_mode, api_state, api_message,
+ fallback_state, fallback_message, error_detail) = sys.argv[1:]
 os.makedirs(os.path.dirname(path), exist_ok=True)
-payload = {"state": state, "message": message, "timestamp": int(time.time())}
+payload = {
+    "state": state,
+    "message": message,
+    "timestamp": int(time.time()),
+    "auth_mode": auth_mode,
+    "api": {"state": api_state, "message": api_message},
+    "fallback": {"state": fallback_state, "message": fallback_message},
+    "error_detail": error_detail,
+}
 fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
 with os.fdopen(fd, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False)
@@ -57,7 +73,8 @@ PY
 }
 
 failure() {
-    write_status error "Synchronisierung fehlgeschlagen; bestehende Galerie blieb unverändert"
+    [[ -n "$ERROR_DETAIL" ]] || ERROR_DETAIL="Synchronisierung wurde durch einen technischen Fehler abgebrochen."
+    write_status error "Synchronisierung fehlgeschlagen"
 }
 trap failure ERR
 
@@ -111,7 +128,7 @@ if [[ "$GATE_RESULT" == "3" ]]; then
     write_status ok "Keine Änderungen gefunden"
     exit 0
 fi
-[[ "$GATE_RESULT" == "0" ]] || exit "$GATE_RESULT"
+[[ "$GATE_RESULT" == "0" ]] || { ERROR_DETAIL="Activity-Gate fehlgeschlagen (Exit-Code $GATE_RESULT)."; exit "$GATE_RESULT"; }
 
 python3 "$SCRIPT_DIR/lib/build_manifest.py" \
     --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER" \
@@ -122,10 +139,46 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" --destination "$GALLERY_ROOT" --state "$MAP_FILE"
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
-    php "$SCRIPT_DIR/lib/piwigo-sync.php" \
+    set +e
+    PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
         --piwigo-root="$PIWIGO_ROOT" \
         --connection-id="$CONNECTION_ID" \
-        --base-url="http://127.0.0.1"
+        --base-url="http://127.0.0.1" 2>&1)"
+    PIWIGO_EXIT=$?
+    set -e
+    printf '%s\n' "$PIWIGO_OUTPUT"
+
+    if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
+        AUTH_MODE="api"
+        API_STATE="ok"
+        API_MESSAGE="API-Synchronisierung erfolgreich"
+        FALLBACK_STATE="not_needed"
+        FALLBACK_MESSAGE="Fallback wurde nicht benötigt"
+    else
+        API_LINE="$(grep -m1 '^Piwigo-API nicht nutzbar:' <<<"$PIWIGO_OUTPUT" || true)"
+        if [[ -n "$API_LINE" ]]; then
+            API_STATE="error"
+            API_MESSAGE="${API_LINE#Piwigo-API nicht nutzbar: }"
+        else
+            API_STATE="error"
+            API_MESSAGE="API-Synchronisierung war nicht erfolgreich"
+        fi
+
+        if grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
+            AUTH_MODE="fallback"
+            FALLBACK_STATE="ok"
+            FALLBACK_MESSAGE="Benutzername/Passwort-Fallback erfolgreich"
+        elif [[ "$PIWIGO_EXIT" -ne 0 ]]; then
+            AUTH_MODE="failed"
+            FALLBACK_STATE="error"
+            FALLBACK_MESSAGE="$(tail -n 1 <<<"$PIWIGO_OUTPUT")"
+        fi
+    fi
+
+    if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
+        ERROR_DETAIL="$(tail -n 3 <<<"$PIWIGO_OUTPUT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/[[:space:]]$//')"
+        exit "$PIWIGO_EXIT"
+    fi
 fi
 
 python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
@@ -134,4 +187,10 @@ python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
     --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW"
 
 trap - ERR
-write_status ok "Synchronisierung erfolgreich"
+if [[ "$AUTH_MODE" == "fallback" ]]; then
+    write_status warning "Synchronisierung erfolgreich über Fallback; API war nicht nutzbar"
+elif [[ "$AUTH_MODE" == "api" ]]; then
+    write_status ok "Synchronisierung erfolgreich über API"
+else
+    write_status ok "Synchronisierung erfolgreich"
+fi
