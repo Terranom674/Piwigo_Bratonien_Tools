@@ -1,42 +1,37 @@
 <section class="bratonien-section" id="nc-connector">
   <h3>NC Connector</h3>
-  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Bis zum kontrollierten Cutover bleibt der produktive Legacy-Sync unverändert aktiv.</p>
+  <p class="bratonien-section__intro">Bratonien Tools verwaltet die Nextcloud-Anbindung und den regelmäßigen Piwigo-Abgleich.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
-      <h4>Migrationsstatus</h4>
+      <h4>Connector-Status</h4>
       <div class="bratonien-form-grid">
         <span class="bratonien-label">Phase</span><strong>{$NC_CONNECTOR.phase|escape:html}</strong>
-        <span class="bratonien-label">Legacy-Verbindung vorhanden</span><strong>{if $NC_CONNECTOR.legacy_present}Ja{else}Nein{/if}</strong>
-        <span class="bratonien-label">Legacy-Konfiguration für PHP lesbar</span><strong>{if $NC_CONNECTOR.config_readable}Ja{else}Nein{/if}</strong>
         <span class="bratonien-label">Connector-Verbindungen</span><strong>{$NC_CONNECTOR.connection_count|escape:html}</strong>
-        <span class="bratonien-label">Davon verifiziert</span><strong>{$NC_CONNECTOR.verified_count|escape:html}</strong>
-        <span class="bratonien-label">Migrationspaket bereit</span><strong>{if $NC_CONNECTOR.migration_bundle_available}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Timer aktiv</span><strong>{if $NC_CONNECTOR.system.timer_active}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Timer aktiviert</span><strong>{if $NC_CONNECTOR.system.timer_enabled}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Nächster Lauf</span><strong>{$NC_CONNECTOR.system.next_run_label|escape:html}</strong>
       </div>
-
-      {if $NC_CONNECTOR.legacy_present && !$NC_CONNECTOR.config_readable}
-        <p class="bratonien-base-note">Die bestehende Konfiguration ist absichtlich nur für root lesbar. Sie wird nicht für den Webserver geöffnet.</p>
-      {/if}
     </div>
 
     <div class="bratonien-card">
-      <h4>Bestehende Verbindung übernehmen</h4>
-      {if $NC_CONNECTOR.connection_count == 0}
-        <p>Führe im <strong>Piwigo-LXC</strong> einmalig folgenden Befehl als root aus:</p>
-        <p><code>{$NC_CONNECTOR.migration_command|escape:html}</code></p>
-        <p class="bratonien-base-note">Der Helfer liest die bisherige <code>/etc/piwigo-sync/piwigo.conf</code>, die zugehörige Passwortdatei und <code>storages.tsv</code>. Er verändert weder Nextcloud noch den laufenden Sync-Dienst oder den Shadow Tree.</p>
-
-        {if $NC_CONNECTOR.migration_bundle_available}
-          <form method="post" class="bratonien-actions">
-            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_import_legacy">Bestehende Verbindung importieren</button>
-          </form>
-          <p class="bratonien-main-cache__warning">Der Import legt die Verbindung nur im NC Connector an. Sie bleibt deaktiviert; der bisherige Sync bleibt Produktionsverbindung.</p>
-        {else}
-          <p class="bratonien-main-cache__warning">Noch kein Migrationspaket vorhanden. Nach Ausführen des Befehls diese Seite neu laden.</p>
-        {/if}
+      <h4>Legacy-Bestand</h4>
+      <div class="bratonien-form-grid">
+        <span class="bratonien-label"><code>/opt/piwigo-sync</code></span><strong>{if $NC_CONNECTOR.system.legacy_runtime_exists}Vorhanden{else}Entfernt{/if}</strong>
+        <span class="bratonien-label"><code>/etc/piwigo-sync</code></span><strong>{if $NC_CONNECTOR.system.legacy_config_exists}Vorhanden{else}Entfernt{/if}</strong>
+        <span class="bratonien-label">Legacy-Service</span><strong>{if $NC_CONNECTOR.system.legacy_service_exists}Vorhanden{else}Entfernt{/if}</strong>
+        <span class="bratonien-label">Legacy-Timer</span><strong>{if $NC_CONNECTOR.system.legacy_timer_exists}Vorhanden{else}Entfernt{/if}</strong>
+      </div>
+      {if $NC_CONNECTOR.system.legacy_runtime_exists || $NC_CONNECTOR.system.legacy_config_exists || $NC_CONNECTOR.system.legacy_service_exists || $NC_CONNECTOR.system.legacy_timer_exists}
+        <p class="bratonien-main-cache__warning">Die Verbindung läuft bereits mit der Plugin-eigenen Runtime. Die verbliebenen Legacy-Dateien können jetzt entfernt werden.</p>
+        {foreach from=$NC_CONNECTOR.connections item=cleanup_connection}
+          {if $cleanup_connection.takeover_state == 'active' && $cleanup_connection.enabled && isset($cleanup_connection.config.takeover.runtime) && $cleanup_connection.config.takeover.runtime == 'plugin-runtime'}
+            <p><strong>Einmalig im Piwigo-LXC als root:</strong></p>
+            <p><code>php /var/www/piwigo/plugins/bratonien_tools/nc-connector-legacy-cleanup.php {$cleanup_connection.id|escape:html}</code></p>
+          {/if}
+        {/foreach}
       {else}
-        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Verifizierte Verbindungen können kontrolliert an den Connector übergeben werden.</p>
+        <p class="bratonien-base-note">Der alte Script-Bestand ist vollständig entfernt. Der NC Connector arbeitet ausschließlich mit seiner Plugin-eigenen Runtime.</p>
       {/if}
     </div>
 
@@ -106,19 +101,19 @@
                     <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die kontrollierte Übergabe bereit. Der Connector ist noch deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
                     <p><strong>Cutover im Piwigo-LXC als root:</strong></p>
                     <p><code>php /var/www/piwigo/plugins/bratonien_tools/nc-connector-cutover-v2.php {$connection.id|escape:html}</code></p>
-                    <p class="bratonien-base-note"><strong>Ablauf:</strong> Legacy-Timer stoppen → laufenden Legacy-Sync auslaufen lassen → erster Connector-Lauf → bei Erfolg Connector-Timer aktivieren und Legacy-Timer deaktivieren. Sowohl „Änderungen verarbeitet“ als auch „keine Änderungen gefunden“ gelten als Erfolg. Nur ein technischer Fehler löst den Rückfall aus.</p>
                   {elseif $connection.takeover_state == 'active'}
-                    <p class="bratonien-base-note"><strong>Connector aktiv.</strong> Der Legacy-Timer wurde beim Cutover deaktiviert und der Connector-Timer übernimmt die regelmäßige Prüfung.</p>
+                    <p class="bratonien-base-note"><strong>Connector aktiv.</strong> Der Connector-Timer übernimmt die regelmäßige Prüfung.</p>
+                    <p class="bratonien-base-note">Nächster geplanter Lauf: <strong>{$NC_CONNECTOR.system.next_run_label|escape:html}</strong></p>
                     {if isset($connection.config.takeover.first_run.result)}
                       <p class="bratonien-base-note">Erster Connector-Lauf: <strong>{$connection.config.takeover.first_run.result|escape:html}</strong>{if isset($connection.config.takeover.first_run.checked_at)} · {$connection.config.takeover.first_run.checked_at|escape:html}{/if}</p>
                     {/if}
-                    {if isset($connection.config.takeover.runtime) && $connection.config.takeover.runtime == 'legacy-runtime-transition'}
-                      <p class="bratonien-main-cache__warning">Übergangszustand: Die Zeitsteuerung gehört bereits dem NC Connector, die eigentliche Sync-Runtime wird in diesem Schritt noch aus <code>/opt/piwigo-sync</code> verwendet. Diese Runtime wird im nächsten Migrationsschritt in den Connector übernommen.</p>
+                    {if isset($connection.config.takeover.runtime) && $connection.config.takeover.runtime == 'plugin-runtime'}
+                      <p class="bratonien-base-note">Runtime: <strong>Bratonien Tools</strong></p>
                     {/if}
                   {elseif $connection.verified_ok}
-                    <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
+                    <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt deaktiviert.</p>
                   {else}
-                    <p class="bratonien-main-cache__warning">Die Verifikation ist noch nicht vollständig erfolgreich. Es wurde nichts umgeschaltet oder verändert.</p>
+                    <p class="bratonien-main-cache__warning">Die Verifikation ist noch nicht vollständig erfolgreich.</p>
                   {/if}
                 </td>
               </tr>
@@ -132,27 +127,16 @@
     </div>
 
     <div class="bratonien-card">
-      <h4>Legacy-Sync</h4>
+      <h4>Sync-Zustand</h4>
       <div class="bratonien-form-grid">
-        <span class="bratonien-label">Konfiguration</span><strong>{if $NC_CONNECTOR.config_readable}Lesbar{elseif $NC_CONNECTOR.config_exists}Vorhanden, root-geschützt{else}Nicht gefunden{/if}</strong>
-        <span class="bratonien-label">Piwigo-Sync laut lesbarer Konfiguration</span><strong>{if $NC_CONNECTOR.config_readable}{if $NC_CONNECTOR.sync_enabled}Ja{else}Nein{/if}{else}Nicht auslesbar{/if}</strong>
-        <span class="bratonien-label">Letzter Status</span><strong>{if $NC_CONNECTOR.sync_status.available}{$NC_CONNECTOR.sync_status.state|escape:html}{else}Nicht verfügbar{/if}</strong>
+        <span class="bratonien-label">Connector-Timer</span><strong>{if $NC_CONNECTOR.system.timer_active}Aktiv{else}Nicht aktiv{/if}</strong>
+        <span class="bratonien-label">Nächster Lauf</span><strong>{$NC_CONNECTOR.system.next_run_label|escape:html}</strong>
       </div>
-      {if $NC_CONNECTOR.sync_status.message}
-        <p class="bratonien-base-note">{$NC_CONNECTOR.sync_status.message|escape:html}</p>
-      {/if}
     </div>
 
     <div class="bratonien-card">
-      <h4>Migrationsschutz</h4>
-      <ul>
-        <li>vor dem Cutover keine Änderung am bestehenden <code>piwigo-sync</code></li>
-        <li>keine Änderung an PostgreSQL, Views, <code>pg_hba.conf</code> oder Reader-Rechten</li>
-        <li>keine Änderung an bestehenden Mounts</li>
-        <li>der Cutover wartet einen bereits laufenden Legacy-Sync ab, statt ihn abzubrechen</li>
-        <li>nur ein technischer Fehler reaktiviert automatisch den Legacy-Timer</li>
-        <li><code>no_changes</code> ist ausdrücklich ein erfolgreicher erster Connector-Lauf</li>
-      </ul>
+      <h4>Laufzeitdaten</h4>
+      <p class="bratonien-base-note"><code>/var/lib/piwigo-sync</code> bleibt aktuell bestehen. Dort liegen keine alten Scripts oder Zugangsdaten, sondern die vom aktiven Connector benötigte Name-Map, Activity-State, Manifest- und Statusdaten.</p>
     </div>
   </div>
 </section>
