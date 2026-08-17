@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.14.2.7
+Version: 0.14.2.8
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
