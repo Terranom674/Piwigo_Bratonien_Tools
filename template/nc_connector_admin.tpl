@@ -18,6 +18,17 @@
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}
         <p class="bratonien-base-note">Letztes Ergebnis: <strong>{$NC_CONNECTOR.system.last_run_message|escape:html}</strong></p>
       {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_api_state == 'error'}
+        <p class="bratonien-main-cache__warning"><strong>API:</strong> {$NC_CONNECTOR.system.last_run_api_message|escape:html}</p>
+      {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_fallback_state == 'ok'}
+        <p class="bratonien-base-note"><strong>Fallback:</strong> erfolgreich übernommen.</p>
+      {elseif $nc_system_available && $NC_CONNECTOR.system.last_run_fallback_state == 'error'}
+        <p class="bratonien-main-cache__warning"><strong>Fallback:</strong> {$NC_CONNECTOR.system.last_run_fallback_message|escape:html}</p>
+      {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_error_detail}
+        <p class="bratonien-main-cache__warning"><strong>Fehler:</strong> {$NC_CONNECTOR.system.last_run_error_detail|escape:html}</p>
+      {/if}
     </div>
 
     <div class="bratonien-card">
@@ -194,6 +205,27 @@
                 </td>
               </tr>
             {/if}
+            {if isset($connection.last_sync) && $connection.last_sync.timestamp > 0}
+              <tr>
+                <td colspan="7">
+                  <strong>Letzter Sync · {$connection.last_sync.label|escape:html}</strong>
+                  <p class="bratonien-base-note"><strong>Ergebnis:</strong> {$connection.last_sync.message|escape:html}</p>
+                  {if $connection.last_sync.api_state == 'ok'}
+                    <p class="bratonien-base-note"><strong>API:</strong> erfolgreich</p>
+                  {elseif $connection.last_sync.api_state == 'error'}
+                    <p class="bratonien-main-cache__warning"><strong>API fehlgeschlagen:</strong> {$connection.last_sync.api_message|escape:html}</p>
+                  {/if}
+                  {if $connection.last_sync.fallback_state == 'ok'}
+                    <p class="bratonien-base-note"><strong>Fallback:</strong> erfolgreich</p>
+                  {elseif $connection.last_sync.fallback_state == 'error'}
+                    <p class="bratonien-main-cache__warning"><strong>Fallback fehlgeschlagen:</strong> {$connection.last_sync.fallback_message|escape:html}</p>
+                  {/if}
+                  {if $connection.last_sync.error_detail}
+                    <p class="bratonien-main-cache__warning"><strong>Technischer Fehler:</strong> {$connection.last_sync.error_detail|escape:html}</p>
+                  {/if}
+                </td>
+              </tr>
+            {/if}
           {/foreach}
           </tbody>
         </table>
@@ -210,7 +242,18 @@
         <span class="bratonien-label">Nächster Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
       </div>
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}
-        <p class="bratonien-base-note">{$NC_CONNECTOR.system.last_run_message|escape:html}</p>
+        <p class="bratonien-base-note"><strong>Ergebnis:</strong> {$NC_CONNECTOR.system.last_run_message|escape:html}</p>
+      {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_api_state == 'error'}
+        <p class="bratonien-main-cache__warning"><strong>API fehlgeschlagen:</strong> {$NC_CONNECTOR.system.last_run_api_message|escape:html}</p>
+      {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_fallback_state == 'ok'}
+        <p class="bratonien-base-note"><strong>Fallback:</strong> erfolgreich</p>
+      {elseif $nc_system_available && $NC_CONNECTOR.system.last_run_fallback_state == 'error'}
+        <p class="bratonien-main-cache__warning"><strong>Fallback fehlgeschlagen:</strong> {$NC_CONNECTOR.system.last_run_fallback_message|escape:html}</p>
+      {/if}
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_error_detail}
+        <p class="bratonien-main-cache__warning"><strong>Technischer Fehler:</strong> {$NC_CONNECTOR.system.last_run_error_detail|escape:html}</p>
       {/if}
     </div>
 
