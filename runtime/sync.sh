@@ -27,6 +27,7 @@ fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path))
 with os.fdopen(fd, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False)
     handle.write("\n")
+os.chmod(temporary, 0o644)
 os.replace(temporary, path)
 PY
 }
