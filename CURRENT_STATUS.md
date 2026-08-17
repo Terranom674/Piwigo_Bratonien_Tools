@@ -4,17 +4,19 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.11**
+- Aktuelle Plugin-Version: **0.9.3.12**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-- Aktuelle Versionsanhebung: `0.9.3.11`
-- Anlass: `runtime/lib/build_manifest.py` kann jetzt neben der neuen Source-View mit `item_type` auch bestehende Legacy-Views ohne diese Spalte lesen.
-- Bei Legacy-Views wird `folder` bzw. `file` anhand des tatsächlich aufgelösten Quellpfads bestimmt.
-- Die vorhandene `0.9.3.10`-Anpassung für `folder` und `file` im Provisioning bleibt bestehen.
+- Aktuelle Versionsanhebung: `0.9.3.12`
+- `runtime/lib/activity_gate.py` prüft nicht mehr ausschließlich `piwigo_showcase_activity`, sondern zusätzlich einen Fingerprint der aktuellen Source-View.
+- Neue oder entfernte Shares können damit einen Lauf direkt auslösen, auch wenn Nextcloud dafür keinen passenden Activity-Eintrag liefert.
+- `runtime/sync.sh` übergibt Source- und Activity-View explizit an den Gate.
+- Für bestehende Installationen wurde im Proxmox-Scripts-Repo eine upgrade-sichere Nextcloud-View-Migration ergänzt. Sie erweitert die Source-View auf `folder` und `file`, ohne das Passwort von `piwigo_reader` zu verändern.
+- Der Proxmox-Piwigo-Updater führt diese Migration künftig automatisch im erkannten Nextcloud-LXC aus.
 
 ## Architektur NC Connector
 
@@ -40,7 +42,7 @@ Der Connector unterstützt `folder` und `file`:
 
 ## Manifest / Shadow Tree
 
-`runtime/lib/build_manifest.py` unterstützt jetzt zwei View-Schemata:
+`runtime/lib/build_manifest.py` unterstützt zwei View-Schemata:
 
 - modern: `share_id, item_type, display_name, storage_id, source_path`;
 - legacy: `share_id, display_name, storage_id, source_path`.
@@ -78,21 +80,22 @@ Der API-Weg soll später der bevorzugte Weg werden. Der klassische Admin-Weg ble
 
 Ein einzelnes Bild liegt bereits im Nextcloud-Stammverzeichnis und ist als einzelne Datei geteilt.
 
-Der nächste Test soll die komplette Kette prüfen:
+Der nächste Test soll nach Installation von `0.9.3.12` und Anwendung der automatischen Nextcloud-View-Migration die komplette Kette prüfen:
 
-`Nextcloud-View -> Manifest -> Shadow Tree -> Piwigo-API-Simulation`
+`Nextcloud-View -> Activity/Share-Gate -> Manifest -> Shadow Tree -> Piwigo-API-Simulation`
 
 Erwartung:
 
-- die Freigabe wird vom Manifest-Crawler verarbeitet;
-- sie erscheint im Manifest als `file`;
+- die Einzeldateifreigabe erscheint in der Source-View mit `item_type = file`;
+- der Gate erkennt die geänderte Share-Struktur;
+- die Freigabe erscheint im Manifest als `file`;
 - sie wird direkt im Galerie-/Shadow-Root als Symlink angelegt;
 - die Piwigo-Simulation erkennt sie anschließend als neues Element.
 
 ## Testmodus / Sicherheit
 
 - Der produktive Timer bleibt während der kontrollierten Tests ausgeschaltet.
-- Für Connector-Tests wird `PIWIGO_SYNC_OVERRIDE=0` verwendet, damit der Shadow Tree aktualisiert werden kann, ohne den produktiven Piwigo-Datenbank-Sync auszuführen.
+- Für Connector-Tests kann `PIWIGO_SYNC_OVERRIDE=0` verwendet werden, damit der Shadow Tree aktualisiert werden kann, ohne den produktiven Piwigo-Datenbank-Sync auszuführen.
 - Der verwendete Piwigo-API-Key ist ausschließlich ein temporärer Entwicklungs-/Test-Key und wird nicht Bestandteil der produktiven Konfiguration.
 
 ## Bekannte offene Punkte
@@ -100,7 +103,6 @@ Erwartung:
 - finaler End-to-End-Test für einzeln geteilte Bilder im Stammverzeichnis;
 - produktiven API-Sync erst nach erfolgreichen Paritätstests aktivieren;
 - Admin-Fallback mit temporären bzw. optional dauerhaft gespeicherten Zugangsdaten fertigstellen;
-- Activity-Gate-Statusmeldung unterscheidet aktuell nicht sauber zwischen „keine Änderungen“ und „Änderungen erkannt, aber noch im Debounce“;
 - Remote-Nextcloud-Adapter ist noch nicht umgesetzt;
 - UI und Restpunkte der Verbindungsverwaltung werden nach Abschluss der aktuellen technischen Tests weiter bereinigt.
 
