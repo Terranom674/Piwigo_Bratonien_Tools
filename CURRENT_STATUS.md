@@ -4,15 +4,16 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.9**
+- Aktuelle Plugin-Version: **0.9.3.10**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-- Letzter bekannter Commit vor dieser Statusdatei: `f41f8851056019f932d1f87ef40252b9cc6c4d85`
-- Commit-Message: `Keep source view column order upgrade-safe`
+- Aktuelle Versionsanhebung: `0.9.3.10`
+- Anlass: Nextcloud-Showcase-View im zugehörigen Provisioning wurde auf `folder` und `file` vereinheitlicht; damit entspricht die vom Connector genutzte Infrastruktur dem bereits vorhandenen Plugin-Stand.
+- Zugehöriger Proxmox-Scripts-Commit: `440173936071240935fd38f4158d8030e9b2e546`
 
 ## Architektur NC Connector
 
