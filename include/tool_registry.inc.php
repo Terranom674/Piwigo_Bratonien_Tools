@@ -83,6 +83,9 @@ function bratonien_tools_get_tools()
     'nc_connector_import_legacy' => array(
       'handler' => 'bratonien_tools_nc_connector_import_legacy',
     ),
+    'nc_connector_verify' => array(
+      'handler' => 'bratonien_tools_nc_connector_verify',
+    ),
     'self_update_check' => array(
       'handler' => 'bratonien_tools_self_update_check',
     ),
