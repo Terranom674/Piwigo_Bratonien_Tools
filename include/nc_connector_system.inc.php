@@ -94,9 +94,61 @@ function bratonien_tools_nc_connector_next_from_timer_list($timer)
   return 0;
 }
 
+function bratonien_tools_nc_connector_connection_last_status(array $connection)
+{
+  $empty = array(
+    'timestamp'=>0,
+    'label'=>'Nicht verfügbar',
+    'state'=>'',
+    'message'=>'',
+    'auth_mode'=>'',
+    'api_state'=>'',
+    'api_message'=>'',
+    'fallback_state'=>'',
+    'fallback_message'=>'',
+    'error_detail'=>'',
+  );
+
+  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+  if ($state_dir === '')
+  {
+    return $empty;
+  }
+
+  $status_path = $state_dir.'/connector-status.json';
+  if (!is_readable($status_path))
+  {
+    return $empty;
+  }
+
+  $decoded = json_decode((string)@file_get_contents($status_path), true);
+  if (!is_array($decoded))
+  {
+    return $empty;
+  }
+
+  $timestamp = (int)($decoded['timestamp'] ?? 0);
+  $api = isset($decoded['api']) && is_array($decoded['api']) ? $decoded['api'] : array();
+  $fallback = isset($decoded['fallback']) && is_array($decoded['fallback']) ? $decoded['fallback'] : array();
+
+  return array(
+    'timestamp'=>$timestamp,
+    'label'=>$timestamp > 0 ? date('d.m.Y H:i:s', $timestamp) : 'Nicht verfügbar',
+    'state'=>(string)($decoded['state'] ?? ''),
+    'message'=>(string)($decoded['message'] ?? ''),
+    'auth_mode'=>(string)($decoded['auth_mode'] ?? ''),
+    'api_state'=>(string)($api['state'] ?? ''),
+    'api_message'=>(string)($api['message'] ?? ''),
+    'fallback_state'=>(string)($fallback['state'] ?? ''),
+    'fallback_message'=>(string)($fallback['message'] ?? ''),
+    'error_detail'=>(string)($decoded['error_detail'] ?? ''),
+  );
+}
+
 function bratonien_tools_nc_connector_last_status(array $connections)
 {
-  $latest = array('timestamp'=>0, 'state'=>'', 'message'=>'');
+  $latest = array('timestamp'=>0, 'state'=>'', 'message'=>'', 'auth_mode'=>'', 'api_state'=>'', 'api_message'=>'', 'fallback_state'=>'', 'fallback_message'=>'', 'error_detail'=>'');
 
   foreach ($connections as $connection)
   {
@@ -105,33 +157,10 @@ function bratonien_tools_nc_connector_last_status(array $connections)
       continue;
     }
 
-    $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
-    $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
-    if ($state_dir === '')
+    $status = bratonien_tools_nc_connector_connection_last_status($connection);
+    if ((int)$status['timestamp'] >= (int)$latest['timestamp'])
     {
-      continue;
-    }
-
-    $status_path = $state_dir.'/connector-status.json';
-    if (!is_readable($status_path))
-    {
-      continue;
-    }
-
-    $decoded = json_decode((string)@file_get_contents($status_path), true);
-    if (!is_array($decoded))
-    {
-      continue;
-    }
-
-    $timestamp = (int)($decoded['timestamp'] ?? 0);
-    if ($timestamp >= $latest['timestamp'])
-    {
-      $latest = array(
-        'timestamp' => $timestamp,
-        'state' => (string)($decoded['state'] ?? ''),
-        'message' => (string)($decoded['message'] ?? ''),
-      );
+      $latest = $status;
     }
   }
 
@@ -175,6 +204,12 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     'last_run_label' => $last['timestamp'] > 0 ? date('d.m.Y H:i:s', (int)$last['timestamp']) : 'Nicht verfügbar',
     'last_run_state' => (string)$last['state'],
     'last_run_message' => (string)$last['message'],
+    'last_run_auth_mode' => (string)$last['auth_mode'],
+    'last_run_api_state' => (string)$last['api_state'],
+    'last_run_api_message' => (string)$last['api_message'],
+    'last_run_fallback_state' => (string)$last['fallback_state'],
+    'last_run_fallback_message' => (string)$last['fallback_message'],
+    'last_run_error_detail' => (string)$last['error_detail'],
     'next_run_timestamp' => $next_timestamp,
     'next_run_label' => $next_timestamp > 0 ? date('d.m.Y H:i:s', $next_timestamp) : 'Nicht verfügbar',
     'legacy_runtime_exists' => is_dir('/opt/piwigo-sync'),
