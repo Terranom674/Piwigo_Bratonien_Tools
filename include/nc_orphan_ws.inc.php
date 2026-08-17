@@ -71,7 +71,10 @@ function bratonien_tools_nc_root_files($basedir)
 function bratonien_tools_nc_existing_root_orphans($basedir)
 {
   $rows = array();
-  $query = '\nSELECT id, path\n  FROM '.IMAGES_TABLE.'\n  WHERE storage_category_id IS NULL';
+  $query = '
+SELECT id, path
+  FROM '.IMAGES_TABLE.'
+  WHERE storage_category_id IS NULL';
   $result = pwg_query($query);
   while ($row = pwg_db_fetch_assoc($result))
   {
@@ -161,7 +164,11 @@ function bratonien_tools_ws_nc_sync_orphans($params, &$service)
     return new PwgError(400, 'Invalid site_id.');
   }
 
-  $query = '\nSELECT galleries_url\n  FROM '.SITES_TABLE.'\n  WHERE id = '.$site_id.'\n  LIMIT 1';
+  $query = '
+SELECT galleries_url
+  FROM '.SITES_TABLE.'
+  WHERE id = '.$site_id.'
+  LIMIT 1';
   $result = pwg_query($query);
   if (!pwg_db_num_rows($result))
   {
