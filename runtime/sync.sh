@@ -3,8 +3,21 @@ set -Eeuo pipefail
 
 CONFIG_FILE="${PIWIGO_CONFIG:-/etc/bratonien-tools/nc-connector/connection-1.conf}"
 [[ -r "$CONFIG_FILE" ]] || { echo "Konfiguration fehlt: $CONFIG_FILE" >&2; exit 1; }
+
+# Preserve an explicit per-run override before the connection config is sourced.
+# This allows controlled shadow-tree updates without running the productive
+# Piwigo database synchronization, while leaving the stored config untouched.
+PIWIGO_SYNC_OVERRIDE_VALUE="${PIWIGO_SYNC_OVERRIDE-}"
+
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
+
+if [[ -n "$PIWIGO_SYNC_OVERRIDE_VALUE" ]]; then
+    case "$PIWIGO_SYNC_OVERRIDE_VALUE" in
+        0|1) PIWIGO_SYNC_ENABLED="$PIWIGO_SYNC_OVERRIDE_VALUE" ;;
+        *) echo "PIWIGO_SYNC_OVERRIDE muss 0 oder 1 sein." >&2; exit 1 ;;
+    esac
+fi
 
 install -d -m 0750 "$STATE_DIR"
 MANIFEST="$STATE_DIR/manifest.tsv"
