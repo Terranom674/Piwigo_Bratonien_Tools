@@ -53,6 +53,7 @@ my $sync = $ua->post(
         sync_meta => 1,
         simulate => 0,
         'subcats-included' => 1,
+        bratonien_connector => 1,
         submit => 1,
     },
 );
