@@ -404,9 +404,18 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     }
     $counts['metadata_updated'] = count($metadata_updates);
 
+    // Mirror Piwigo 16.4.0 Maintenance -> "Update albums informations".
+    // This repairs the derived album hierarchy and counters that the direct
+    // API sync otherwise bypasses when no admin maintenance page is invoked.
+    images_integrity();
+    categories_integrity();
+    update_uppercats();
+    update_category('all');
+    update_global_rank();
+    invalidate_user_cache(true);
+
     // Mirror Piwigo 16.4.0 Maintenance -> "Update photos information".
-    // This finalizes physical photo paths and the derived photo information
-    // after the direct API synchronization without invoking an admin page.
+    // This finalizes physical paths, ratings and derived photo information.
     images_integrity();
     update_path();
     include_once(PHPWG_ROOT_PATH.'include/functions_rate.inc.php');
