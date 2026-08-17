@@ -4,9 +4,6 @@ set -Eeuo pipefail
 CONFIG_FILE="${PIWIGO_CONFIG:-/etc/bratonien-tools/nc-connector/connection-1.conf}"
 [[ -r "$CONFIG_FILE" ]] || { echo "Konfiguration fehlt: $CONFIG_FILE" >&2; exit 1; }
 
-# Preserve an explicit per-run override before the connection config is sourced.
-# This allows controlled shadow-tree updates without running the productive
-# Piwigo database synchronization, while leaving the stored config untouched.
 PIWIGO_SYNC_OVERRIDE_VALUE="${PIWIGO_SYNC_OVERRIDE-}"
 
 # shellcheck source=/dev/null
@@ -87,6 +84,7 @@ else
     if python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
         --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
         --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
+        --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" \
         --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS"; then
         GATE_RESULT=0
     else
@@ -122,7 +120,8 @@ fi
 
 python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
     --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
-    --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE"
+    --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
+    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW"
 
 trap - ERR
 write_status ok "Synchronisierung erfolgreich"
