@@ -62,7 +62,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
   include_once(PHPWG_ROOT_PATH.'admin/site_reader_local.php');
 
-  $query = '\nSELECT galleries_url\n  FROM '.SITES_TABLE.'\n  WHERE id = '.$site_id.'\n  LIMIT 1';
+  $query = 'SELECT galleries_url FROM '.SITES_TABLE.' WHERE id = '.$site_id.' LIMIT 1';
   $result = pwg_query($query);
   if (!pwg_db_num_rows($result))
   {
@@ -100,7 +100,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     // -----------------------------------------------------------------
     // Directories / physical categories. Connector imports are private.
     // -----------------------------------------------------------------
-    $query = '\nSELECT id, id_uppercat, uppercats, global_rank, status, visible\n  FROM '.CATEGORIES_TABLE.'\n  WHERE dir IS NOT NULL\n    AND site_id = '.$site_id;
+    $query = 'SELECT id, id_uppercat, uppercats, global_rank, status, visible FROM '.CATEGORIES_TABLE.' WHERE dir IS NOT NULL AND site_id = '.$site_id;
     $db_categories = hash_from_query($query, 'id');
     $db_fulldirs = get_fulldirs(array_keys($db_categories));
     $basedir = preg_replace('#/*$#', '', $site_url);
@@ -208,7 +208,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     $db_elements = array();
     if ($cat_ids)
     {
-      $query = '\nSELECT id, path\n  FROM '.IMAGES_TABLE.'\n  WHERE storage_category_id IN ('.implode(',', array_map('intval', $cat_ids)).')';
+      $query = 'SELECT id, path FROM '.IMAGES_TABLE.' WHERE storage_category_id IN ('.implode(',', array_map('intval', $cat_ids)).')';
       $db_elements = simple_hash_from_query($query, 'id', 'path');
     }
 
