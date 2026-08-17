@@ -53,7 +53,11 @@ ERROR_DETAIL=""
 
 write_status() {
     local state="$1" message="$2"
-    python3 - "$STATUS_FILE" "$PUBLIC_STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$ERROR_DETAIL" <<'PY'
+    local error_detail="$ERROR_DETAIL"
+    if [[ "$state" != "error" ]]; then
+        error_detail=""
+    fi
+    python3 - "$STATUS_FILE" "$PUBLIC_STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$error_detail" <<'PY'
 import json, os, sys, tempfile, time
 (path, public_path, state, message, auth_mode, api_state, api_message,
  fallback_state, fallback_message, error_detail) = sys.argv[1:]
