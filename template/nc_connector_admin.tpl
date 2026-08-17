@@ -105,7 +105,7 @@
                   {if $connection.takeover_state == 'ready'}
                     <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die kontrollierte Übergabe bereit. Der Connector ist noch deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
                     <p><strong>Cutover im Piwigo-LXC als root:</strong></p>
-                    <p><code>sudo php /var/www/piwigo/plugins/bratonien_tools/nc-connector-cutover.php {$connection.id|escape:html}</code></p>
+                    <p><code>php /var/www/piwigo/plugins/bratonien_tools/nc-connector-cutover-v2.php {$connection.id|escape:html}</code></p>
                     <p class="bratonien-base-note"><strong>Ablauf:</strong> Legacy-Timer stoppen → laufenden Legacy-Sync auslaufen lassen → erster Connector-Lauf → bei Erfolg Connector-Timer aktivieren und Legacy-Timer deaktivieren. Sowohl „Änderungen verarbeitet“ als auch „keine Änderungen gefunden“ gelten als Erfolg. Nur ein technischer Fehler löst den Rückfall aus.</p>
                   {elseif $connection.takeover_state == 'active'}
                     <p class="bratonien-base-note"><strong>Connector aktiv.</strong> Der Legacy-Timer wurde beim Cutover deaktiviert und der Connector-Timer übernimmt die regelmäßige Prüfung.</p>
