@@ -51,9 +51,17 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
             if not line or line.startswith("#"):
                 continue
             fields = line.split("\t")
-            if len(fields) != 3:
-                raise ValueError(f"{path}:{line_number}: expected share_id, display_name and source_path")
-            entries.append({"share_id": fields[0], "display_name": fields[1], "source_path": fields[2]})
+            if len(fields) != 4:
+                raise ValueError(f"{path}:{line_number}: expected share_id, item_type, display_name and source_path")
+            share_id, item_type, display_name, source_path = fields
+            if item_type not in {"folder", "file"}:
+                raise ValueError(f"{path}:{line_number}: unsupported item_type {item_type!r}")
+            entries.append({
+                "share_id": share_id,
+                "item_type": item_type,
+                "display_name": display_name,
+                "source_path": source_path,
+            })
     return entries
 
 
@@ -109,13 +117,21 @@ def build(manifest: Path, destination: Path, state_file: Path) -> None:
     used_roots: set[str] = set()
     for entry in sorted(entries, key=lambda item: (item["display_name"].casefold(), item["share_id"])):
         source = Path(entry["source_path"])
-        if not source.is_dir():
-            raise FileNotFoundError(f"source is not a readable directory: {source}")
         source_key = f"share:{entry['share_id']}"
         preferred = preferred_target(source_key, entry["display_name"], Path("."), old_map)
-        root_name = unique_name(preferred, used_roots, False)
+        is_file_share = entry["item_type"] == "file"
+        root_name = unique_name(preferred, used_roots, is_file_share)
         root_key = Path(root_name)
         new_map[source_key] = root_key.as_posix()
+
+        if is_file_share:
+            if not source.is_file():
+                raise FileNotFoundError(f"source is not a readable file: {source}")
+            (staging / root_name).symlink_to(source.resolve())
+            continue
+
+        if not source.is_dir():
+            raise FileNotFoundError(f"source is not a readable directory: {source}")
         mirror_directory(source, staging / root_name, source_key, root_key, old_map, new_map)
 
     state_staging = state_file.with_suffix(state_file.suffix + ".next")
