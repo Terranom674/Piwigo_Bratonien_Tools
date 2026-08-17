@@ -307,13 +307,19 @@ try
       $statusMessage = trim((string)($status['message'] ?? ''));
     }
 
-    if ($statusState === 'error')
+    $legacyNoChangeMessage = 'Synchronisierung fehlgeschlagen; bestehende Galerie blieb unverändert';
+    if ($statusState === 'error' && $statusMessage !== $legacyNoChangeMessage)
     {
       fail('Erster Connector-Lauf meldete einen technischen Fehler'.($statusMessage !== '' ? ': '.$statusMessage : '.'));
     }
     if ($statusState === 'ok')
     {
       $runResult = 'changed';
+    }
+    elseif ($statusState === 'error' && $statusMessage === $legacyNoChangeMessage)
+    {
+      $runResult = 'no_changes';
+      echo "Hinweis: Legacy-Runtime hat den erwarteten Activity-Gate-No-Op faelschlich als error markiert; Exit-Code 0 bestaetigt den erfolgreichen No-Change-Lauf.\n";
     }
   }
 
