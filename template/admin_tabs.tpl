@@ -89,7 +89,52 @@
     if(!panels.some(function(i){return i.definition.id===initial})) initial=panels[0].definition.id;
     activate(initial,false);
   }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initBratonienTabs); else initBratonienTabs();
+
+  function initNCConnectorPolling() {
+    var section=document.getElementById('nc-connector');
+    if(!section) return;
+    var lastSeen=null;
+    var endpoint='plugins/bratonien_tools/nc-connector-status.php';
+
+    function poll() {
+      fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
+        .then(function(response){if(!response.ok) throw new Error('HTTP '+response.status); return response.json();})
+        .then(function(data){
+          var timestamp=parseInt(data.timestamp||0,10);
+          if(!timestamp) return;
+
+          if(lastSeen===null) {
+            lastSeen=timestamp;
+            var resultVisible=section.textContent.indexOf('Letztes Ergebnis:')!==-1;
+            if(!resultVisible && data.message) {
+              var reloadKey='bratonien-nc-status-reload-'+timestamp;
+              try {
+                if(sessionStorage.getItem(reloadKey)!=='1') {
+                  sessionStorage.setItem(reloadKey,'1');
+                  window.location.reload();
+                }
+              } catch(e) {}
+            }
+            return;
+          }
+
+          if(timestamp>lastSeen) {
+            lastSeen=timestamp;
+            window.location.reload();
+          }
+        })
+        .catch(function(){});
+    }
+
+    poll();
+    window.setInterval(poll,5000);
+  }
+
+  function initAll() {
+    initBratonienTabs();
+    initNCConnectorPolling();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initAll); else initAll();
 })();
 </script>
 {/literal}
