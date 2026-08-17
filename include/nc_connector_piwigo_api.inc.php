@@ -86,6 +86,38 @@ function bratonien_tools_nc_connector_api_payload(array $decoded)
   return $decoded;
 }
 
+function bratonien_tools_nc_connector_collect_method_names($value, array &$methods)
+{
+  if (is_string($value))
+  {
+    $value = trim($value);
+    if ($value !== '' && preg_match('/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/', $value))
+    {
+      $methods[$value] = true;
+    }
+    return;
+  }
+
+  if (!is_array($value))
+  {
+    return;
+  }
+
+  if (isset($value['name']) && is_string($value['name']))
+  {
+    $name = trim($value['name']);
+    if ($name !== '')
+    {
+      $methods[$name] = true;
+    }
+  }
+
+  foreach ($value as $entry)
+  {
+    bratonien_tools_nc_connector_collect_method_names($entry, $methods);
+  }
+}
+
 function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_secret, $method)
 {
   if (!function_exists('curl_init'))
@@ -175,30 +207,10 @@ function bratonien_tools_nc_connector_piwigo_api_test()
   }
 
   $method_result = bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_secret, 'reflection.getMethodList');
-  $methods = array();
-  if (is_array($method_result))
-  {
-    if (isset($method_result['method']))
-    {
-      $entries = is_array($method_result['method']) ? $method_result['method'] : array($method_result['method']);
-    }
-    else
-    {
-      $entries = $method_result;
-    }
-
-    foreach ($entries as $entry)
-    {
-      if (is_string($entry))
-      {
-        $methods[] = $entry;
-      }
-      elseif (is_array($entry) && isset($entry['name']))
-      {
-        $methods[] = (string)$entry['name'];
-      }
-    }
-  }
+  $method_map = array();
+  bratonien_tools_nc_connector_collect_method_names($method_result, $method_map);
+  $methods = array_keys($method_map);
+  sort($methods, SORT_STRING);
 
   $required_methods = array('bratonien.nc.syncProductive', 'bratonien.nc.syncOrphans');
   $missing = array_values(array_diff($required_methods, $methods));
@@ -213,7 +225,6 @@ function bratonien_tools_nc_connector_piwigo_api_test()
   {
     return preg_match('/sync|synchron|site/i', (string)$method) === 1;
   }));
-  sort($sync_candidates, SORT_STRING);
 
   $result = array(
     'ok' => true,
