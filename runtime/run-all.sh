@@ -14,7 +14,7 @@ fi
 result=0
 for config in "${configs[@]}"; do
     echo "NC Connector: $(basename "$config")"
-    if ! env PIWIGO_CONFIG="$config" "$SCRIPT_DIR/sync.sh"; then
+    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
         result=1
     fi
 done
