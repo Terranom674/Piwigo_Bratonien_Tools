@@ -4,32 +4,40 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.16**
+- Aktuelle Plugin-Version: **0.9.3.17**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-Der lokale NC Connector ist für den aktuellen Bratonien-Einsatz inzwischen End-to-End funktionsfähig.
+Der lokale NC Connector ist für den aktuellen Bratonien-Einsatz im bisherigen Login-Weg End-to-End funktionsfähig. Mit `0.9.3.17` beginnt der Umbau auf API-first für die Piwigo-Synchronisierung.
 
-Erfolgreich umgesetzt und getestet:
+Bereits erfolgreich umgesetzt und getestet:
 
 - Nextcloud-Freigaben vom Typ `folder` und `file` werden aus der Source-View gelesen.
-- Das Manifest führt beide Freigabetypen korrekt.
 - Ordnerfreigaben werden als Verzeichnisbaum im Shadow Tree gespiegelt.
-- Einzeldateifreigaben werden als Symlink direkt im Galerie-Root angelegt.
-- Einzeldateien werden anschließend als echte Piwigo-Orphans ohne Albumzuordnung registriert.
-- Entfernte Einzeldateifreigaben werden beim normalen Connector-Lauf aus dem Shadow Tree und aus Piwigo entfernt.
-- Das Nextcloud-Original bleibt bei allen Löschvorgängen unangetastet.
-- Der normale Connector-Lauf führt klassischen Piwigo-Dateisync und Orphan-Abgleich automatisch hintereinander aus.
-- Der gemeinsame systemd-Timer `bratonien-nc-connector.timer` kann wieder produktiv verwendet werden.
-- Connector-getriggerte neue physische Alben werden standardmäßig privat angelegt, damit neu importierte Inhalte nicht ungeordnet öffentlich erscheinen.
+- Einzeldateifreigaben werden als Symlink direkt im Galerie-Root angelegt und als echte Piwigo-Orphans ohne Albumzuordnung registriert.
+- Entfernte Einzeldateifreigaben werden beim normalen Connector-Lauf aus Shadow Tree und Piwigo entfernt.
+- Das Nextcloud-Original bleibt bei Löschvorgängen unangetastet.
+- Connector-getriggerte neue physische Alben werden standardmäßig privat angelegt.
+- Der gemeinsame systemd-Timer `bratonien-nc-connector.timer` läuft produktiv.
+
+Neu in `0.9.3.17`:
+
+- die Piwigo-API ist als bevorzugter Synchronisierungsweg vorgesehen;
+- ein erfolgreich geprüfter API-Key wird verschlüsselt in der Piwigo-Konfiguration gespeichert;
+- produktive API-Synchronisierung ist ausdrücklich an die freigegebene Piwigo-Version **16.4.0** gebunden;
+- neuer Webservice `bratonien.nc.syncProductive` delegiert den freigegebenen produktiven Dateisync an Piwigos Core-Synchronisierung;
+- `runtime/lib/piwigo-sync.php` versucht zuerst die API und fällt nur bei nicht nutzbarer API auf Benutzername/Passwort zurück;
+- der bisherige Benutzername/Passwort-Zugang kann als verschlüsselter Fallback gespeichert oder gelöscht werden;
+- ein Benutzername/Passwort-Fallback kann außerdem einmalig manuell ausgeführt werden, ohne die Zugangsdaten zu speichern;
+- neue lokale Verbindungen werden intern als `api-first` angelegt; ein dauerhaft gespeicherter Login-Fallback ist technisch nicht mehr zwingend, sofern ein API-Zugang vorhanden ist.
 
 ## Architektur NC Connector
 
 - Nextcloud bleibt die einzige dauerhafte Quelle der Originalbilder.
-- Piwigo erhält nur die für die Galerie benötigte Verzeichnis-/Symlink-Struktur und erzeugt daraus seine Derivate und Cache-Dateien.
+- Piwigo erhält nur die benötigte Verzeichnis-/Symlink-Struktur und erzeugt daraus seine Derivate und Cache-Dateien.
 - Der Connector arbeitet mit einem PostgreSQL-Leser und den Views `piwigo_showcase_sources` und `piwigo_showcase_activity`.
 - Laufzeitdaten liegen unter `/var/lib/bratonien-tools/nc-connector/...`.
 - Verbindungs-Konfigurationen liegen unter `/etc/bratonien-tools/nc-connector/connection-*.conf`.
@@ -38,113 +46,75 @@ Erfolgreich umgesetzt und getestet:
 
 ## Nextcloud-Freigabemodell
 
-Der Connector unterstützt zwei Fälle:
+Der Connector unterstützt komplette Ordner und einzelne Bilder.
 
-1. komplette Ordner werden geteilt;
-2. einzelne Bilder werden direkt geteilt.
-
-Verarbeitung:
-
-- `folder` -> Verzeichnisstruktur spiegeln und über Piwigos klassische Dateisynchronisierung als physische Albumstruktur einlesen;
+- `folder` -> Verzeichnisstruktur spiegeln und über Piwigos Dateisynchronisierung als physische Albumstruktur einlesen;
 - `file` -> Symlink direkt im Galerie-Root und anschließende Registrierung als Piwigo-Orphan.
 
 Für einzelne Dateien wird kein künstlicher Unterordner erzeugt.
 
-## Manifest / Shadow Tree
-
-`runtime/lib/build_manifest.py` unterstützt zwei View-Schemata:
-
-- modern: `share_id, item_type, display_name, storage_id, source_path`;
-- legacy: `share_id, display_name, storage_id, source_path`.
-
-Bei einer Legacy-View wird der Typ nach Auflösung des Storage-Pfads über Datei oder Verzeichnis bestimmt.
-
-Das Manifest führt danach in beiden Fällen:
-
-`share_id, item_type, display_name, source_path`
-
-`runtime/lib/shadow_tree.py` verarbeitet daraus:
-
-- `folder` -> Verzeichnisstruktur spiegeln;
-- `file` -> Symlink direkt im Galerie-Root.
-
 ## Activity-Gate
 
-Das Activity-Gate berücksichtigt neben dem Nextcloud-Aktivitätsstand auch die Signatur der aktuell sichtbaren Freigaben.
-
-Damit werden Strukturänderungen an den Shares auch dann erkannt, wenn sie nicht zuverlässig durch einen reinen Maximalwert der Nextcloud-Aktivität abgebildet werden.
-
-Weiterhin vorhanden:
-
-- Quiet-Time;
-- maximale Wartezeit;
-- periodischer Full-Sync;
-- Verbindungsspezifischer State.
+Das Activity-Gate berücksichtigt neben dem Nextcloud-Aktivitätsstand auch die Signatur der aktuell sichtbaren Freigaben. Weiterhin vorhanden sind Quiet-Time, maximale Wartezeit, periodischer Full-Sync und verbindungsspezifischer State.
 
 ## Piwigo-Synchronisation
 
+### API-first
+
+Der normale Runtime-Lauf verwendet ab `0.9.3.17` folgende Priorität:
+
+1. gespeicherter Piwigo-API-Key;
+2. bei API-Fehler, fehlender Freigabe für die installierte Piwigo-Version oder nicht vorhandener API: gespeicherter Benutzername/Passwort-Fallback;
+3. ohne nutzbaren API- und Fallback-Zugang wird der Piwigo-Sync mit einer klaren Fehlermeldung abgebrochen.
+
+Nach einem Piwigo-Update wird die produktive API nicht automatisch für die neue Version freigeschaltet. Erst nach einem Kompatibilitätstest wird die Versionsfreigabe im Plugin angehoben. Bis dahin bleibt nur der Login-Fallback zulässig.
+
 ### Physische Alben
 
-`runtime/lib/piwigo-db-sync.pl` meldet sich an Piwigo an und löst die normale Dateisynchronisierung für die physischen Albumverzeichnisse aus.
-
-Connector-getriggerte Neuanlagen werden dabei mit privatem Standardstatus verarbeitet.
+`bratonien.nc.syncProductive` ist aktuell nur für Piwigo **16.4.0** freigegeben. Der Endpoint läuft als Administrator-Webservice und verwendet für den eigentlichen Dateisync Piwigos Core-Synchronisierung. Neue Connector-Alben werden dabei privat angelegt.
 
 ### Root-Dateien / Orphans
 
-Piwigos klassische Dateisynchronisation kann Dateien direkt unter dem Galerie-Root nicht als neues Element einem physischen Album zuordnen.
+`bratonien.nc.syncOrphans` verarbeitet direkte Dateien im Galerie-Root separat. Neue Root-Dateien werden als Piwigo-Orphans ohne Albumzuordnung registriert. Entfernte Root-Dateien werden nur aus Piwigo entfernt; das Nextcloud-Original bleibt unberührt.
 
-Deshalb verarbeitet `bratonien.nc.syncOrphans` diese Dateien separat.
-
-Für neue Root-Dateien:
-
-- wird ein normaler Eintrag in `piwigo_images` angelegt;
-- `storage_category_id` bleibt `NULL`;
-- es wird kein Eintrag in `piwigo_image_category` erzeugt;
-- Metadaten und Piwigo-Aktivität werden über vorhandene Piwigo-Funktionen aktualisiert;
-- die Datei erscheint im Batch Manager unter `With no album / Orphans`.
-
-Für entfernte Root-Dateien wird nur der Piwigo-Datenbankeintrag entfernt. Das Nextcloud-Original bleibt unberührt.
-
-### API-Weg
-
-Es existieren zwei eigene Webservice-Endpunkte:
-
-- `bratonien.nc.sync` – vollständiger read-only Paritätstest des klassischen Piwigo-Syncs;
-- `bratonien.nc.syncOrphans` – dedizierte Root-Orphan-Synchronisation mit Simulation und produktivem Modus.
-
-Beide Wege sind aktuell für Piwigo **16.4.0** freigegeben.
-
-## Erfolgreiche Live-Tests
+## Erfolgreiche Live-Tests bis 0.9.3.16
 
 Bestätigt wurden:
 
-- Ordnerfreigaben werden korrekt eingelesen.
-- Eine einzelne Nextcloud-Dateifreigabe wurde im Manifest als `file` erkannt.
-- Der zugehörige Symlink wurde direkt im Galerie-Root erzeugt.
-- Die Orphan-Simulation erkannte die Datei als `new_orphans = 1` ohne Datenbankschreibzugriff.
-- Der produktive Lauf registrierte die Datei als echtes Piwigo-Orphan.
-- Die Piwigo-Fotoanzahl stieg dabei entsprechend an.
-- Nach Entfernen der Nextcloud-Freigabe meldete der normale Connector-Lauf `files = 0` und `Piwigo-Orphans synchronisiert: +0 / -1`.
-- Der Root-Symlink wurde entfernt.
-- Ein anschließender Orphan-Abgleich fand keine Restdatei mehr.
-- Der automatische Timer kann wieder regulär laufen.
+- Ordnerfreigaben werden korrekt eingelesen;
+- Einzeldateifreigaben werden als `file` erkannt und im Galerie-Root verlinkt;
+- Orphan-Anlage und Orphan-Löschung funktionieren;
+- physische neue Connector-Alben werden privat angelegt;
+- der automatische Timer kann regulär laufen.
+
+## Offener Test für 0.9.3.17
+
+Vor Abschluss des API-first-Blocks muss noch live geprüft werden:
+
+1. Plugin-Update auf `0.9.3.17`;
+2. API-Key im NC Connector prüfen und speichern;
+3. produktiver Lauf verwendet `bratonien.nc.syncProductive` erfolgreich;
+4. Ordner- und Orphan-Sync bleiben unverändert korrekt;
+5. gespeicherter Login-Fallback übernimmt bei absichtlich nicht nutzbarer API;
+6. einmaliger Fallback funktioniert ohne Speicherung;
+7. gelöschter Fallback wird vom Runtime-Lauf nicht mehr verwendet.
 
 ## Sicherheit / Betriebsmodell
 
 - Nextcloud bleibt Eigentümer der Originaldateien.
 - Der Connector löscht keine Originaldateien aus den Storage-Mounts.
-- Zugangsdaten werden nicht in das Repository geschrieben.
-- Aktive Verbindungen verwenden getrennte Konfigurations-, Secret- und State-Dateien.
-- Der Piwigo-Sync wird nur für aktivierte Connector-Verbindungen ausgeführt.
-- Neue Connector-Alben werden privat angelegt, bevor sie regulär einsortiert oder freigegeben werden.
+- API- und Login-Zugangsdaten werden verschlüsselt gespeichert und nicht in das Repository geschrieben.
+- Die API hat Vorrang, ist aber streng versionsgebunden.
+- Benutzername/Passwort ist nur Fallback und kann dauerhaft, einmalig oder gar nicht verwendet werden.
+- Neue Connector-Alben werden privat angelegt.
 
 ## Bekannte offene Punkte
 
-Der lokale Connector-Grundbetrieb ist abgeschlossen. Offen bleiben vor allem die nächsten Ausbauschritte:
+Der NC Connector bleibt im Entwicklungsblock `0.9.3.x`. Nach erfolgreichem API-first-Livetest folgen insbesondere:
 
+- Bereinigung und Vereinfachung der Verbindungsverwaltung im Admin-UI;
 - Remote-Nextcloud-Adapter;
-- weitere Bereinigung und Vereinfachung der Verbindungsverwaltung im Admin-UI;
-- endgültige Entscheidung, welche Legacy-/Migrationshilfen nach stabiler Betriebsphase noch im Plugin verbleiben sollen;
+- Entscheidung über verbleibende Legacy-/Migrationshilfen;
 - weitere Komfortfunktionen für Status, Diagnose und Administration.
 
 ## Repository-Fallback
