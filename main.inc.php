@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.3.20
+Version: 0.9.3.21
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -37,12 +37,6 @@ add_event_handler('ws_add_methods', 'bratonien_tools_register_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_productive_ws_methods');
 
-/**
- * The NC Connector uses Piwigo's native filesystem synchronization for folder
- * shares. Mark only connector-triggered synchronization requests so every new
- * physical album created during that run starts private. The global Piwigo
- * default remains untouched for manual album creation and unrelated imports.
- */
 function bratonien_tools_prepare_connector_private_import()
 {
   global $conf;
@@ -60,12 +54,6 @@ function bratonien_tools_prepare_connector_private_import()
   $conf['newcat_default_status'] = 'private';
 }
 
-/**
- * Piwigo's per-album permissions form rewrites the complete direct-user
- * permission list when an album is saved as private. Add the acting user to
- * that submitted list on the public -> private transition so Piwigo itself
- * persists the permission together with the other selected users.
- */
 function bratonien_tools_prepare_private_album_permissions()
 {
   global $user;
