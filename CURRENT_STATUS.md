@@ -4,20 +4,21 @@ Stand: 17.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.3.13**
+- Aktuelle Plugin-Version: **0.9.3.14**
 - Aktueller Entwicklungsblock: **NC Connector – Verbindungsverwaltung / laufende Optimierung**
 - NC Connector ist Feature 10 und noch nicht vollständig abgeschlossen.
 - Solange dieser Optimierungsblock läuft, bleibt die Version im Bereich `0.9.3.x`.
 
 ## Aktueller GitHub-Stand
 
-- Aktuelle Versionsanhebung: `0.9.3.13`
-- `runtime/sync.sh` bleibt jetzt mit bereits bestehenden `connection-*.conf` kompatibel, die `NC_ACTIVITY_VIEW` noch nicht enthalten.
-- Fehlt `NC_ACTIVITY_VIEW`, wird automatisch `piwigo_showcase_activity` verwendet.
-- Fehlt `NC_DB_VIEW`, wird automatisch `piwigo_showcase_sources` verwendet.
+- Aktuelle Versionsanhebung: `0.9.3.14`
+- Einzeldateifreigaben im Galerie-Root werden nicht mehr ausschließlich der klassischen Piwigo-Dateisynchronisation überlassen.
+- Neuer Webservice `bratonien.nc.syncOrphans` registriert direkte Root-Dateien als echte Piwigo-Orphans ohne Album-Zuordnung.
+- `runtime/lib/piwigo-db-sync.pl` führt weiterhin zuerst den normalen Piwigo-Dateisync für physische Alben aus und synchronisiert danach die Root-Orphans produktiv über den neuen Webservice.
+- Entfernte Root-Freigaben werden aus der Piwigo-Datenbank entfernt, ohne das Nextcloud-Original zu löschen.
+- Der bestehende Webservice `bratonien.nc.sync` bleibt weiterhin der read-only Paritätstest für den vollständigen klassischen Sync.
 - Die in `0.9.3.12` ergänzte Share-Fingerprint-Prüfung des Activity-Gates bleibt aktiv.
-- Neue oder entfernte Shares können damit einen Lauf direkt auslösen, auch wenn Nextcloud dafür keinen passenden Activity-Eintrag liefert.
-- Für bestehende Installationen existiert im Proxmox-Scripts-Repo eine upgrade-sichere Nextcloud-View-Migration auf `folder` und `file`, ohne das Passwort von `piwigo_reader` zu verändern.
+- `runtime/sync.sh` bleibt mit älteren `connection-*.conf` kompatibel und verwendet bei fehlenden Werten automatisch `piwigo_showcase_activity` bzw. `piwigo_showcase_sources`.
 
 ## Architektur NC Connector
 
@@ -59,50 +60,56 @@ Bei einer Legacy-View wird der Typ nach Auflösung des Storage-Pfads über Datei
 
 ## Piwigo-Synchronisation
 
-### Bestehender Admin-Weg
+### Physische Alben
 
-Der produktive Fallback benutzt weiterhin den bestehenden Admin-Sync über `runtime/lib/piwigo-db-sync.pl`.
+Der produktive Fallback benutzt weiterhin den bestehenden Admin-Sync über `runtime/lib/piwigo-db-sync.pl` für normale Verzeichnisse und physische Alben.
+
+### Root-Dateien / Orphans
+
+Piwigos klassische Dateisynchronisation kann Dateien direkt unter `galleries/` nicht als neues Element einem physischen Album zuordnen. Deshalb verarbeitet `bratonien.nc.syncOrphans` ausschließlich direkte Dateien im konfigurierten Galerie-Root.
+
+Für neue Root-Dateien:
+
+- wird ein normaler Eintrag in `piwigo_images` angelegt;
+- `storage_category_id` bleibt `NULL`;
+- es wird kein Eintrag in `piwigo_image_category` erzeugt;
+- Metadaten und Piwigo-Aktivität werden über die vorhandenen Piwigo-Funktionen aktualisiert;
+- die Datei erscheint damit im Batch Manager unter `With no album / Orphans`.
+
+Für entfernte Root-Dateien wird nur der Piwigo-Datenbankeintrag entfernt. Das Nextcloud-Original bleibt unberührt.
 
 ### API-Weg
 
-Es existiert der eigene Webservice-Endpunkt `bratonien.nc.sync`.
+Es existieren jetzt zwei eigene Webservice-Endpunkte:
 
-Aktueller Zustand:
+- `bratonien.nc.sync` – vollständiger read-only Paritätstest des klassischen Piwigo-Syncs;
+- `bratonien.nc.syncOrphans` – dedizierte Root-Orphan-Synchronisation mit Simulation und produktivem Modus.
 
-- nur für Piwigo **16.4.0** freigegeben;
-- aktuell nur **Simulation**;
-- produktiver API-Sync (`simulate=false`) ist bewusst noch deaktiviert;
-- API-Key-Authentifizierung wurde erfolgreich gegen Piwigo getestet;
-- API-Simulation und originale Piwigo-Admin-Simulation lieferten in den bisherigen Vergleichstests dieselben Ergebnisse.
-
-Der API-Weg soll später der bevorzugte Weg werden. Der klassische Admin-Weg bleibt als Fallback erhalten.
+Beide Wege sind aktuell ausschließlich für Piwigo **16.4.0** freigegeben.
 
 ## Aktuell offener Test
 
-Ein einzelnes Bild liegt bereits im Nextcloud-Stammverzeichnis und ist als einzelne Datei geteilt.
+Die Einzeldateifreigabe `DSC1461-Enhanced-NR (1).jpg` wird bereits korrekt als `file` aus Nextcloud gelesen und als Symlink direkt im Galerie-Root angelegt.
 
-Der nächste Test soll nach Installation von `0.9.3.13` die komplette Kette prüfen:
+Nach Installation von `0.9.3.14` muss geprüft werden:
 
-`Nextcloud-View -> Activity/Share-Gate -> Manifest -> Shadow Tree -> Piwigo-API-Simulation`
-
-Erwartung:
-
-- die Einzeldateifreigabe erscheint in der Source-View mit `item_type = file`;
-- der Gate erkennt die geänderte Share-Struktur;
-- die Freigabe erscheint im Manifest als `file`;
-- sie wird direkt im Galerie-/Shadow-Root als Symlink angelegt;
-- die Piwigo-Simulation erkennt sie anschließend als neues Element.
+1. Simulation von `bratonien.nc.syncOrphans` meldet `new_orphans = 1`;
+2. normaler Connector-Lauf registriert das Bild produktiv;
+3. danach meldet die Orphan-Simulation `new_orphans = 0` und `registered_orphans = 1`;
+4. das Bild erscheint im Piwigo Batch Manager unter `With no album / Orphans`;
+5. das Entfernen der Nextcloud-Freigabe entfernt später nur den Piwigo-Eintrag, nicht das Original.
 
 ## Testmodus / Sicherheit
 
 - Der produktive Timer bleibt während der kontrollierten Tests ausgeschaltet.
-- Für Connector-Tests kann `PIWIGO_SYNC_OVERRIDE=0` verwendet werden, damit der Shadow Tree aktualisiert werden kann, ohne den produktiven Piwigo-Datenbank-Sync auszuführen.
+- Für reine Shadow-Tree-Tests kann `PIWIGO_SYNC_OVERRIDE=0` verwendet werden.
 - Der verwendete Piwigo-API-Key ist ausschließlich ein temporärer Entwicklungs-/Test-Key und wird nicht Bestandteil der produktiven Konfiguration.
 
 ## Bekannte offene Punkte
 
-- finaler End-to-End-Test für einzeln geteilte Bilder im Stammverzeichnis;
-- produktiven API-Sync erst nach erfolgreichen Paritätstests aktivieren;
+- finaler End-to-End-Test der neuen Orphan-Synchronisation;
+- danach Löschtest einer Einzeldateifreigabe;
+- produktiven vollständigen API-Sync erst nach erfolgreichen Paritätstests aktivieren;
 - Admin-Fallback mit temporären bzw. optional dauerhaft gespeicherten Zugangsdaten fertigstellen;
 - Remote-Nextcloud-Adapter ist noch nicht umgesetzt;
 - UI und Restpunkte der Verbindungsverwaltung werden nach Abschluss der aktuellen technischen Tests weiter bereinigt.
