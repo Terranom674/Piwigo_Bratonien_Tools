@@ -18,8 +18,6 @@ function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_s
     throw new RuntimeException('API-Schluessel-ID und Geheimnis muessen angegeben werden.');
   }
 
-  // Piwigo expects the exact header value "public-id:secret". The separator is
-  // added here by the connector and is not submitted through a form field.
   $api_key = $api_key_id.':'.$api_key_secret;
   $url = rtrim(get_absolute_root_url(true), '/').'/ws.php';
   $ch = curl_init($url);
@@ -94,6 +92,10 @@ function bratonien_tools_nc_connector_piwigo_api_test()
   $username = (string)($status['username'] ?? $status['user'] ?? '');
   $user_status = strtolower((string)($status['status'] ?? ''));
   $is_admin = in_array($user_status, array('admin', 'webmaster'), true);
+  if (!$is_admin)
+  {
+    throw new RuntimeException('Der API-Key funktioniert, gehoert aber keinem Piwigo-Administrator/Webmaster. Er wurde nicht gespeichert.');
+  }
 
   $method_result = bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_secret, 'reflection.getMethodList');
   $methods = array();
@@ -112,6 +114,15 @@ function bratonien_tools_nc_connector_piwigo_api_test()
     }
   }
 
+  $required_methods = array('bratonien.nc.syncProductive', 'bratonien.nc.syncOrphans');
+  $missing = array_values(array_diff($required_methods, $methods));
+  if ($missing)
+  {
+    throw new RuntimeException('Der API-Key ist gueltig, aber die benoetigten Bratonien-Sync-Methoden fehlen: '.implode(', ', $missing).'.');
+  }
+
+  bratonien_tools_nc_api_credentials_store($api_key_id, $api_key_secret);
+
   $sync_candidates = array_values(array_filter($methods, function($method)
   {
     return preg_match('/sync|synchron|site/i', (string)$method) === 1;
@@ -122,27 +133,16 @@ function bratonien_tools_nc_connector_piwigo_api_test()
     'ok' => true,
     'username' => $username !== '' ? $username : 'nicht gemeldet',
     'status' => $user_status !== '' ? $user_status : 'nicht gemeldet',
-    'admin' => $is_admin,
+    'admin' => true,
     'method_count' => count($methods),
     'sync_candidates' => $sync_candidates,
-    'sync_api_detected' => count($sync_candidates) > 0,
+    'sync_api_detected' => true,
+    'stored' => true,
+    'conclusion' => 'Der API-Key ist als bevorzugter Connector-Zugang gespeichert. Produktive API-Synchronisierung bleibt auf die im Plugin freigegebene Piwigo-Version begrenzt; bei einer nicht freigegebenen Version greift nur der konfigurierte Benutzername/Passwort-Fallback.',
   );
 
-  if (!$is_admin)
-  {
-    $result['conclusion'] = 'Der API-Key funktioniert, gehoert aber keinem Piwigo-Administrator/Webmaster. Fuer den heutigen NC-Connector-Sync reicht dieser Zugang nicht aus.';
-  }
-  elseif ($result['sync_api_detected'])
-  {
-    $result['conclusion'] = 'Der API-Key funktioniert mit Administratorrechten. Es wurden API-Methoden mit moeglichem Sync-/Site-Bezug gefunden. Diese muessen vor einer Runtime-Umstellung einzeln auf Eignung und Nebenwirkungen geprueft werden.';
-  }
-  else
-  {
-    $result['conclusion'] = 'Der API-Key funktioniert mit Administratorrechten. In der sichtbaren Web-API wurde jedoch keine offensichtliche Sync-/Site-Methode gefunden. Der bestehende Admin-Login wird deshalb noch nicht ersetzt.';
-  }
-
   return array(
-    'message' => 'Piwigo-API-Key wurde geprueft. Es wurden keine Zugangsdaten gespeichert und keine Synchronisation ausgeloest.',
+    'message' => 'Piwigo-API-Key wurde geprueft und verschluesselt als bevorzugter Connector-Zugang gespeichert.',
     'nc_piwigo_api_test' => $result,
   );
 }
