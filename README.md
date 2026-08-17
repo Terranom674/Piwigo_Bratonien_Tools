@@ -1,12 +1,55 @@
 # Piwigo Bratonien Tools
 
-Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration, Bildverarbeitung und Frontend-Funktionen.
+Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration, Bildverarbeitung, Nextcloud-Anbindung und Frontend-Funktionen.
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.13.10**
+Aktuelle Plugin-Version: **0.14.2.11**
 
 ## Funktionsumfang
+
+### NC Connector
+
+Der NC Connector verwaltet Nextcloud-Quellen fuer Piwigo und fuehrt den regelmaessigen Abgleich mit einer Plugin-eigenen Sync-Runtime aus.
+
+Aktuell vorhanden:
+
+- eigene Connection-Verwaltung innerhalb von Bratonien Tools
+- Grundlage fuer mehrere Nextcloud-Verbindungen
+- lokaler Nextcloud-Adapter ueber PostgreSQL-Reader und explizite Storage-Mounts
+- Verifikation von PostgreSQL-Verbindung, Source-View, Activity-View und Storage-Mounts
+- Statusmodell fuer importierte, verifizierte, vorbereitete und aktive Verbindungen
+- regelmaessige Ausfuehrung ueber `bratonien-nc-connector.timer`
+- Anzeige von Timer-Status, letztem Lauf, letztem Ergebnis und naechstem geplanten Lauf
+- Plugin-eigene Sync-Runtime unter `runtime/`
+- Activity-Gate mit Quiet-Time, Max-Wartezeit und periodischem Full-Sync
+- Shadow Tree fuer Piwigo ohne Kopie der Originaldateien
+- Originalbilder bleiben an ihrer Nextcloud-/Storage-Quelle
+- lokale Piwigo-Derivate und Caches bleiben davon getrennt und koennen jederzeit neu erzeugt werden
+
+Die Runtime baut aus den freigegebenen Nextcloud-Quellen einen Piwigo-kompatiblen Shadow Tree. Dateien werden dabei nicht in eine zweite permanente Originalbibliothek kopiert, sondern ueber Symlinks auf die vorhandenen Storage-Mounts referenziert.
+
+#### Migration bestehender Installationen
+
+Fuer bestehende Installationen, die zuvor den separaten `piwigo-sync` aus `Proxmox_Scripts` verwendet haben, existiert ein kontrollierter Migrationsweg:
+
+- bestehende Verbindung einmalig importieren
+- Connector-Kopie unabhaengig verifizieren
+- kontrollierten Cutover vorbereiten
+- Connector-Timer aktivieren und Legacy-Timer deaktivieren
+- Runtime vom bisherigen `/opt/piwigo-sync` auf die Plugin-eigene Runtime umstellen
+- Legacy-Bestand anschliessend entfernen
+
+Der produktive Alt-Sync bleibt waehrend Import und Verifikation unangetastet. Erst beim expliziten Cutover wird die Zeitsteuerung uebernommen.
+
+Nach abgeschlossener Migration koennen folgende Legacy-Bestandteile entfernt werden:
+
+- `/opt/piwigo-sync`
+- `/etc/piwigo-sync`
+- `piwigo-sync.service`
+- `piwigo-sync.timer`
+
+`/var/lib/piwigo-sync` bleibt derzeit als Laufzeitverzeichnis fuer Name-Map, Activity-State, Manifest und Connector-Status bestehen.
 
 ### Bildcache
 
@@ -152,13 +195,26 @@ Bratonien Tools kann den aktuellen Stand des GitHub-Repositories pruefen und sic
 
 ## Architektur
 
-Das Plugin ist modular aufgebaut. Administrative Werkzeuge werden getrennt implementiert und ueber eine zentrale Registry eingebunden. Frontend- und Piwigo-Integrationen liegen ebenfalls in eigenen Modulen.
+Das Plugin ist modular aufgebaut. Administrative Werkzeuge werden getrennt implementiert und ueber eine zentrale Registry eingebunden. Frontend-, Runtime- und Piwigo-Integrationen liegen ebenfalls in eigenen Modulen.
 
 Wichtige Bestandteile:
 
 - `main.inc.php` - Plugin-Einstieg, Runtime-Module und Admin-Menue
 - `admin.php` - zentraler Admin-Controller
 - `include/tool_registry.inc.php` - Registry der administrativen Aktionen
+- `include/nc_connector.inc.php` - Connection-Verwaltung, Import und Verifikation des NC Connectors
+- `include/nc_connector_takeover.inc.php` - Vorbereitung und Ruecknahme der kontrollierten Connector-Uebergabe
+- `include/nc_connector_system.inc.php` - Timer-, Laufzeit- und Legacy-Status fuer den NC Connector
+- `runtime/sync.sh` - Plugin-eigene Sync-Runtime des NC Connectors
+- `runtime/lib/activity_gate.py` - Activity-Gate und zeitgesteuerte Reconciliation
+- `runtime/lib/build_manifest.py` - Aufloesung der Nextcloud-Quellen auf konfigurierte Storage-Mounts
+- `runtime/lib/shadow_tree.py` - Aufbau des Piwigo-kompatiblen Shadow Trees ohne Kopieren der Originale
+- `runtime/lib/piwigo-db-check.php` - Konsistenzpruefung vorhandener Piwigo-Alben
+- `runtime/lib/piwigo-db-sync.pl` - Ausloesen der Piwigo-Dateisynchronisierung
+- `nc-connector-migrate.php` - einmaliger Migrationshelfer fuer bestehende Legacy-Installationen
+- `nc-connector-cutover-v2.php` - kontrollierter Legacy-Cutover
+- `nc-connector-runtime-switch.php` - Umstellung einer aktiven Verbindung auf die Plugin-eigene Runtime
+- `nc-connector-legacy-cleanup.php` - kontrollierte Entfernung alter Sync-Scripts und systemd-Units
 - `include/public_selection.inc.php` - oeffentliche Fotoauswahl und Batch-Downloader-Anbindung
 - `include/picture_navigation.inc.php` - Einbindung der erweiterten Bildnavigation
 - `include/batch_titles.inc.php` - fortlaufende Titelvergabe in Piwigos Stapelverarbeitung
@@ -194,6 +250,12 @@ Administrative Aktionen pruefen Piwigo-Berechtigungen und verwenden fuer schreib
 
 Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
 
+- verschluesselte Speicherung der Connector-Zugangsdaten
+- PostgreSQL-Reader mit minimalen Leserechten fuer lokale Nextcloud-Verbindungen
+- explizite Storage-Zuordnungen statt automatischer Freigabe beliebiger Dateipfade
+- Verifikation von Datenbank, Views und Mounts vor einer Connector-Uebergabe
+- kontrollierte Migration mit getrennten Zustaenden fuer Import, Verifikation und Aktivierung
+- Originalbilder werden vom NC Connector nicht in eine zweite permanente Bibliothek kopiert
 - Validierung von Cache- und Dateipfaden
 - Filterung ausgewaehlter Bild-IDs gegen die aktuell berechtigte Bildmenge
 - Nutzung der von Piwigos Stapelverarbeitung validierten Auswahl fuer die fortlaufende Titelvergabe
@@ -215,4 +277,4 @@ Farben, Schatten, Hover-Effekte und individuelles Branding sollten ueber das akt
 
 ## Entwicklungsstand
 
-Das Plugin befindet sich weiterhin in aktiver Entwicklung. Einige Funktionen sind speziell fuer die aktuelle Piwigo-Installation entstanden und werden schrittweise weiter verallgemeinert, bevor das Projekt fuer eine breitere Nutzung vorgesehen ist.
+Das Plugin befindet sich weiterhin in aktiver Entwicklung. Der NC Connector ist aus der bisherigen externen Nextcloud-Piwigo-Synchronisierung in Bratonien Tools uebernommen worden und verwendet inzwischen seine eigene Runtime und Zeitsteuerung. Die Verwaltung mehrerer Verbindungen sowie weitere Adapter werden schrittweise ausgebaut.
