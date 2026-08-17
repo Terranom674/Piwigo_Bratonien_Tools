@@ -186,7 +186,7 @@ function bratonien_tools_nc_connector_connections()
 {
   bratonien_tools_nc_connector_ensure_table();
   $table = bratonien_tools_nc_connector_table();
-  $result = pwg_query("SELECT id, connection_key, name, adapter, enabled, takeover_state, config_json, created, updated FROM `$table` ORDER BY id");
+  $result = pwg_query("SELECT id, connection_key, name, adapter, enabled, takeover_state, config_json, secret_blob, created, updated FROM `$table` ORDER BY id");
   $connections = array();
 
   while ($row = pwg_db_fetch_assoc($result))
@@ -197,6 +197,24 @@ function bratonien_tools_nc_connector_connections()
       $config = array();
     }
     $verification = isset($config['verification']) && is_array($config['verification']) ? $config['verification'] : array();
+
+    $has_fallback = false;
+    try
+    {
+      $plain = bratonien_tools_nc_connector_decrypt_secret($row['secret_blob'] ?? '');
+      $credentials = json_decode($plain, true);
+      if (is_array($credentials))
+      {
+        $has_fallback = trim((string)($credentials['piwigo_user'] ?? '')) !== ''
+          && (string)($credentials['piwigo_password'] ?? '') !== '';
+      }
+    }
+    catch (Throwable $e)
+    {
+      $has_fallback = false;
+    }
+
+    unset($row['secret_blob']);
     $row['id'] = (int)$row['id'];
     $row['enabled'] = (bool)$row['enabled'];
     $row['config'] = $config;
@@ -205,6 +223,7 @@ function bratonien_tools_nc_connector_connections()
     $row['user'] = isset($config['user']) ? (string)$config['user'] : '';
     $row['source_view'] = isset($config['source_view']) ? (string)$config['source_view'] : '';
     $row['storage_count'] = isset($config['storages']) && is_array($config['storages']) ? count($config['storages']) : 0;
+    $row['fallback_stored'] = $has_fallback;
     $row['verification'] = $verification;
     $row['verified_ok'] = !empty($verification['ok']);
     $row['verified_at'] = isset($verification['checked_at']) ? (string)$verification['checked_at'] : '';
@@ -418,7 +437,7 @@ function bratonien_tools_nc_connector_psql($config, $password, $query)
   if ($exit !== 0)
   {
     $detail = $stderr !== '' ? $stderr : 'psql Exit-Code '.$exit;
-    throw new RuntimeException('PostgreSQL-Pruefung fehlgeschlagen: '.substr($detail, 0, 500));
+    throw new RuntimeException('PostgreSQL-Abfrage fehlgeschlagen: '.$detail);
   }
 
   return $stdout;
@@ -427,272 +446,39 @@ function bratonien_tools_nc_connector_psql($config, $password, $query)
 function bratonien_tools_nc_connector_mount_points()
 {
   $mounts = array();
-  $lines = @file('/proc/self/mountinfo', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-  if (!is_array($lines))
+  $content = @file_get_contents('/proc/self/mountinfo');
+  if (!is_string($content))
   {
     return $mounts;
   }
-
-  foreach ($lines as $line)
+  foreach (preg_split('/\r\n|\r|\n/', $content) as $line)
   {
+    if ($line === '') continue;
     $parts = explode(' ', $line);
-    if (count($parts) < 5)
-    {
-      continue;
-    }
-    $path = str_replace(array('\\040','\\011','\\012','\\134'), array(' ',"\t","\n",'\\'), $parts[4]);
-    $mounts[$path] = true;
+    if (count($parts) < 5) continue;
+    $mount = str_replace(array('\\040','\\011','\\012','\\134'), array(' ',"\t","\n",'\\'), $parts[4]);
+    $mounts[rtrim($mount, '/')] = true;
   }
   return $mounts;
 }
 
-function bratonien_tools_nc_connector_verify()
-{
-  $id = isset($_POST['connection_id']) ? (int)$_POST['connection_id'] : 0;
-  $connection = bratonien_tools_nc_connector_connection($id, true);
-  if (!$connection)
-  {
-    throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
-  }
-  if ($connection['adapter'] !== 'local')
-  {
-    throw new RuntimeException('Diese Verifikation ist derzeit nur fuer lokale Connector-Verbindungen verfuegbar.');
-  }
-
-  $config = $connection['config'];
-  $required = array('host','port','database','user','source_view');
-  foreach ($required as $key)
-  {
-    if (!isset($config[$key]) || trim((string)$config[$key]) === '')
-    {
-      throw new RuntimeException('Connector-Konfiguration ist unvollstaendig: '.$key.' fehlt.');
-    }
-  }
-
-  $checks = array();
-  $ok = true;
-  $source_count = null;
-  $password = bratonien_tools_nc_connector_decrypt_secret($connection['secret_blob'] ?? '');
-  if ($password === '')
-  {
-    throw new RuntimeException('Fuer diese Verbindung sind keine Datenbank-Zugangsdaten gespeichert.');
-  }
-
-  try
-  {
-    bratonien_tools_nc_connector_psql($config, $password, 'SELECT 1');
-    $checks[] = array('name'=>'PostgreSQL-Verbindung', 'ok'=>true, 'detail'=>'Reader-Anmeldung erfolgreich');
-  }
-  catch (Throwable $e)
-  {
-    $checks[] = array('name'=>'PostgreSQL-Verbindung', 'ok'=>false, 'detail'=>$e->getMessage());
-    $ok = false;
-  }
-
-  if ($ok)
-  {
-    try
-    {
-      $view = bratonien_tools_nc_connector_view_name($config['source_view']);
-      $value = bratonien_tools_nc_connector_psql($config, $password, 'SELECT COUNT(*) FROM '.$view);
-      if (!preg_match('/^\d+$/', $value))
-      {
-        throw new RuntimeException('Source-View lieferte keinen gueltigen Zaehler.');
-      }
-      $source_count = (int)$value;
-      $checks[] = array('name'=>'Source-View', 'ok'=>true, 'detail'=>$source_count.' Quelle(n) lesbar');
-    }
-    catch (Throwable $e)
-    {
-      $checks[] = array('name'=>'Source-View', 'ok'=>false, 'detail'=>$e->getMessage());
-      $ok = false;
-    }
-
-    try
-    {
-      $activity = isset($config['activity_view']) ? trim((string)$config['activity_view']) : '';
-      if ($activity === '')
-      {
-        throw new RuntimeException('Keine Activity-View konfiguriert.');
-      }
-      $view = bratonien_tools_nc_connector_view_name($activity);
-      bratonien_tools_nc_connector_psql($config, $password, 'SELECT 1 FROM '.$view.' LIMIT 1');
-      $checks[] = array('name'=>'Activity-View', 'ok'=>true, 'detail'=>'View lesbar');
-    }
-    catch (Throwable $e)
-    {
-      $checks[] = array('name'=>'Activity-View', 'ok'=>false, 'detail'=>$e->getMessage());
-      $ok = false;
-    }
-  }
-
-  $storages = isset($config['storages']) && is_array($config['storages']) ? $config['storages'] : array();
-  $mount_points = bratonien_tools_nc_connector_mount_points();
-  if (count($storages) === 0)
-  {
-    $checks[] = array('name'=>'Storage-Mounts', 'ok'=>false, 'detail'=>'Keine Storage-Zuordnung gespeichert');
-    $ok = false;
-  }
-  else
-  {
-    foreach ($storages as $index => $storage)
-    {
-      $path = isset($storage['local_mount']) ? rtrim((string)$storage['local_mount'], '/') : '';
-      if ($path === '')
-      {
-        $checks[] = array('name'=>'Storage '.($index + 1), 'ok'=>false, 'detail'=>'Kein lokaler Mountpfad gespeichert');
-        $ok = false;
-        continue;
-      }
-
-      $exists = is_dir($path);
-      $readable = $exists && is_readable($path);
-      $mounted = isset($mount_points[$path]);
-      $storage_ok = $exists && $readable && $mounted;
-      $storage_id = isset($storage['storage_id']) ? (string)$storage['storage_id'] : ('#'.($index + 1));
-      $detail = $storage_id.' -> '.$path;
-      if (!$exists)
-      {
-        $detail .= ' (Pfad fehlt)';
-      }
-      elseif (!$readable)
-      {
-        $detail .= ' (nicht lesbar)';
-      }
-      elseif (!$mounted)
-      {
-        $detail .= ' (kein aktiver Mount)';
-      }
-      else
-      {
-        $detail .= ' (bereit)';
-      }
-      $checks[] = array('name'=>'Storage '.($index + 1), 'ok'=>$storage_ok, 'detail'=>$detail);
-      if (!$storage_ok)
-      {
-        $ok = false;
-      }
-    }
-  }
-
-  $config['verification'] = array(
-    'checked_at' => date('Y-m-d H:i:s'),
-    'ok' => $ok,
-    'source_count' => $source_count,
-    'checks' => $checks,
-  );
-  $table = bratonien_tools_nc_connector_table();
-  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($config_json))
-  {
-    throw new RuntimeException('Verifikationsergebnis konnte nicht gespeichert werden.');
-  }
-  $state = $ok ? 'verified' : 'imported';
-  $now = date('Y-m-d H:i:s');
-  pwg_query("UPDATE `$table` SET
-    takeover_state = '".pwg_db_real_escape_string($state)."',
-    enabled = 0,
-    config_json = '".pwg_db_real_escape_string($config_json)."',
-    updated = '".pwg_db_real_escape_string($now)."'
-    WHERE id = ".(int)$connection['id']);
-
-  if (!$ok)
-  {
-    throw new RuntimeException('Connector-Verifikation ist fehlgeschlagen. Die Verbindung bleibt importiert und deaktiviert; Details stehen im NC Connector.');
-  }
-
-  return array(
-    'message' => 'Connector-Verbindung wurde erfolgreich verifiziert. PostgreSQL, Views und Storage-Mounts sind erreichbar. Der Legacy-Sync bleibt weiterhin aktiv; die Connector-Verbindung bleibt deaktiviert.',
-  );
-}
-
 function bratonien_tools_nc_connector_status()
 {
-  $config_path = '/etc/piwigo-sync/piwigo.conf';
-  $config_exists = is_file($config_path);
-  $config_readable = is_readable($config_path);
-  $config = bratonien_tools_nc_connector_read_config($config_path);
-
-  $required = array('NC_DB_HOST', 'NC_DB_PORT', 'NC_DB_NAME', 'NC_DB_USER', 'NC_DB_VIEW');
-  $missing = array();
-  foreach ($required as $key)
-  {
-    if (!isset($config[$key]) || trim((string)$config[$key]) === '')
-    {
-      $missing[] = $key;
-    }
-  }
-
-  $password_file = isset($config['NC_DB_PASSWORD_FILE']) ? (string)$config['NC_DB_PASSWORD_FILE'] : '';
-  $status_file = isset($config['STATUS_FILE']) && $config['STATUS_FILE'] !== ''
-    ? (string)$config['STATUS_FILE']
-    : '/var/lib/piwigo-sync/status.json';
-
-  $sync_status = array('available'=>false, 'state'=>'', 'message'=>'', 'timestamp'=>0, 'time_label'=>'');
-  if (is_readable($status_file))
-  {
-    $raw_status = @file_get_contents($status_file);
-    $decoded = is_string($raw_status) ? json_decode($raw_status, true) : null;
-    if (is_array($decoded))
-    {
-      $timestamp = isset($decoded['timestamp']) ? (int)$decoded['timestamp'] : 0;
-      $sync_status = array(
-        'available' => true,
-        'state' => isset($decoded['state']) ? (string)$decoded['state'] : '',
-        'message' => isset($decoded['message']) ? (string)$decoded['message'] : '',
-        'timestamp' => $timestamp,
-        'time_label' => $timestamp > 0 ? date('d.m.Y H:i:s', $timestamp) : '',
-      );
-    }
-  }
-
   $connections = bratonien_tools_nc_connector_connections();
-  $bundle_path = bratonien_tools_nc_connector_import_bundle_path();
-  $helper_path = realpath(BRATONIEN_TOOLS_PATH.'nc-connector-migrate.php');
-  if ($helper_path === false)
-  {
-    $helper_path = BRATONIEN_TOOLS_PATH.'nc-connector-migrate.php';
-  }
-
-  $verified_count = 0;
+  $legacy_config = '/etc/piwigo-sync/piwigo.conf';
+  $legacy_present = is_readable($legacy_config);
+  $active_count = 0;
   foreach ($connections as $connection)
   {
-    if ($connection['takeover_state'] === 'verified' || $connection['takeover_state'] === 'active')
-    {
-      $verified_count++;
-    }
+    if (!empty($connection['enabled'])) $active_count++;
   }
 
   return array(
-    'phase' => $verified_count > 0 ? 'Verifikation' : 'Migration',
-    'readonly' => true,
-    'legacy_present' => $config_exists,
-    'detected' => $config_exists,
-    'config_path' => $config_path,
-    'config_exists' => $config_exists,
-    'config_readable' => $config_readable,
-    'missing' => $missing,
-    'host' => isset($config['NC_DB_HOST']) ? (string)$config['NC_DB_HOST'] : '',
-    'port' => isset($config['NC_DB_PORT']) ? (string)$config['NC_DB_PORT'] : '',
-    'database' => isset($config['NC_DB_NAME']) ? (string)$config['NC_DB_NAME'] : '',
-    'user' => isset($config['NC_DB_USER']) ? (string)$config['NC_DB_USER'] : '',
-    'view' => isset($config['NC_DB_VIEW']) ? (string)$config['NC_DB_VIEW'] : '',
-    'password_file' => $password_file,
-    'password_file_exists' => $password_file !== '' && is_file($password_file),
-    'password_file_readable' => $password_file !== '' && is_readable($password_file),
-    'gallery_root' => isset($config['GALLERY_ROOT']) ? (string)$config['GALLERY_ROOT'] : '',
-    'state_dir' => isset($config['STATE_DIR']) ? (string)$config['STATE_DIR'] : '',
-    'status_file' => $status_file,
-    'sync_enabled' => isset($config['PIWIGO_SYNC_ENABLED']) && (string)$config['PIWIGO_SYNC_ENABLED'] === '1',
-    'quiet_seconds' => isset($config['QUIET_SECONDS']) ? (string)$config['QUIET_SECONDS'] : '',
-    'max_wait_seconds' => isset($config['MAX_WAIT_SECONDS']) ? (string)$config['MAX_WAIT_SECONDS'] : '',
-    'full_sync_seconds' => isset($config['FULL_SYNC_SECONDS']) ? (string)$config['FULL_SYNC_SECONDS'] : '',
-    'sync_status' => $sync_status,
+    'phase' => 'native-runtime',
+    'legacy_config_path' => $legacy_config,
+    'legacy_present' => $legacy_present,
     'connections' => $connections,
     'connection_count' => count($connections),
-    'verified_count' => $verified_count,
-    'migration_bundle_available' => is_readable($bundle_path),
-    'migration_bundle_path' => $bundle_path,
-    'migration_command' => 'sudo php '.$helper_path,
+    'active_count' => $active_count,
   );
 }
