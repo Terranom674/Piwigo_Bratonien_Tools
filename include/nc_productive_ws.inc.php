@@ -97,9 +97,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
   try
   {
-    // -----------------------------------------------------------------
-    // Directories / physical categories. Connector imports are private.
-    // -----------------------------------------------------------------
     $query = 'SELECT id, id_uppercat, uppercats, global_rank, status, visible FROM '.CATEGORIES_TABLE.' WHERE dir IS NOT NULL AND site_id = '.$site_id;
     $db_categories = hash_from_query($query, 'id');
     $db_fulldirs = get_fulldirs(array_keys($db_categories));
@@ -200,9 +197,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
       $counts['del_categories'] = count($to_delete_categories);
     }
 
-    // -----------------------------------------------------------------
-    // Files / physical images.
-    // -----------------------------------------------------------------
     $fs = $site_reader->get_elements($basedir);
     $cat_ids = array_diff(array_keys($db_categories), $to_delete_categories);
     $db_elements = array();
@@ -335,9 +329,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     update_category('all');
     update_global_rank();
 
-    // -----------------------------------------------------------------
-    // File attributes.
-    // -----------------------------------------------------------------
     $files = get_filelist('', $site_id, true, false);
     $updates = array();
     foreach ($files as $id => $file)
@@ -360,9 +351,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     }
     $counts['upd_elements'] = count($updates);
 
-    // -----------------------------------------------------------------
-    // Metadata: same default as core sync, only not-yet-synchronized files.
-    // -----------------------------------------------------------------
     $metadata_files = get_filelist('', $site_id, true, true);
     $counts['metadata_candidates'] = count($metadata_files);
     $metadata_updates = array();
@@ -415,6 +403,15 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
       set_tags_of($tags_of);
     }
     $counts['metadata_updated'] = count($metadata_updates);
+
+    // Mirror Piwigo 16.4.0 Maintenance -> "Update photos information".
+    // This finalizes physical photo paths and the derived photo information
+    // after the direct API synchronization without invoking an admin page.
+    images_integrity();
+    update_path();
+    include_once(PHPWG_ROOT_PATH.'include/functions_rate.inc.php');
+    update_rating_score();
+    invalidate_user_cache();
   }
   catch (Throwable $e)
   {
