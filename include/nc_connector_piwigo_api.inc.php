@@ -75,6 +75,17 @@ function bratonien_tools_nc_connector_decode_api_response($body, $content_type =
   return $response;
 }
 
+function bratonien_tools_nc_connector_api_payload(array $decoded)
+{
+  if (array_key_exists('result', $decoded))
+  {
+    return $decoded['result'];
+  }
+
+  unset($decoded['stat']);
+  return $decoded;
+}
+
 function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_secret, $method)
 {
   if (!function_exists('curl_init'))
@@ -133,7 +144,7 @@ function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_s
     throw new RuntimeException($message);
   }
 
-  return $decoded['result'] ?? null;
+  return bratonien_tools_nc_connector_api_payload($decoded);
 }
 
 function bratonien_tools_nc_connector_piwigo_api_test()
@@ -167,7 +178,16 @@ function bratonien_tools_nc_connector_piwigo_api_test()
   $methods = array();
   if (is_array($method_result))
   {
-    foreach ($method_result as $entry)
+    if (isset($method_result['method']))
+    {
+      $entries = is_array($method_result['method']) ? $method_result['method'] : array($method_result['method']);
+    }
+    else
+    {
+      $entries = $method_result;
+    }
+
+    foreach ($entries as $entry)
     {
       if (is_string($entry))
       {
