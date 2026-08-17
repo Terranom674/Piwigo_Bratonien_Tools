@@ -29,8 +29,8 @@
     </div>
 
     <div class="bratonien-card" style="grid-column:1/-1">
-      <h4>Piwigo API prüfen</h4>
-      <p class="bratonien-base-note">Die API-Schlüssel-ID und das Geheimnis werden getrennt eingegeben. Bratonien Tools setzt daraus intern exakt den von Piwigo erwarteten Header <code>ID:Geheimnis</code> zusammen. Beide Werte werden nur für diesen Test verwendet, nicht gespeichert und es wird keine Synchronisation ausgelöst.</p>
+      <h4>Piwigo API – bevorzugter Sync-Zugang</h4>
+      <p class="bratonien-base-note">Der NC Connector versucht bei jedem produktiven Lauf zuerst die Piwigo-API. Ein erfolgreich geprüfter API-Key wird verschlüsselt gespeichert. Die produktive API-Synchronisierung ist ausdrücklich an die im Plugin freigegebene Piwigo-Version gebunden. Ist diese Version nicht freigegeben oder die API nicht nutzbar, darf nur der Benutzername/Passwort-Fallback übernehmen.</p>
       <form method="post">
         <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
         <div class="bratonien-form-grid">
@@ -39,7 +39,10 @@
           <label class="bratonien-label" for="nc_piwigo_api_key_secret">API-Geheimnis</label>
           <input id="nc_piwigo_api_key_secret" name="nc_piwigo_api_key_secret" type="password" autocomplete="off" required>
         </div>
-        <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_piwigo_api_test">API prüfen</button></p>
+        <div class="bratonien-actions">
+          <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_piwigo_api_test">API prüfen und speichern</button>
+          <button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="nc_connector_piwigo_api_delete" formnovalidate onclick="return confirm('Gespeicherte Piwigo-API-Zugangsdaten wirklich löschen?');">Gespeicherte API löschen</button>
+        </div>
       </form>
 
       {if isset($NC_CONNECTOR.piwigo_api_test) && $NC_CONNECTOR.piwigo_api_test}
@@ -50,17 +53,38 @@
           <span class="bratonien-label">Piwigo-Status</span><strong>{$NC_CONNECTOR.piwigo_api_test.status|escape:html}</strong>
           <span class="bratonien-label">Administrator/Webmaster</span><strong>{if $NC_CONNECTOR.piwigo_api_test.admin}Ja{else}Nein{/if}</strong>
           <span class="bratonien-label">Sichtbare API-Methoden</span><strong>{$NC_CONNECTOR.piwigo_api_test.method_count|escape:html}</strong>
-          <span class="bratonien-label">Mögliche Sync-/Site-Methoden</span><strong>{if $NC_CONNECTOR.piwigo_api_test.sync_api_detected}Ja{else}Nein{/if}</strong>
+          <span class="bratonien-label">Bratonien-Sync-API</span><strong>{if $NC_CONNECTOR.piwigo_api_test.sync_api_detected}Bereit{else}Nicht bereit{/if}</strong>
         </div>
-        {if $NC_CONNECTOR.piwigo_api_test.sync_candidates|@count > 0}
-          <p><strong>Gefundene Kandidaten:</strong></p>
-          <ul>
-            {foreach from=$NC_CONNECTOR.piwigo_api_test.sync_candidates item=method}
-              <li><code>{$method|escape:html}</code></li>
-            {/foreach}
-          </ul>
-        {/if}
         <p class="bratonien-base-note"><strong>Bewertung:</strong> {$NC_CONNECTOR.piwigo_api_test.conclusion|escape:html}</p>
+      {/if}
+    </div>
+
+    <div class="bratonien-card" style="grid-column:1/-1">
+      <h4>Benutzername/Passwort-Fallback</h4>
+      <p class="bratonien-base-note">Dieser Zugang wird nur verwendet, wenn die bevorzugte API nicht genutzt werden kann. Zugangsdaten können einmalig für einen manuellen Fallback verwendet, verschlüsselt dauerhaft hinterlegt oder vollständig gelöscht werden.</p>
+      {if $NC_CONNECTOR.connection_count > 0}
+        <form method="post">
+          <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          <div class="bratonien-form-grid">
+            <label class="bratonien-label" for="nc_fallback_connection">Verbindung</label>
+            <select id="nc_fallback_connection" name="connection_id" required>
+              {foreach from=$NC_CONNECTOR.connections item=connection}
+                <option value="{$connection.id|escape:html}">{$connection.name|escape:html}</option>
+              {/foreach}
+            </select>
+            <label class="bratonien-label" for="nc_fallback_user">Piwigo-Benutzer</label>
+            <input id="nc_fallback_user" name="nc_fallback_user" type="text" autocomplete="username">
+            <label class="bratonien-label" for="nc_fallback_password">Piwigo-Passwort</label>
+            <input id="nc_fallback_password" name="nc_fallback_password" type="password" autocomplete="current-password">
+          </div>
+          <div class="bratonien-actions">
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_fallback_once">Einmalig verwenden</button>
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_fallback_save">Fest speichern</button>
+            <button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="nc_connector_fallback_delete" formnovalidate onclick="return confirm('Gespeicherten Benutzername/Passwort-Fallback wirklich löschen?');">Gespeicherten Fallback löschen</button>
+          </div>
+        </form>
+      {else}
+        <p class="bratonien-base-note">Noch keine Connector-Verbindung vorhanden.</p>
       {/if}
     </div>
 
@@ -78,8 +102,8 @@
           <label class="bratonien-label" for="nc_source_view">Source-View</label><input id="nc_source_view" name="nc_source_view" type="text" value="piwigo_showcase_sources" required>
           <label class="bratonien-label" for="nc_activity_view">Activity-View</label><input id="nc_activity_view" name="nc_activity_view" type="text" value="piwigo_showcase_activity" required>
           <label class="bratonien-label" for="nc_gallery_root">Piwigo-Galeriepfad</label><input id="nc_gallery_root" name="nc_gallery_root" type="text" placeholder="/var/www/piwigo/galleries/nextcloud" required>
-          <label class="bratonien-label" for="nc_piwigo_user">Piwigo-Sync-Benutzer</label><input id="nc_piwigo_user" name="nc_piwigo_user" type="text" required>
-          <label class="bratonien-label" for="nc_piwigo_password">Piwigo-Sync-Passwort</label><input id="nc_piwigo_password" name="nc_piwigo_password" type="password" autocomplete="new-password" required>
+          <label class="bratonien-label" for="nc_piwigo_user">Piwigo-Fallback-Benutzer</label><input id="nc_piwigo_user" name="nc_piwigo_user" type="text" required>
+          <label class="bratonien-label" for="nc_piwigo_password">Piwigo-Fallback-Passwort</label><input id="nc_piwigo_password" name="nc_piwigo_password" type="password" autocomplete="new-password" required>
           <label class="bratonien-label" for="nc_quiet_seconds">Ruhezeit</label><input id="nc_quiet_seconds" name="nc_quiet_seconds" type="number" min="0" value="120">
           <label class="bratonien-label" for="nc_max_wait_seconds">Maximale Wartezeit</label><input id="nc_max_wait_seconds" name="nc_max_wait_seconds" type="number" min="60" value="900">
           <label class="bratonien-label" for="nc_full_sync_seconds">Vollprüfung nach</label><input id="nc_full_sync_seconds" name="nc_full_sync_seconds" type="number" min="300" value="86400">
