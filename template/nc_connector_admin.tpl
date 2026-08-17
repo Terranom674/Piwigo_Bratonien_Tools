@@ -29,6 +29,40 @@
     </div>
 
     <div class="bratonien-card" style="grid-column:1/-1">
+      <h4>Piwigo API prüfen</h4>
+      <p class="bratonien-base-note">Diese Diagnose prüft ausschließlich, ob ein Piwigo-API-Key funktioniert, zu welchem Benutzer er gehört, welche Rolle dieser Benutzer hat und ob die Web-API mögliche Sync-/Site-Methoden anbietet. Der Key wird nicht gespeichert und es wird keine Synchronisation ausgelöst.</p>
+      <form method="post">
+        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+        <div class="bratonien-form-grid">
+          <label class="bratonien-label" for="nc_piwigo_api_key">API-Key</label>
+          <input id="nc_piwigo_api_key" name="nc_piwigo_api_key" type="password" autocomplete="off" required>
+        </div>
+        <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_piwigo_api_test">API prüfen</button></p>
+      </form>
+
+      {if isset($NC_CONNECTOR.piwigo_api_test) && $NC_CONNECTOR.piwigo_api_test}
+        <hr>
+        <h5>Prüfergebnis</h5>
+        <div class="bratonien-form-grid">
+          <span class="bratonien-label">Benutzer</span><strong>{$NC_CONNECTOR.piwigo_api_test.username|escape:html}</strong>
+          <span class="bratonien-label">Piwigo-Status</span><strong>{$NC_CONNECTOR.piwigo_api_test.status|escape:html}</strong>
+          <span class="bratonien-label">Administrator/Webmaster</span><strong>{if $NC_CONNECTOR.piwigo_api_test.admin}Ja{else}Nein{/if}</strong>
+          <span class="bratonien-label">Sichtbare API-Methoden</span><strong>{$NC_CONNECTOR.piwigo_api_test.method_count|escape:html}</strong>
+          <span class="bratonien-label">Mögliche Sync-/Site-Methoden</span><strong>{if $NC_CONNECTOR.piwigo_api_test.sync_api_detected}Ja{else}Nein{/if}</strong>
+        </div>
+        {if $NC_CONNECTOR.piwigo_api_test.sync_candidates|@count > 0}
+          <p><strong>Gefundene Kandidaten:</strong></p>
+          <ul>
+            {foreach from=$NC_CONNECTOR.piwigo_api_test.sync_candidates item=method}
+              <li><code>{$method|escape:html}</code></li>
+            {/foreach}
+          </ul>
+        {/if}
+        <p class="bratonien-base-note"><strong>Bewertung:</strong> {$NC_CONNECTOR.piwigo_api_test.conclusion|escape:html}</p>
+      {/if}
+    </div>
+
+    <div class="bratonien-card" style="grid-column:1/-1">
       <h4>Neue lokale Verbindung</h4>
       <form method="post">
         <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
