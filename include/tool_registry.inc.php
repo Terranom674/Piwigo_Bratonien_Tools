@@ -16,6 +16,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/self_update.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_lock.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_manage.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_takeover.inc.php');
 
 function bratonien_tools_get_tools()
@@ -80,6 +81,12 @@ function bratonien_tools_get_tools()
     ),
     'album_share_revoke' => array(
       'handler' => 'bratonien_tools_revoke_album_share',
+    ),
+    'nc_connector_create_local' => array(
+      'handler' => 'bratonien_tools_nc_connector_create_local',
+    ),
+    'nc_connector_delete' => array(
+      'handler' => 'bratonien_tools_nc_connector_delete',
     ),
     'nc_connector_import_legacy' => array(
       'handler' => 'bratonien_tools_nc_connector_import_legacy',
