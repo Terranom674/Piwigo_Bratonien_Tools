@@ -37,9 +37,9 @@ if [[ -z "$CONNECTION_ID" ]]; then
     fi
 fi
 
-PUBLIC_STATUS_DIR="/var/lib/bratonien-tools/nc-connector-status"
+PUBLIC_STATUS_DIR="${PIWIGO_ROOT%/}/_data/bratonien-tools/nc-connector-status"
 PUBLIC_STATUS_FILE="$PUBLIC_STATUS_DIR/connection-$CONNECTION_ID.json"
-install -d -m 0755 "$PUBLIC_STATUS_DIR"
+install -d -m 0755 "${PIWIGO_ROOT%/}/_data/bratonien-tools" "$PUBLIC_STATUS_DIR"
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
