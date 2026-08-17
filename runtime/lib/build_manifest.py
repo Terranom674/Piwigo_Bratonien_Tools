@@ -28,18 +28,43 @@ def read_config(path: Path) -> dict[str, tuple[str, Path]]:
     return result
 
 
-def query_rows(args: argparse.Namespace) -> list[list[str]]:
-    password = args.password_file.read_text(encoding="utf-8").strip()
-    env = os.environ.copy()
-    env["PGPASSWORD"] = password
-    sql = f"SELECT share_id, item_type, display_name, storage_id, source_path FROM {args.view} ORDER BY share_id"
+def run_query(args: argparse.Namespace, env: dict[str, str], sql: str) -> subprocess.CompletedProcess[str]:
     command = [
         "psql", "-X", "-A", "-F", "\t", "-t",
         "-h", args.host, "-p", str(args.port), "-U", args.user, "-d", args.database,
         "-c", sql,
     ]
-    completed = subprocess.run(command, env=env, check=True, text=True, capture_output=True)
-    return list(csv.reader(completed.stdout.splitlines(), delimiter="\t"))
+    return subprocess.run(command, env=env, check=False, text=True, capture_output=True)
+
+
+def query_rows(args: argparse.Namespace) -> list[list[str]]:
+    password = args.password_file.read_text(encoding="utf-8").strip()
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
+
+    modern_sql = f"SELECT share_id, item_type, display_name, storage_id, source_path FROM {args.view} ORDER BY share_id"
+    completed = run_query(args, env, modern_sql)
+    if completed.returncode == 0:
+        return list(csv.reader(completed.stdout.splitlines(), delimiter="\t"))
+
+    # Existing installations may still expose the original four-column view.
+    # Keep them usable and derive folder/file from the resolved source path.
+    if "item_type" not in completed.stderr or "does not exist" not in completed.stderr:
+        raise RuntimeError(completed.stderr.strip() or "Nextcloud source view query failed")
+
+    legacy_sql = f"SELECT share_id, display_name, storage_id, source_path FROM {args.view} ORDER BY share_id"
+    completed = run_query(args, env, legacy_sql)
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "legacy Nextcloud source view query failed")
+
+    rows: list[list[str]] = []
+    for row in csv.reader(completed.stdout.splitlines(), delimiter="\t"):
+        if len(row) == 4:
+            share_id, display_name, storage_id, source_path = row
+            rows.append([share_id, "", display_name, storage_id, source_path])
+        else:
+            rows.append(row)
+    return rows
 
 
 def contained_join(root: Path, relative: str) -> Path:
@@ -67,7 +92,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
         share_id, item_type, display_name, storage_id, source_path = row
         item_type = item_type.strip().lower()
-        if item_type not in {"folder", "file"}:
+        if item_type and item_type not in {"folder", "file"}:
             errors.append(f"share {share_id}: unsupported item_type {item_type!r}")
             continue
 
@@ -89,6 +114,15 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         if not mount.is_mount():
             errors.append(f"share {share_id}: storage mount unavailable: {mount}")
             continue
+
+        if not item_type:
+            if source.is_dir():
+                item_type = "folder"
+            elif source.is_file():
+                item_type = "file"
+            else:
+                errors.append(f"share {share_id}: source unavailable: {source}")
+                continue
 
         if item_type == "folder":
             if not source.is_dir():
