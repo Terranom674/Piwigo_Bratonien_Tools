@@ -53,7 +53,11 @@ function bratonien_tools_ws_nc_sync($params, &$service)
     return new PwgError(400, 'Invalid site_id.');
   }
 
-  $query = '\nSELECT galleries_url\n  FROM '.SITES_TABLE.'\n  WHERE id = '.$site_id.'\n  LIMIT 1';
+  $query = '
+SELECT galleries_url
+  FROM '.SITES_TABLE.'
+  WHERE id = '.$site_id.'
+  LIMIT 1';
   $result = pwg_query($query);
   if (!pwg_db_num_rows($result))
   {
