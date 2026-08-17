@@ -9,9 +9,6 @@ PIWIGO_SYNC_OVERRIDE_VALUE="${PIWIGO_SYNC_OVERRIDE-}"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
-# Existing connection configs created before the source-share-aware activity gate
-# do not contain NC_ACTIVITY_VIEW yet. Keep them compatible without requiring a
-# manual config migration.
 NC_ACTIVITY_VIEW="${NC_ACTIVITY_VIEW:-piwigo_showcase_activity}"
 NC_DB_VIEW="${NC_DB_VIEW:-piwigo_showcase_sources}"
 
@@ -28,6 +25,17 @@ MAP_FILE="$STATE_DIR/name-map.json"
 LOCK_FILE="$STATE_DIR/sync.lock"
 ACTIVITY_STATE="$STATE_DIR/activity.json"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+CONNECTION_ID="${CONNECTION_ID:-}"
+if [[ -z "$CONNECTION_ID" ]]; then
+    CONFIG_BASENAME="$(basename -- "$CONFIG_FILE")"
+    if [[ "$CONFIG_BASENAME" =~ ^connection-([0-9]+)\.conf$ ]]; then
+        CONNECTION_ID="${BASH_REMATCH[1]}"
+    else
+        echo "Connector-ID konnte nicht aus $CONFIG_FILE ermittelt werden." >&2
+        exit 1
+    fi
+fi
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
@@ -114,14 +122,10 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" --destination "$GALLERY_ROOT" --state "$MAP_FILE"
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
-    [[ -r "${PIWIGO_SYNC_PASSWORD_FILE:?}" ]] || {
-        echo "Piwigo-Passwortdatei fehlt oder ist nicht lesbar." >&2
-        exit 1
-    }
-    perl "$SCRIPT_DIR/lib/piwigo-db-sync.pl" \
-        --base-url="http://127.0.0.1" \
-        --username="${PIWIGO_SYNC_USER:?}" \
-        --password-file="$PIWIGO_SYNC_PASSWORD_FILE"
+    php "$SCRIPT_DIR/lib/piwigo-sync.php" \
+        --piwigo-root="$PIWIGO_ROOT" \
+        --connection-id="$CONNECTION_ID" \
+        --base-url="http://127.0.0.1"
 fi
 
 python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
