@@ -54,6 +54,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   $saved_get = $_GET;
   $saved_post = $_POST;
   $saved_request_method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : null;
+  $saved_default_status = isset($conf['newcat_default_status']) ? $conf['newcat_default_status'] : null;
   $output = '';
   $counts = array();
 
@@ -64,6 +65,7 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
       define('IN_ADMIN', true);
     }
 
+    $conf['newcat_default_status'] = 'private';
     $_SERVER['REQUEST_METHOD'] = 'POST';
     $_GET = array(
       'page' => 'site_update',
@@ -96,6 +98,14 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   {
     $_GET = $saved_get;
     $_POST = $saved_post;
+    if ($saved_default_status === null)
+    {
+      unset($conf['newcat_default_status']);
+    }
+    else
+    {
+      $conf['newcat_default_status'] = $saved_default_status;
+    }
     if ($saved_request_method === null)
     {
       unset($_SERVER['REQUEST_METHOD']);
