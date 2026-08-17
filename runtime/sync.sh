@@ -186,6 +186,8 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
 
     if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
         ERROR_DETAIL="$(tail -n 3 <<<"$PIWIGO_OUTPUT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/[[:space:]]$//')"
+        trap - ERR
+        write_status error "Synchronisierung fehlgeschlagen"
         exit "$PIWIGO_EXIT"
     fi
 fi
