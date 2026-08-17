@@ -1,62 +1,96 @@
 <section class="bratonien-section" id="nc-connector">
   <h3>NC Connector</h3>
-  <p class="bratonien-section__intro">Die bestehende Nextcloud-Piwigo-Anbindung wird in dieser ersten Phase nur erkannt und angezeigt. Es werden keine Zugangsdaten, PostgreSQL-Views, Sync-Dienste oder Galeriepfade verändert.</p>
+  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während der Migration unverändert aktiv.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
-      <h4>Verbindungsstatus</h4>
+      <h4>Migrationsstatus</h4>
       <div class="bratonien-form-grid">
         <span class="bratonien-label">Phase</span><strong>{$NC_CONNECTOR.phase|escape:html}</strong>
-        <span class="bratonien-label">Bestehende Verbindung erkannt</span><strong>{if $NC_CONNECTOR.detected}Ja{else}Nein{/if}</strong>
-        <span class="bratonien-label">Konfiguration</span><strong>{if $NC_CONNECTOR.config_readable}Lesbar{elseif $NC_CONNECTOR.config_exists}Vorhanden, aber nicht lesbar{else}Nicht gefunden{/if}</strong>
-        <span class="bratonien-label">Piwigo-Sync aktiviert</span><strong>{if $NC_CONNECTOR.sync_enabled}Ja{else}Nein{/if}</strong>
-        <span class="bratonien-label">Letzter Sync-Status</span><strong>{if $NC_CONNECTOR.sync_status.available}{$NC_CONNECTOR.sync_status.state|escape:html}{else}Nicht verfügbar{/if}</strong>
-        {if $NC_CONNECTOR.sync_status.time_label}
-          <span class="bratonien-label">Letzte Statusmeldung</span><strong>{$NC_CONNECTOR.sync_status.time_label|escape:html}</strong>
-        {/if}
+        <span class="bratonien-label">Legacy-Verbindung vorhanden</span><strong>{if $NC_CONNECTOR.legacy_present}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Legacy-Konfiguration für PHP lesbar</span><strong>{if $NC_CONNECTOR.config_readable}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Connector-Verbindungen</span><strong>{$NC_CONNECTOR.connection_count|escape:html}</strong>
+        <span class="bratonien-label">Migrationspaket bereit</span><strong>{if $NC_CONNECTOR.migration_bundle_available}Ja{else}Nein{/if}</strong>
       </div>
 
+      {if $NC_CONNECTOR.legacy_present && !$NC_CONNECTOR.config_readable}
+        <p class="bratonien-base-note">Die bestehende Konfiguration ist absichtlich nur für root lesbar. Sie wird nicht für den Webserver geöffnet. Stattdessen übernimmt ein einmaliger Connector-Helfer die Daten sicher in die eigene Connection-Verwaltung.</p>
+      {/if}
+    </div>
+
+    <div class="bratonien-card">
+      <h4>Bestehende Verbindung übernehmen</h4>
+      {if $NC_CONNECTOR.connection_count == 0}
+        <p>Führe im <strong>Piwigo-LXC</strong> einmalig folgenden Befehl als root aus:</p>
+        <p><code>{$NC_CONNECTOR.migration_command|escape:html}</code></p>
+        <p class="bratonien-base-note">Der Helfer liest die bisherige <code>/etc/piwigo-sync/piwigo.conf</code>, die zugehörige Passwortdatei und <code>storages.tsv</code>. Er verändert weder Nextcloud noch den laufenden Sync-Dienst oder den Shadow Tree.</p>
+
+        {if $NC_CONNECTOR.migration_bundle_available}
+          <form method="post" class="bratonien-actions">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_import_legacy">Bestehende Verbindung importieren</button>
+          </form>
+          <p class="bratonien-main-cache__warning">Der Import legt die Verbindung nur im NC Connector an. Sie bleibt deaktiviert; der bisherige Sync bleibt Produktionsverbindung.</p>
+        {else}
+          <p class="bratonien-main-cache__warning">Noch kein Migrationspaket vorhanden. Nach Ausführen des Befehls diese Seite neu laden.</p>
+        {/if}
+      {else}
+        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Der Legacy-Sync bleibt bis zur späteren Verifikation und kontrollierten Übergabe aktiv.</p>
+      {/if}
+    </div>
+
+    <div class="bratonien-card">
+      <h4>Connector-Verbindungen</h4>
+      {if $NC_CONNECTOR.connection_count > 0}
+        <table class="table2">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Adapter</th>
+              <th>Host</th>
+              <th>Quelle</th>
+              <th>Storages</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+          {foreach from=$NC_CONNECTOR.connections item=connection}
+            <tr>
+              <td>{$connection.name|escape:html}</td>
+              <td>{$connection.adapter|escape:html}</td>
+              <td>{if $connection.host}{$connection.host|escape:html}{else}—{/if}</td>
+              <td>{if $connection.source_view}{$connection.source_view|escape:html}{else}—{/if}</td>
+              <td>{$connection.storage_count|escape:html}</td>
+              <td>{$connection.takeover_state|escape:html}{if $connection.enabled} · aktiv{/if}</td>
+            </tr>
+          {/foreach}
+          </tbody>
+        </table>
+      {else}
+        <p>Noch keine Verbindung in der eigenen Connector-Verwaltung.</p>
+      {/if}
+    </div>
+
+    <div class="bratonien-card">
+      <h4>Legacy-Sync</h4>
+      <div class="bratonien-form-grid">
+        <span class="bratonien-label">Konfiguration</span><strong>{if $NC_CONNECTOR.config_readable}Lesbar{elseif $NC_CONNECTOR.config_exists}Vorhanden, root-geschützt{else}Nicht gefunden{/if}</strong>
+        <span class="bratonien-label">Piwigo-Sync laut lesbarer Konfiguration</span><strong>{if $NC_CONNECTOR.config_readable}{if $NC_CONNECTOR.sync_enabled}Ja{else}Nein{/if}{else}Nicht auslesbar{/if}</strong>
+        <span class="bratonien-label">Letzter Status</span><strong>{if $NC_CONNECTOR.sync_status.available}{$NC_CONNECTOR.sync_status.state|escape:html}{else}Nicht verfügbar{/if}</strong>
+      </div>
       {if $NC_CONNECTOR.sync_status.message}
         <p class="bratonien-base-note">{$NC_CONNECTOR.sync_status.message|escape:html}</p>
       {/if}
-
-      {if !$NC_CONNECTOR.detected}
-        <p class="bratonien-main-cache__warning">Die bestehende Verbindung konnte noch nicht vollständig erkannt werden. In dieser Phase wird nichts automatisch eingerichtet oder verändert.</p>
-      {/if}
-    </div>
-
-    <div class="bratonien-card">
-      <h4>Erkannte Nextcloud-Verbindung</h4>
-      <div class="bratonien-form-grid">
-        <span class="bratonien-label">Host</span><strong>{if $NC_CONNECTOR.host}{$NC_CONNECTOR.host|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Port</span><strong>{if $NC_CONNECTOR.port}{$NC_CONNECTOR.port|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Datenbank</span><strong>{if $NC_CONNECTOR.database}{$NC_CONNECTOR.database|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Reader</span><strong>{if $NC_CONNECTOR.user}{$NC_CONNECTOR.user|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Quell-View</span><strong>{if $NC_CONNECTOR.view}{$NC_CONNECTOR.view|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Passwortdatei</span><strong>{if $NC_CONNECTOR.password_file_exists}{if $NC_CONNECTOR.password_file_readable}Vorhanden und lesbar{else}Vorhanden, aber nicht lesbar{/if}{else}Nicht gefunden{/if}</strong>
-      </div>
-      <p class="bratonien-base-note">Das Passwort selbst wird von Bratonien Tools nicht gelesen oder angezeigt.</p>
-    </div>
-
-    <div class="bratonien-card">
-      <h4>Bestehender Sync</h4>
-      <div class="bratonien-form-grid">
-        <span class="bratonien-label">Galeriepfad</span><strong>{if $NC_CONNECTOR.gallery_root}{$NC_CONNECTOR.gallery_root|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Statusverzeichnis</span><strong>{if $NC_CONNECTOR.state_dir}{$NC_CONNECTOR.state_dir|escape:html}{else}—{/if}</strong>
-        <span class="bratonien-label">Quiet Time</span><strong>{if $NC_CONNECTOR.quiet_seconds}{$NC_CONNECTOR.quiet_seconds|escape:html} s{else}—{/if}</strong>
-        <span class="bratonien-label">Max. Wartezeit</span><strong>{if $NC_CONNECTOR.max_wait_seconds}{$NC_CONNECTOR.max_wait_seconds|escape:html} s{else}—{/if}</strong>
-        <span class="bratonien-label">Full Sync</span><strong>{if $NC_CONNECTOR.full_sync_seconds}{$NC_CONNECTOR.full_sync_seconds|escape:html} s{else}—{/if}</strong>
-      </div>
     </div>
 
     <div class="bratonien-card">
       <h4>Migrationsschutz</h4>
-      <p>Der vorhandene Sync bleibt die aktive Produktionsverbindung. Dieses Modul übernimmt aktuell noch keine Steuerung und besitzt keine Schreibaktion.</p>
       <ul>
-        <li>kein Ändern der Nextcloud-Datenbank</li>
-        <li>kein Ändern von <code>pg_hba.conf</code> oder Reader-Zugangsdaten</li>
-        <li>kein Starten oder Stoppen des bestehenden Sync-Dienstes</li>
+        <li>kein Stoppen oder Ändern des bestehenden <code>piwigo-sync</code></li>
+        <li>keine Änderung an PostgreSQL, Views, <code>pg_hba.conf</code> oder Reader-Rechten</li>
+        <li>keine Änderung an bestehenden Mounts</li>
         <li>kein Neuaufbau des Gallery-/Shadow-Trees</li>
+        <li>importierte Connector-Verbindung bleibt zunächst deaktiviert</li>
       </ul>
     </div>
   </div>
