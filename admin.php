@@ -13,6 +13,7 @@ $tools = bratonien_tools_get_tools();
 $messages = array();
 $errors = array();
 $self_update_override = null;
+$nc_piwigo_api_test = null;
 
 if (
   $_SERVER['REQUEST_METHOD'] === 'POST'
@@ -48,6 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
       {
         $self_update_override = $result['self_update'];
       }
+      if (!empty($result['nc_piwigo_api_test']) && is_array($result['nc_piwigo_api_test']))
+      {
+        $nc_piwigo_api_test = $result['nc_piwigo_api_test'];
+      }
     }
     catch (Throwable $e)
     {
@@ -70,6 +75,7 @@ $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
 $nc_connector = bratonien_tools_nc_connector_status();
+$nc_connector['piwigo_api_test'] = $nc_piwigo_api_test;
 $nc_system_defaults = array(
   'timer_name' => 'bratonien-nc-connector.timer',
   'timer_active' => false,
