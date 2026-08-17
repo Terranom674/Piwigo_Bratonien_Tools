@@ -96,6 +96,8 @@ function bratonien_tools_nc_connector_next_from_timer_list($timer)
 
 function bratonien_tools_nc_connector_last_status(array $connections)
 {
+  $latest = array('timestamp'=>0, 'state'=>'', 'message'=>'');
+
   foreach ($connections as $connection)
   {
     if (empty($connection['enabled']) || (string)($connection['takeover_state'] ?? '') !== 'active')
@@ -122,14 +124,18 @@ function bratonien_tools_nc_connector_last_status(array $connections)
       continue;
     }
 
-    return array(
-      'timestamp' => (int)($decoded['timestamp'] ?? 0),
-      'state' => (string)($decoded['state'] ?? ''),
-      'message' => (string)($decoded['message'] ?? ''),
-    );
+    $timestamp = (int)($decoded['timestamp'] ?? 0);
+    if ($timestamp >= $latest['timestamp'])
+    {
+      $latest = array(
+        'timestamp' => $timestamp,
+        'state' => (string)($decoded['state'] ?? ''),
+        'message' => (string)($decoded['message'] ?? ''),
+      );
+    }
   }
 
-  return array('timestamp'=>0, 'state'=>'', 'message'=>'');
+  return $latest;
 }
 
 function bratonien_tools_nc_connector_system_status(array $connections = array())
