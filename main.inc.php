@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.3.15
+Version: 0.9.3.16
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -27,12 +27,36 @@ add_event_handler('get_admin_plugin_menu_links', 'bratonien_tools_admin_menu');
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL, 4);
 add_event_handler('loc_end_element_set_global', 'bratonien_tools_batch_titles_register_action');
 add_event_handler('element_set_global_action', 'bratonien_tools_batch_titles_apply', EVENT_HANDLER_PRIORITY_NEUTRAL, 2);
+add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EVENT_HANDLER_PRIORITY_NEUTRAL - 30);
 add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', EVENT_HANDLER_PRIORITY_NEUTRAL - 20);
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
 add_event_handler('init', 'bratonien_tools_album_shares_init');
 add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
+
+/**
+ * The NC Connector uses Piwigo's native filesystem synchronization for folder
+ * shares. Mark only connector-triggered synchronization requests so every new
+ * physical album created during that run starts private. The global Piwigo
+ * default remains untouched for manual album creation and unrelated imports.
+ */
+function bratonien_tools_prepare_connector_private_import()
+{
+  global $conf;
+
+  if (
+    !defined('IN_ADMIN')
+    || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+    || (string)($_GET['page'] ?? '') !== 'site_update'
+    || (string)($_POST['bratonien_connector'] ?? '') !== '1'
+  )
+  {
+    return;
+  }
+
+  $conf['newcat_default_status'] = 'private';
+}
 
 /**
  * Piwigo's per-album permissions form rewrites the complete direct-user
