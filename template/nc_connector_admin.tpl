@@ -1,6 +1,6 @@
 <section class="bratonien-section" id="nc-connector">
   <h3>NC Connector</h3>
-  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während der Migration unverändert aktiv.</p>
+  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während Migration und Verifikation unverändert aktiv.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
@@ -10,11 +10,12 @@
         <span class="bratonien-label">Legacy-Verbindung vorhanden</span><strong>{if $NC_CONNECTOR.legacy_present}Ja{else}Nein{/if}</strong>
         <span class="bratonien-label">Legacy-Konfiguration für PHP lesbar</span><strong>{if $NC_CONNECTOR.config_readable}Ja{else}Nein{/if}</strong>
         <span class="bratonien-label">Connector-Verbindungen</span><strong>{$NC_CONNECTOR.connection_count|escape:html}</strong>
+        <span class="bratonien-label">Davon verifiziert</span><strong>{$NC_CONNECTOR.verified_count|escape:html}</strong>
         <span class="bratonien-label">Migrationspaket bereit</span><strong>{if $NC_CONNECTOR.migration_bundle_available}Ja{else}Nein{/if}</strong>
       </div>
 
       {if $NC_CONNECTOR.legacy_present && !$NC_CONNECTOR.config_readable}
-        <p class="bratonien-base-note">Die bestehende Konfiguration ist absichtlich nur für root lesbar. Sie wird nicht für den Webserver geöffnet. Stattdessen übernimmt ein einmaliger Connector-Helfer die Daten sicher in die eigene Connection-Verwaltung.</p>
+        <p class="bratonien-base-note">Die bestehende Konfiguration ist absichtlich nur für root lesbar. Sie wird nicht für den Webserver geöffnet.</p>
       {/if}
     </div>
 
@@ -35,11 +36,11 @@
           <p class="bratonien-main-cache__warning">Noch kein Migrationspaket vorhanden. Nach Ausführen des Befehls diese Seite neu laden.</p>
         {/if}
       {else}
-        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Der Legacy-Sync bleibt bis zur späteren Verifikation und kontrollierten Übergabe aktiv.</p>
+        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Als nächstes wird die importierte Konfiguration unabhängig vom Legacy-Sync geprüft.</p>
       {/if}
     </div>
 
-    <div class="bratonien-card">
+    <div class="bratonien-card" style="grid-column:1/-1">
       <h4>Connector-Verbindungen</h4>
       {if $NC_CONNECTOR.connection_count > 0}
         <table class="table2">
@@ -51,6 +52,7 @@
               <th>Quelle</th>
               <th>Storages</th>
               <th>Status</th>
+              <th>Aktion</th>
             </tr>
           </thead>
           <tbody>
@@ -62,7 +64,35 @@
               <td>{if $connection.source_view}{$connection.source_view|escape:html}{else}—{/if}</td>
               <td>{$connection.storage_count|escape:html}</td>
               <td>{$connection.takeover_state|escape:html}{if $connection.enabled} · aktiv{/if}</td>
+              <td>
+                {if $connection.adapter == 'local' && !$connection.enabled}
+                  <form method="post" class="bratonien-actions">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="connection_id" value="{$connection.id|escape:html}">
+                    <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_verify">Verbindung prüfen</button>
+                  </form>
+                {else}
+                  —
+                {/if}
+              </td>
             </tr>
+            {if $connection.verification_checks|@count > 0}
+              <tr>
+                <td colspan="7">
+                  <strong>Letzte Verifikation{if $connection.verified_at} · {$connection.verified_at|escape:html}{/if}</strong>
+                  <ul>
+                    {foreach from=$connection.verification_checks item=check}
+                      <li>{if $check.ok}✓{else}✗{/if} <strong>{$check.name|escape:html}:</strong> {$check.detail|escape:html}</li>
+                    {/foreach}
+                  </ul>
+                  {if $connection.verified_ok}
+                    <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt trotzdem deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
+                  {else}
+                    <p class="bratonien-main-cache__warning">Die Verifikation ist noch nicht vollständig erfolgreich. Es wurde nichts umgeschaltet oder verändert.</p>
+                  {/if}
+                </td>
+              </tr>
+            {/if}
           {/foreach}
           </tbody>
         </table>
@@ -90,7 +120,7 @@
         <li>keine Änderung an PostgreSQL, Views, <code>pg_hba.conf</code> oder Reader-Rechten</li>
         <li>keine Änderung an bestehenden Mounts</li>
         <li>kein Neuaufbau des Gallery-/Shadow-Trees</li>
-        <li>importierte Connector-Verbindung bleibt zunächst deaktiviert</li>
+        <li>auch eine erfolgreich verifizierte Connector-Verbindung bleibt deaktiviert</li>
       </ul>
     </div>
   </div>
