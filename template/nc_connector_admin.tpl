@@ -1,6 +1,6 @@
 <section class="bratonien-section" id="nc-connector">
   <h3>NC Connector</h3>
-  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während Migration und Verifikation unverändert aktiv.</p>
+  <p class="bratonien-section__intro">Bratonien Tools übernimmt die bestehende Nextcloud-Anbindung schrittweise in eine eigene Connection-Verwaltung. Der produktive Legacy-Sync bleibt während Migration, Verifikation und Übergabevorbereitung unverändert aktiv.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
@@ -36,7 +36,7 @@
           <p class="bratonien-main-cache__warning">Noch kein Migrationspaket vorhanden. Nach Ausführen des Befehls diese Seite neu laden.</p>
         {/if}
       {else}
-        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Als nächstes wird die importierte Konfiguration unabhängig vom Legacy-Sync geprüft.</p>
+        <p>Die bestehende Verbindung wurde bereits in die Connector-Verwaltung übernommen. Verifizierte Verbindungen können nun für eine spätere kontrollierte Übergabe vorbereitet werden.</p>
       {/if}
     </div>
 
@@ -65,7 +65,24 @@
               <td>{$connection.storage_count|escape:html}</td>
               <td>{$connection.takeover_state|escape:html}{if $connection.enabled} · aktiv{/if}</td>
               <td>
-                {if $connection.adapter == 'local' && !$connection.enabled}
+                {if $connection.takeover_state == 'ready'}
+                  <form method="post" class="bratonien-actions">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="connection_id" value="{$connection.id|escape:html}">
+                    <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_cancel_takeover">Vorbereitung zurücknehmen</button>
+                  </form>
+                {elseif $connection.takeover_state == 'verified' && !$connection.enabled}
+                  <form method="post" class="bratonien-actions">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="connection_id" value="{$connection.id|escape:html}">
+                    <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_prepare_takeover">Übergabe vorbereiten</button>
+                  </form>
+                  <form method="post" class="bratonien-actions">
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="connection_id" value="{$connection.id|escape:html}">
+                    <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_verify">Erneut prüfen</button>
+                  </form>
+                {elseif $connection.adapter == 'local' && !$connection.enabled}
                   <form method="post" class="bratonien-actions">
                     <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
                     <input type="hidden" name="connection_id" value="{$connection.id|escape:html}">
@@ -85,8 +102,10 @@
                       <li>{if $check.ok}✓{else}✗{/if} <strong>{$check.name|escape:html}:</strong> {$check.detail|escape:html}</li>
                     {/foreach}
                   </ul>
-                  {if $connection.verified_ok}
-                    <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt trotzdem deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
+                  {if $connection.takeover_state == 'ready'}
+                    <p class="bratonien-base-note">Die Verbindung ist technisch verifiziert und für die spätere kontrollierte Übergabe vorgemerkt. Der Connector ist weiterhin deaktiviert und der Legacy-Sync bleibt Produktionsverbindung.</p>
+                  {elseif $connection.verified_ok}
+                    <p class="bratonien-base-note">Die Connector-Kopie ist technisch verifiziert. Sie bleibt deaktiviert; der Legacy-Sync ist weiterhin die Produktionsverbindung.</p>
                   {else}
                     <p class="bratonien-main-cache__warning">Die Verifikation ist noch nicht vollständig erfolgreich. Es wurde nichts umgeschaltet oder verändert.</p>
                   {/if}
@@ -120,7 +139,8 @@
         <li>keine Änderung an PostgreSQL, Views, <code>pg_hba.conf</code> oder Reader-Rechten</li>
         <li>keine Änderung an bestehenden Mounts</li>
         <li>kein Neuaufbau des Gallery-/Shadow-Trees</li>
-        <li>auch eine erfolgreich verifizierte Connector-Verbindung bleibt deaktiviert</li>
+        <li><code>ready</code> ist nur eine interne Übergabevormerkung und aktiviert noch keinen Connector-Sync</li>
+        <li>die Übergabevorbereitung kann jederzeit wieder auf <code>verified</code> zurückgesetzt werden</li>
       </ul>
     </div>
   </div>
