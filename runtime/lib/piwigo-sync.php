@@ -21,7 +21,7 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 900,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.18',
+    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.19',
   );
   if ($headers)
   {
@@ -118,7 +118,14 @@ function decode_ws($body)
     $message = (string)($decoded['message'] ?? $decoded['err'] ?? 'Piwigo-Aufruf wurde abgelehnt.');
     fail_sync($message);
   }
-  return $decoded['result'] ?? array();
+
+  if (array_key_exists('result', $decoded))
+  {
+    return $decoded['result'];
+  }
+
+  unset($decoded['stat']);
+  return $decoded;
 }
 
 function decrypt_blob($blob, $hex_key)
