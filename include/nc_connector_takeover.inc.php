@@ -45,6 +45,11 @@ function bratonien_tools_nc_connector_prepare_takeover()
     'prepared_at' => date('Y-m-d H:i:s'),
     'legacy_sync_untouched' => true,
     'connector_enabled' => false,
+    'first_run' => array(
+      'status' => 'pending',
+      'finished_at' => null,
+      'detail' => '',
+    ),
   );
   $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($config_json))
@@ -103,5 +108,28 @@ function bratonien_tools_nc_connector_cancel_takeover()
 
   return array(
     'message' => 'Die Uebergabevorbereitung wurde zurueckgenommen. Die Verbindung bleibt verifiziert und deaktiviert; der Legacy-Sync bleibt unveraendert aktiv.',
+  );
+}
+
+/**
+ * Normalize the outcome of a Connector sync run during takeover.
+ *
+ * Both "changed" and "no_changes" are successful results. Only "error"
+ * represents a failed run and may trigger rollback of a controlled handover.
+ */
+function bratonien_tools_nc_connector_takeover_result($status, $detail = '')
+{
+  $status = trim((string)$status);
+  if (!in_array($status, array('changed', 'no_changes', 'error'), true))
+  {
+    throw new RuntimeException('Unbekannter Connector-Laufstatus: '.$status);
+  }
+
+  return array(
+    'status' => $status,
+    'success' => $status !== 'error',
+    'changed' => $status === 'changed',
+    'finished_at' => date('Y-m-d H:i:s'),
+    'detail' => (string)$detail,
   );
 }
