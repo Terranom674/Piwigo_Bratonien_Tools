@@ -59,4 +59,24 @@ my $sync = $ua->post(
 die "Piwigo-Datenbanksynchronisierung fehlgeschlagen: ".$sync->status_line."\n"
     if !$sync->is_success;
 
+my $orphans = $ua->post(
+    $opt{'base-url'}.'/ws.php?format=json',
+    {
+        method => 'bratonien.nc.syncOrphans',
+        site_id => 1,
+        simulate => 0,
+    },
+);
+die "Piwigo-Orphan-Synchronisierung fehlgeschlagen: ".$orphans->status_line."\n"
+    if !$orphans->is_success;
+
+my $orphan_result = eval { decode_json($orphans->decoded_content) };
+die "Piwigo-Orphan-Synchronisierung wurde abgelehnt\n"
+    if !$orphan_result || ($orphan_result->{stat} // '') ne 'ok';
+
+my $result = $orphan_result->{result} || {};
+my $added = $result->{added_orphans} // 0;
+my $deleted = $result->{deleted_orphans} // 0;
+
 print "Piwigo-Datenbanksynchronisierung erfolgreich\n";
+print "Piwigo-Orphans synchronisiert: +$added / -$deleted\n";
