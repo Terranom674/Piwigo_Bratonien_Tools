@@ -18,6 +18,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/album_lock.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_manage.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_takeover.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_piwigo_api.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -99,6 +100,9 @@ function bratonien_tools_get_tools()
     ),
     'nc_connector_cancel_takeover' => array(
       'handler' => 'bratonien_tools_nc_connector_cancel_takeover',
+    ),
+    'nc_connector_piwigo_api_test' => array(
+      'handler' => 'bratonien_tools_nc_connector_piwigo_api_test',
     ),
     'self_update_check' => array(
       'handler' => 'bratonien_tools_self_update_check',
