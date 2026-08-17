@@ -12,8 +12,12 @@
         <span class="bratonien-label">Connector-Verbindungen</span><strong>{$NC_CONNECTOR.connection_count|escape:html}</strong>
         <span class="bratonien-label">Timer aktiv</span><strong>{if $nc_system_available && $NC_CONNECTOR.system.timer_active}Ja{else}Nein{/if}</strong>
         <span class="bratonien-label">Timer aktiviert</span><strong>{if $nc_system_available && $NC_CONNECTOR.system.timer_enabled}Ja{else}Nein{/if}</strong>
+        <span class="bratonien-label">Letzter Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.last_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
         <span class="bratonien-label">Nächster Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
       </div>
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}
+        <p class="bratonien-base-note">Letztes Ergebnis: <strong>{$NC_CONNECTOR.system.last_run_message|escape:html}</strong></p>
+      {/if}
       {if !$nc_system_available}
         <p class="bratonien-main-cache__warning">Systemstatus konnte nicht geladen werden. Die Connector-Verbindung selbst wird dadurch nicht verändert.</p>
       {/if}
@@ -112,10 +116,8 @@
                     <p><code>php /var/www/piwigo/plugins/bratonien_tools/nc-connector-cutover-v2.php {$connection.id|escape:html}</code></p>
                   {elseif $connection.takeover_state == 'active'}
                     <p class="bratonien-base-note"><strong>Connector aktiv.</strong> Der Connector-Timer übernimmt die regelmäßige Prüfung.</p>
-                    <p class="bratonien-base-note">Nächster geplanter Lauf: <strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong></p>
-                    {if isset($connection.config.takeover.first_run.result)}
-                      <p class="bratonien-base-note">Erster Connector-Lauf: <strong>{$connection.config.takeover.first_run.result|escape:html}</strong>{if isset($connection.config.takeover.first_run.checked_at)} · {$connection.config.takeover.first_run.checked_at|escape:html}{/if}</p>
-                    {/if}
+                    <p class="bratonien-base-note">Letzter Lauf: <strong>{if $nc_system_available}{$NC_CONNECTOR.system.last_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>{if $nc_system_available && $NC_CONNECTOR.system.last_run_message} · {$NC_CONNECTOR.system.last_run_message|escape:html}{/if}</p>
+                    <p class="bratonien-base-note">Nächster Lauf: <strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong></p>
                     {if isset($connection.config.takeover.runtime) && $connection.config.takeover.runtime == 'plugin-runtime'}
                       <p class="bratonien-base-note">Runtime: <strong>Bratonien Tools</strong></p>
                     {/if}
@@ -139,8 +141,12 @@
       <h4>Sync-Zustand</h4>
       <div class="bratonien-form-grid">
         <span class="bratonien-label">Connector-Timer</span><strong>{if $nc_system_available && $NC_CONNECTOR.system.timer_active}Aktiv{else}Nicht aktiv{/if}</strong>
+        <span class="bratonien-label">Letzter Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.last_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
         <span class="bratonien-label">Nächster Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
       </div>
+      {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}
+        <p class="bratonien-base-note">{$NC_CONNECTOR.system.last_run_message|escape:html}</p>
+      {/if}
     </div>
 
     <div class="bratonien-card">
