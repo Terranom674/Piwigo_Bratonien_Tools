@@ -32,7 +32,7 @@ def query_rows(args: argparse.Namespace) -> list[list[str]]:
     password = args.password_file.read_text(encoding="utf-8").strip()
     env = os.environ.copy()
     env["PGPASSWORD"] = password
-    sql = f"SELECT share_id, display_name, storage_id, source_path FROM {args.view} ORDER BY share_id"
+    sql = f"SELECT share_id, item_type, display_name, storage_id, source_path FROM {args.view} ORDER BY share_id"
     command = [
         "psql", "-X", "-A", "-F", "\t", "-t",
         "-h", args.host, "-p", str(args.port), "-U", args.user, "-d", args.database,
@@ -57,15 +57,25 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
     manifest: list[str] = []
     errors: list[str] = []
+    folder_count = 0
+    file_count = 0
+
     for row in rows:
-        if len(row) != 4:
+        if len(row) != 5:
             errors.append(f"invalid database row with {len(row)} columns")
             continue
-        share_id, display_name, storage_id, source_path = row
+
+        share_id, item_type, display_name, storage_id, source_path = row
+        item_type = item_type.strip().lower()
+        if item_type not in {"folder", "file"}:
+            errors.append(f"share {share_id}: unsupported item_type {item_type!r}")
+            continue
+
         adapter = adapters.get(storage_id)
         if not adapter:
             errors.append(f"share {share_id}: unknown storage {storage_id}")
             continue
+
         prefix, mount = adapter
         relative = source_path.strip("/")
         if prefix:
@@ -74,14 +84,24 @@ def build(args: argparse.Namespace) -> dict[str, object]:
                 errors.append(f"share {share_id}: path does not match configured prefix")
                 continue
             relative = relative[len(prefix):].lstrip("/")
+
         source = contained_join(mount, relative)
         if not mount.is_mount():
             errors.append(f"share {share_id}: storage mount unavailable: {mount}")
             continue
-        if not source.is_dir():
-            errors.append(f"share {share_id}: source directory unavailable: {source}")
-            continue
-        manifest.append(f"{share_id}\t{display_name.lstrip('/')}\t{source}")
+
+        if item_type == "folder":
+            if not source.is_dir():
+                errors.append(f"share {share_id}: source directory unavailable: {source}")
+                continue
+            folder_count += 1
+        else:
+            if not source.is_file():
+                errors.append(f"share {share_id}: source file unavailable: {source}")
+                continue
+            file_count += 1
+
+        manifest.append(f"{share_id}\t{item_type}\t{display_name.lstrip('/')}\t{source}")
 
     if errors:
         raise RuntimeError("; ".join(errors))
@@ -93,7 +113,13 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         handle.write("\n".join(manifest) + ("\n" if manifest else ""))
         temporary = Path(handle.name)
     temporary.replace(args.output)
-    return {"shares": len(manifest), "manifest": str(args.output)}
+
+    return {
+        "shares": len(manifest),
+        "folders": folder_count,
+        "files": file_count,
+        "manifest": str(args.output),
+    }
 
 
 def main() -> int:
