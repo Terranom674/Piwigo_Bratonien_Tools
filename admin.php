@@ -70,7 +70,25 @@ $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
 $nc_connector = bratonien_tools_nc_connector_status();
-$nc_connector['system'] = bratonien_tools_nc_connector_system_status($nc_connector['connections']);
+$nc_system_defaults = array(
+  'timer_name' => 'bratonien-nc-connector.timer',
+  'timer_active' => false,
+  'timer_enabled' => false,
+  'last_run_timestamp' => 0,
+  'last_run_label' => 'Nicht verfügbar',
+  'last_run_state' => '',
+  'last_run_message' => '',
+  'next_run_timestamp' => 0,
+  'next_run_label' => 'Nicht verfügbar',
+  'legacy_runtime_exists' => false,
+  'legacy_config_exists' => false,
+  'legacy_service_exists' => false,
+  'legacy_timer_exists' => false,
+);
+$nc_connector['system'] = array_merge(
+  $nc_system_defaults,
+  bratonien_tools_nc_connector_system_status($nc_connector['connections'])
+);
 $album_lock_page_number = isset($_GET['br_album_page']) ? max(1, (int)$_GET['br_album_page']) : 1;
 $album_lock_search = isset($_GET['br_album_search']) ? trim((string)$_GET['br_album_search']) : '';
 $album_lock_page = bratonien_tools_get_album_lock_page($album_lock_page_number, 10, $album_lock_search);
