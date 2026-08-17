@@ -179,7 +179,7 @@ try
   chmod($configPath, 0600);
 
   echo "Teste Verbindung mit Plugin-Runtime...\n";
-  $test = run_install(array('env', 'PIWIGO_CONFIG='.$configPath, $pluginRoot.'/runtime/sync.sh'), true);
+  $test = run_install(array('env', 'PIWIGO_CONFIG='.$configPath, 'bash', $pluginRoot.'/runtime/sync.sh'), true);
   if ($test['exit'] !== 0)
   {
     @unlink($configPath);
@@ -190,7 +190,7 @@ try
     fail_install('Runtime-Test fehlgeschlagen'.($detail !== '' ? ': '.$detail : '.'));
   }
 
-  $service = "[Unit]\nDescription=Bratonien NC Connector Sync\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nExecStart=".$pluginRoot."/runtime/run-all.sh\n\n";
+  $service = "[Unit]\nDescription=Bratonien NC Connector Sync\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/env bash ".$pluginRoot."/runtime/run-all.sh\n\n";
   $timer = "[Unit]\nDescription=Bratonien NC Connector regelmaessig pruefen\n\n[Timer]\nOnBootSec=3min\nOnUnitActiveSec=1min\nRandomizedDelaySec=15s\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n";
   file_put_contents($servicePath, $service, LOCK_EX);
   file_put_contents($timerPath, $timer, LOCK_EX);
