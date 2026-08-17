@@ -4,6 +4,77 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+function bratonien_tools_nc_connector_xml_value(SimpleXMLElement $node)
+{
+  $children = $node->children();
+  if (count($children) === 0)
+  {
+    return (string)$node;
+  }
+
+  $result = array();
+  foreach ($children as $name => $child)
+  {
+    $value = bratonien_tools_nc_connector_xml_value($child);
+    if (array_key_exists($name, $result))
+    {
+      if (!is_array($result[$name]) || !array_is_list($result[$name]))
+      {
+        $result[$name] = array($result[$name]);
+      }
+      $result[$name][] = $value;
+    }
+    else
+    {
+      $result[$name] = $value;
+    }
+  }
+  return $result;
+}
+
+function bratonien_tools_nc_connector_decode_api_response($body, $content_type = '')
+{
+  $decoded = json_decode((string)$body, true);
+  if (is_array($decoded))
+  {
+    return $decoded;
+  }
+
+  if (!function_exists('simplexml_load_string'))
+  {
+    throw new RuntimeException('Piwigo-API lieferte XML, aber SimpleXML ist in PHP nicht verfuegbar.');
+  }
+
+  $previous = libxml_use_internal_errors(true);
+  $xml = simplexml_load_string((string)$body);
+  libxml_clear_errors();
+  libxml_use_internal_errors($previous);
+  if ($xml === false || $xml->getName() !== 'rsp')
+  {
+    $detail = $content_type !== '' ? ' Antworttyp: '.$content_type.'.' : '';
+    throw new RuntimeException('Piwigo-API lieferte weder gueltiges JSON noch eine gueltige XML-Webservice-Antwort.'.$detail);
+  }
+
+  $response = array('stat'=>(string)$xml['stat']);
+  foreach ($xml->children() as $name => $child)
+  {
+    $value = bratonien_tools_nc_connector_xml_value($child);
+    if (array_key_exists($name, $response))
+    {
+      if (!is_array($response[$name]) || !array_is_list($response[$name]))
+      {
+        $response[$name] = array($response[$name]);
+      }
+      $response[$name][] = $value;
+    }
+    else
+    {
+      $response[$name] = $value;
+    }
+  }
+  return $response;
+}
+
 function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_secret, $method)
 {
   if (!function_exists('curl_init'))
@@ -30,7 +101,7 @@ function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_s
     )),
     CURLOPT_HTTPHEADER => array(
       'X-PIWIGO-API: '.$api_key,
-      'Accept: application/json',
+      'Accept: application/json, text/xml;q=0.9',
       'Content-Type: application/x-www-form-urlencoded',
     ),
     CURLOPT_CONNECTTIMEOUT => 10,
@@ -55,12 +126,7 @@ function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_s
     throw new RuntimeException('Piwigo-API antwortete mit HTTP '.$http_code.'.');
   }
 
-  $decoded = json_decode((string)$body, true);
-  if (!is_array($decoded))
-  {
-    $detail = $content_type !== '' ? ' Antworttyp: '.$content_type.'.' : '';
-    throw new RuntimeException('Piwigo-API lieferte keine gueltige JSON-Antwort.'.$detail);
-  }
+  $decoded = bratonien_tools_nc_connector_decode_api_response((string)$body, $content_type);
   if (($decoded['stat'] ?? '') !== 'ok')
   {
     $message = (string)($decoded['message'] ?? $decoded['err'] ?? 'API-Aufruf wurde abgelehnt.');
