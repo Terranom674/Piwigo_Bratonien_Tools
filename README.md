@@ -4,7 +4,7 @@ Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration
 
 Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
 
-Aktuelle Plugin-Version: **0.14.3**
+Aktuelle Plugin-Version: **0.9.3.16**
 
 ## Funktionsumfang
 
@@ -27,12 +27,26 @@ Aktuell vorhanden:
 - Verbindungen koennen kontrolliert deaktiviert und danach geloescht werden
 - Anzeige von Timer-Status, letztem Lauf, letztem Ergebnis und naechstem geplanten Lauf
 - Plugin-eigene Sync-Runtime unter `runtime/`
-- Activity-Gate mit Quiet-Time, Max-Wartezeit und periodischem Full-Sync
+- Activity-Gate mit Quiet-Time, Max-Wartezeit, Share-Fingerprint und periodischem Full-Sync
 - Shadow Tree fuer Piwigo ohne Kopie der Originaldateien
+- Unterstuetzung von Nextcloud-Freigaben fuer komplette Ordner und einzelne Dateien
+- Ordnerfreigaben werden als physische Piwigo-Alben synchronisiert
+- neu importierte Connector-Alben werden direkt als privat angelegt
+- einzelne Dateifreigaben werden direkt im Galerie-Root verlinkt und als echte Piwigo-Orphans registriert
+- entfernte Einzeldateifreigaben werden beim naechsten Lauf wieder aus Piwigo entfernt, ohne das Original zu loeschen
 - Originalbilder bleiben an ihrer Nextcloud-/Storage-Quelle
 - lokale Piwigo-Derivate und Caches bleiben davon getrennt und koennen jederzeit neu erzeugt werden
 
 Die Runtime baut aus den freigegebenen Nextcloud-Quellen einen Piwigo-kompatiblen Shadow Tree. Dateien werden dabei nicht in eine zweite permanente Originalbibliothek kopiert, sondern ueber Symlinks auf die vorhandenen Storage-Mounts referenziert.
+
+#### Freigabemodell
+
+Der Connector unterscheidet zwei Quelltypen:
+
+- `folder` - komplette Ordnerfreigabe; der Verzeichnisbaum wird gespiegelt und ueber Piwigos normale Dateisynchronisierung als Albumstruktur eingelesen
+- `file` - einzelne Dateifreigabe; die Datei wird direkt als Symlink im Galerie-Root angelegt und separat als Piwigo-Orphan ohne Albumzuordnung registriert
+
+Fuer Einzeldateien wird kein kuenstlicher Unterordner erzeugt. Entfernt Nextcloud eine solche Freigabe, entfernt der Connector den Root-Symlink und anschliessend nur den zugehoerigen Piwigo-Datenbankeintrag. Das Original bleibt unangetastet.
 
 #### Neuinstallation
 
@@ -203,13 +217,15 @@ Wichtige Bestandteile:
 - `include/nc_connector_manage.inc.php` - native Connection-Verwaltung und Verifikation
 - `include/nc_connector_takeover.inc.php` - kontrollierte Legacy-Uebergabe
 - `include/nc_connector_system.inc.php` - Timer- und Laufzeitstatus ueber alle aktiven Verbindungen
+- `include/nc_connector_ws.inc.php` - read-only Paritaets-/Synchronisationspruefung ueber den Piwigo-Webservice
+- `include/nc_orphan_ws.inc.php` - produktive Synchronisation einzelner Root-Dateien als Piwigo-Orphans
 - `runtime/sync.sh` - Plugin-eigene Sync-Runtime einer Verbindung
 - `runtime/run-all.sh` - gemeinsamer Runner fuer alle installierten Verbindungen
-- `runtime/lib/activity_gate.py` - Activity-Gate und zeitgesteuerte Reconciliation
-- `runtime/lib/build_manifest.py` - Aufloesung der Nextcloud-Quellen auf konfigurierte Storage-Mounts
+- `runtime/lib/activity_gate.py` - Activity-Gate, Share-Fingerprint und zeitgesteuerte Reconciliation
+- `runtime/lib/build_manifest.py` - Aufloesung von Ordner- und Dateifreigaben auf konfigurierte Storage-Mounts
 - `runtime/lib/shadow_tree.py` - Aufbau des Piwigo-kompatiblen Shadow Trees ohne Kopieren der Originale
 - `runtime/lib/piwigo-db-check.php` - Konsistenzpruefung vorhandener Piwigo-Alben
-- `runtime/lib/piwigo-db-sync.pl` - Ausloesen der Piwigo-Dateisynchronisierung
+- `runtime/lib/piwigo-db-sync.pl` - Ausloesen der Piwigo-Dateisynchronisierung und anschliessender Orphan-Abgleich
 - `nc-connector-install.php` - native Aktivierung einer verifizierten Verbindung
 - `nc-connector-disable.php` - kontrollierte Deaktivierung einer aktiven Verbindung
 - `nc-connector-normalize.php` - Ueberfuehrung einer migrierten aktiven Verbindung in den nativen State- und Multi-Connection-Aufbau
@@ -268,6 +284,7 @@ Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
 - eigene technische Benutzer mit minimalem Albumzugriff fuer Freigaben
 - automatische Bereinigung widerrufener und geloeschter Albumfreigaben
 - automatischer Erhalt des eigenen Zugriffs beim Umschalten eines Albums auf privat
+- Connector-importierte physische Alben werden standardmaessig privat angelegt
 - Beibehaltung bestehender Piwigo- und Plugin-Berechtigungen
 - kontrollierte Uploadziele und Uploadgrenzen
 - kein Zugriff auf Originalbilder beim Leeren des Bildcaches
@@ -281,4 +298,6 @@ Farben, Schatten, Hover-Effekte und individuelles Branding sollten ueber das akt
 
 ## Entwicklungsstand
 
-Das Plugin befindet sich weiterhin in aktiver Entwicklung. Der NC Connector ist in Version 0.14.3 von der migrationsorientierten Uebergangsstruktur auf einen nativen Mehrverbindungs-Aufbau erweitert worden. Der Remote-Adapter ist der naechste noch offene Connector-Ausbauschritt.
+Das Plugin befindet sich weiterhin in aktiver Entwicklung. Mit Version **0.9.3.16** ist der lokale NC-Connector fuer den aktuellen Bratonien-Einsatz End-to-End funktionsfaehig: Ordner- und Einzeldateifreigaben werden erkannt, der Shadow Tree wird automatisch gepflegt, Piwigo wird synchronisiert, Einzeldateien werden als Orphans verwaltet und der regelmaessige Lauf erfolgt ueber den gemeinsamen systemd-Timer.
+
+Als naechster groesserer Connector-Ausbauschritt bleibt der Remote-Nextcloud-Adapter offen.
