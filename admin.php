@@ -68,6 +68,7 @@ $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
+$nc_connector = bratonien_tools_nc_connector_status();
 $album_lock_page_number = isset($_GET['br_album_page']) ? max(1, (int)$_GET['br_album_page']) : 1;
 $album_lock_search = isset($_GET['br_album_search']) ? trim((string)$_GET['br_album_search']) : '';
 $album_lock_page = bratonien_tools_get_album_lock_page($album_lock_page_number, 10, $album_lock_search);
@@ -171,6 +172,7 @@ $template->assign(array(
   'BRATONIEN_ALBUM_LOCK_PAGE' => $album_lock_page,
   'BRATONIEN_ALBUM_PAGER_URL' => $album_pager_url,
   'BRATONIEN_ALBUM_SEARCH' => $album_lock_search,
+  'NC_CONNECTOR' => $nc_connector,
   'SELF_UPDATE' => $self_update,
   'SELF_UPDATE_ENV' => $self_update_environment,
   'MAIN_CACHE_STATUS_URL' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/main-cache-status.php',
@@ -181,6 +183,7 @@ $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template
 $template->set_filename('public_selection_admin_content', BRATONIEN_TOOLS_PATH . 'template/public_selection_admin.tpl');
 $template->set_filename('asset_manager_admin_content', BRATONIEN_TOOLS_PATH . 'template/asset_manager_admin.tpl');
 $template->set_filename('album_shares_admin_content', BRATONIEN_TOOLS_PATH . 'template/album_shares_admin.tpl');
+$template->set_filename('nc_connector_admin_content', BRATONIEN_TOOLS_PATH . 'template/nc_connector_admin.tpl');
 $template->set_filename('system_admin_content', BRATONIEN_TOOLS_PATH . 'template/system_admin.tpl');
 
 $admin_content = $template->parse('admin_tabs_content', true);
@@ -188,5 +191,6 @@ $admin_content .= $template->parse('plugin_admin_content', true);
 $admin_content .= $template->parse('public_selection_admin_content', true);
 $admin_content .= $template->parse('asset_manager_admin_content', true);
 $admin_content .= $template->parse('album_shares_admin_content', true);
+$admin_content .= $template->parse('nc_connector_admin_content', true);
 $admin_content .= $template->parse('system_admin_content', true);
 $template->assign('ADMIN_CONTENT', $admin_content);
