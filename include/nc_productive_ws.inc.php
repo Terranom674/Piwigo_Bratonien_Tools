@@ -59,6 +59,11 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
   try
   {
+    if (!defined('IN_ADMIN'))
+    {
+      define('IN_ADMIN', true);
+    }
+
     $_SERVER['REQUEST_METHOD'] = 'POST';
     $_GET = array(
       'page' => 'site_update',
