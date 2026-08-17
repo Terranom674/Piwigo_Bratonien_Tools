@@ -21,7 +21,7 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 900,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.17',
+    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.18',
   );
   if ($headers)
   {
@@ -51,12 +51,67 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
   return (string)$body;
 }
 
+function xml_value_sync(SimpleXMLElement $node)
+{
+  $children = $node->children();
+  if (count($children) === 0)
+  {
+    return (string)$node;
+  }
+  $result = array();
+  foreach ($children as $name => $child)
+  {
+    $value = xml_value_sync($child);
+    if (array_key_exists($name, $result))
+    {
+      if (!is_array($result[$name]) || !array_is_list($result[$name]))
+      {
+        $result[$name] = array($result[$name]);
+      }
+      $result[$name][] = $value;
+    }
+    else
+    {
+      $result[$name] = $value;
+    }
+  }
+  return $result;
+}
+
 function decode_ws($body)
 {
   $decoded = json_decode((string)$body, true);
   if (!is_array($decoded))
   {
-    fail_sync('Piwigo lieferte keine gueltige JSON-Antwort.');
+    if (!function_exists('simplexml_load_string'))
+    {
+      fail_sync('Piwigo lieferte XML, aber SimpleXML ist nicht verfuegbar.');
+    }
+    $previous = libxml_use_internal_errors(true);
+    $xml = simplexml_load_string((string)$body);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    if ($xml === false || $xml->getName() !== 'rsp')
+    {
+      fail_sync('Piwigo lieferte weder gueltiges JSON noch eine gueltige XML-Webservice-Antwort.');
+    }
+    $decoded = array('stat'=>(string)$xml['stat']);
+    foreach ($xml->children() as $name => $child)
+    {
+      $value = xml_value_sync($child);
+      if (array_key_exists($name, $decoded))
+      {
+        if (!is_array($decoded[$name]) || !array_is_list($decoded[$name]))
+        {
+          $decoded[$name] = array($decoded[$name]);
+        }
+        $decoded[$name][] = $value;
+      }
+      else
+      {
+        $decoded[$name] = $value;
+      }
+    }
   }
   if (($decoded['stat'] ?? '') !== 'ok')
   {
@@ -176,7 +231,7 @@ try
     {
       $headers = array(
         'X-PIWIGO-API: '.$api['key_id'].':'.$api['key_secret'],
-        'Accept: application/json',
+        'Accept: application/json, text/xml;q=0.9',
         'Content-Type: application/x-www-form-urlencoded',
       );
       decode_ws(http_request(
@@ -220,7 +275,7 @@ try
 
   try
   {
-    $login = decode_ws(http_request(
+    decode_ws(http_request(
       $base_url.'/ws.php?format=json',
       array('method'=>'pwg.session.login', 'username'=>$fallback_user, 'password'=>$fallback_password),
       array(),
