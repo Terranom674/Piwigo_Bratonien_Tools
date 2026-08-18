@@ -4,7 +4,7 @@ Stand: 18.08.2026
 
 ## Plugin
 
-- Aktuelle Plugin-Version: **0.9.4.2**
+- Aktuelle Plugin-Version: **0.9.4.4**
 - Aktueller Entwicklungsblock: **NC Connector – Endnutzer-Assistent und Konsolidierung**
 - `0.9.3.43` markiert den abgeschlossenen vorherigen Meilenstein.
 - `0.9.4.x` ist der neue Entwicklungsblock.
@@ -30,35 +30,36 @@ Die Statusaktualisierung im Admin-UI wurde von Seiten-Reload auf gezielte DOM-Ak
 
 ### Verbindungsassistent
 
-Der Assistent wurde erneut aus Endnutzersicht konsolidiert:
-
-1. Nextcloud-Adresse + Benutzer + Passwort.
-2. Automatischer Web-Scan über HTTP/HTTPS und OCS.
-3. Der Nutzer sieht zunächst keine komplette Datenbank-Technikmaske.
-4. Für den Datenzugriff werden zuerst nur Lese-Benutzer und Passwort abgefragt.
-5. Host = Nextcloud-Host, Port 5432 und Datenbank `nextcloud` werden nur als automatischer Prüfversuch verwendet und nicht als sicher erkannt dargestellt.
-6. Scheitert dieser Versuch, fragt der Assistent gezielt die abweichende Datenbank-Adresse, Port und Datenbank ab.
-7. Storage-Mounts werden nur abgefragt, wenn sie nicht sicher aus vorhandenen Zuordnungen übernommen werden können.
-8. Danach folgen Showcase-Benutzer, Piwigo-API-Test/Skip und Fallback.
-9. Erst der letzte Schritt legt die Verbindung dauerhaft an.
-
-Fehler leeren die Wizard-Eingaben nicht. Geheimnisse bleiben während des Wizards serverseitig in der PHP-Sitzung und werden nicht im Browser-Web-Storage persistiert.
+Der Assistent wurde aus Endnutzersicht konsolidiert. Technische Werte werden nur gezielt abgefragt, wenn eine automatische Prüfung sie nicht bestätigen kann.
 
 ### Storage-Mappings
 
-Das Storage-Format erlaubt jetzt einen leeren `source_prefix`. Damit kann ein kompletter Storage direkt auf einen lokalen Mount zeigen. Die frühere Fehlermeldung
-
-`Storage-Zeilen muessen das Format storage_id | source_prefix | local_mount verwenden.`
-
-tritt bei einem legitimen Root-Mapping nicht mehr auf.
+Das Storage-Format erlaubt einen leeren `source_prefix`. Damit kann ein kompletter Storage direkt auf einen lokalen Mount zeigen.
 
 ### Native Aktivierung
 
-`nc-connector-install.php` unterstützt jetzt auch API-only-Verbindungen ohne dauerhaft gespeicherten Login-Fallback. Ein Fallback ist nur nötig, wenn keine nutzbare API gespeichert ist.
+`nc-connector-install.php` unterstützt API-only-Verbindungen ohne dauerhaft gespeicherten Login-Fallback. Ein Fallback ist nur nötig, wenn keine nutzbare API gespeichert ist.
 
-### Dokumentation
+## 0.9.4.3
 
-README und CURRENT_STATUS wurden auf den aktuellen `0.9.4.x`-Stand gebracht und beschreiben jetzt den realen API-first-Sync, den Wizard, die Statusaktualisierung ohne Reload und die aktuelle Runtime-Architektur.
+- Syntaxfehler im Wizard-Abschluss korrigiert.
+- Neue Wizard-Durchläufe werden von alten serverseitigen Zuständen getrennt.
+- Abbrechen und Schließen verwerfen den laufenden Wizard-State.
+
+## 0.9.4.4
+
+Der Connector-Benutzer aus Schritt 1 ist zugleich der lesende Datenbank-Benutzer. Der Assistent fragt deshalb Benutzername und Passwort nicht erneut ab.
+
+Ablauf:
+
+1. Nextcloud-Adresse + Connector-Benutzer + Passwort.
+2. Web-Zugang und OCS werden geprüft.
+3. Derselbe Benutzer und dasselbe Passwort werden automatisch für PostgreSQL verwendet.
+4. Der Assistent prüft den üblichen Weg mit Nextcloud-Host, Port 5432 und Datenbank `nextcloud` bzw. bekannte passende Verbindungswerte.
+5. Nur wenn die Datenbank dort nicht erreichbar ist, werden Host, Port und Datenbankname abgefragt. Benutzer und Passwort bleiben unverändert aus Schritt 1.
+6. Danach folgen gegebenenfalls Storage-Zuordnung, Showcase-Benutzer, Piwigo-API und Fallback.
+
+Die PHP-Datei `include/nc_connector_wizard.inc.php` wurde vor dem Versionsbump mit dem PHP-Parser geprüft.
 
 ## Architektur NC Connector
 
