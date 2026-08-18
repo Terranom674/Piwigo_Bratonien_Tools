@@ -2,7 +2,7 @@
 
 Modulares Piwigo-Plugin für Administration, Bildverarbeitung, geschützte Freigaben, Fotoauswahl und die Anbindung von Nextcloud an Piwigo.
 
-Aktuelle Plugin-Version: **0.9.5.5**
+Aktuelle Plugin-Version: **0.9.5.6**
 
 ## Grundprinzip
 
@@ -58,7 +58,7 @@ Dieser Weg bleibt erhalten, bis der neue WebDAV-Weg vollständig End-to-End funk
 
 ### Neuer WebDAV-Weg
 
-Der geplante neue Quellenmodus wird zusätzlich zu den bestehenden Modi entwickelt, vorgesehen als `webdav-placeholder`.
+Der neue Quellenmodus wird zusätzlich zu den bestehenden Modi entwickelt als `webdav-placeholder`.
 
 Ziel:
 
@@ -80,11 +80,13 @@ Grundidee:
 7. Piwigo-Derivate werden normal in `_data/i/` gecacht.
 8. Das Original bleibt ausschließlich in Nextcloud.
 
-Der erste experimentelle Baustein dafür ist:
+Vorhandene Bausteine:
 
-- `runtime/lib/build_webdav_placeholder_source.py`
+- `runtime/lib/build_webdav_placeholder_source.py` – rekursiver WebDAV-Scan, Platzhalterquelle, Manifest und Mapping;
+- `include/nc_connector_webdav.inc.php` – paralleler, zunächst deaktivierter Connection-Typ `webdav-placeholder`;
+- Secret-Format v3 mit verbindungseigenem `nextcloud_user` und `nextcloud_password`.
 
-Dieser Builder ist noch kein vollständiger Connection-Modus. Die Integration in Secret-Speicherung, Wizard, Reconcile und Runtime steht noch aus.
+Neue WebDAV-Testverbindungen werden als `adapter=remote` und deaktiviert gespeichert. Sie verändern keine bestehenden Verbindungen und werden noch nicht von der produktiven Runtime aktiviert.
 
 ### Gemessene WebDAV-Performance
 
@@ -122,7 +124,7 @@ Der direkte produktive Sync führt außerdem die für den normalen Piwigo-Import
 
 ### Runtime
 
-Aktive Verbindungen werden über einen gemeinsamen systemd-Timer verarbeitet:
+Aktive bestehende Verbindungen werden über einen gemeinsamen systemd-Timer verarbeitet:
 
 - `bratonien-nc-connector.timer`
 - `bratonien-nc-connector.service`
@@ -132,6 +134,8 @@ Aktive Verbindungen werden über einen gemeinsamen systemd-Timer verarbeitet:
 Verbindungsspezifische Konfigurationen liegen unter `/etc/bratonien-tools/nc-connector/`, State-Daten unter `/var/lib/bratonien-tools/nc-connector/connection-ID`.
 
 Der Shadow-Tree-Austausch besitzt einen Rollback: Scheitert der Wechsel auf den neuen Baum, wird der vorherige Galeriebaum wiederhergestellt.
+
+Der WebDAV-Parallelweg wird in der nächsten Bauphase mit einem eigenen Reconcile-/Sync-Zweig ergänzt. Bis dahin bleibt er deaktiviert und kann keine bestehende Runtime beeinflussen.
 
 ### Statusanzeige
 
@@ -241,8 +245,9 @@ Wichtige Dateien und Verzeichnisse:
 - `include/nc_connector.inc.php` – Datenmodell und gemeinsame Connector-Funktionen
 - `include/nc_connector_wizard.inc.php` – Endnutzer-Assistent und Connection-Bearbeitung
 - `include/nc_connector_manage.inc.php` – Credential-Format, Storage-Mappings, Verifikation und Löschen
-- `include/nc_connector_connection_scope.inc.php` – verbindungseigene Authentifizierung und sichere Löschlogik
-- `include/nc_connector_create_api.inc.php` – API-first-Verbindungserstellung
+- `include/nc_connector_connection_scope.inc.php` – verbindungseigene Authentifizierung
+- `include/nc_connector_create_api.inc.php` – API-first-Verbindungserstellung und Secret v3
+- `include/nc_connector_webdav.inc.php` – paralleler WebDAV-Connection-Typ
 - `include/nc_connector_piwigo_api.inc.php` – API-Zugang und Fallback-Verwaltung
 - `include/nc_connector_system.inc.php` – Timer- und Laufzeitstatus
 - `include/nc_productive_ws.inc.php` – produktiver Piwigo-Dateisync
@@ -254,7 +259,7 @@ Wichtige Dateien und Verzeichnisse:
 - `runtime/lib/shadow_tree.py` – atomarer Shadow Tree mit Rollback
 - `runtime/lib/piwigo-sync.php` – API-first-Piwigo-Sync mit Fallback
 - `runtime/run-all.sh` – Multi-Connection-Runner und Bereinigung verwaister Runtime-Dateien
-- `runtime/sync.sh` – Ablauf einer Verbindung
+- `runtime/sync.sh` – Ablauf einer bestehenden lokalen Verbindung
 - `include/self_update.inc.php` – Self-Updater
 - `include/album_shares.inc.php` – geschützte Albumfreigaben
 - `include/public_selection.inc.php` – Fotoauswahl
@@ -267,6 +272,7 @@ Wichtige Dateien und Verzeichnisse:
 
 - administrative Schreibaktionen verwenden Piwigos CSRF-Schutz;
 - Connector-Zugangsdaten werden verschlüsselt gespeichert;
+- Secret v3 speichert Nextcloud-Zugangsdaten verbindungseigen und verschlüsselt;
 - Wizard-Geheimnisse werden nicht in Browser-Web-Storage persistiert;
 - bestehende lokale Storage-Mounts werden explizit zugeordnet und validiert;
 - SQL-View-Namen werden vor Verwendung validiert;
@@ -280,6 +286,6 @@ Wichtige Dateien und Verzeichnisse:
 
 `0.9.5.x` ist der aktuelle Entwicklungsblock. Der bestehende lokale NC Connector bleibt produktiv und wird nicht durch den experimentellen WebDAV-Weg ersetzt.
 
-Der nächste konkrete Schritt ist die rückwärtskompatible Verbindungsschicht für `webdav-placeholder`: verbindungseigene Nextcloud-Zugangsdaten speichern, neuen Source-Modus in Wizard/Reconcile/Runtime ergänzen und danach eine neue Testverbindung durch den bestehenden Shadow Tree und Piwigo-Sync schicken.
+Mit 0.9.5.6 ist die parallele Verbindungsschicht angelegt: Secret v3 kann Nextcloud-Zugangsdaten speichern und `webdav-placeholder` existiert als eigener deaktivierter Connection-Typ. Der nächste Schritt ist ein strikt getrennter Reconcile-/Runtime-Zweig für diesen Modus und danach der erste Platzhalter-PoC durch den bestehenden Shadow Tree und Piwigo-Sync.
 
 Den detaillierten aktuellen Plan enthält `CURRENT_STATUS.md`.
