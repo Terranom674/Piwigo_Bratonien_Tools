@@ -90,6 +90,59 @@
     activate(initial,false);
   }
 
+  function initNCWizardDraft() {
+    var dialog=document.getElementById('bratonien-nc-wizard-dialog');
+    if(!dialog) return;
+    var prefix='bratonienNcWizardDraft:';
+
+    function fields() {
+      return [].slice.call(dialog.querySelectorAll('input[name^="nc_wizard_"], select[name^="nc_wizard_"], textarea[name^="nc_wizard_"]'));
+    }
+
+    function saveField(field) {
+      if(!field.name || field.type==='submit' || field.type==='button') return;
+      try {
+        if(field.type==='checkbox' || field.type==='radio') sessionStorage.setItem(prefix+field.name,field.checked?'1':'0');
+        else sessionStorage.setItem(prefix+field.name,field.value);
+      } catch(e) {}
+    }
+
+    function restoreField(field) {
+      if(!field.name || field.type==='submit' || field.type==='button') return;
+      try {
+        var value=sessionStorage.getItem(prefix+field.name);
+        if(value===null) return;
+        if(field.type==='checkbox' || field.type==='radio') field.checked=value==='1';
+        else field.value=value;
+      } catch(e) {}
+    }
+
+    function clearDraft() {
+      try {
+        var remove=[];
+        for(var i=0;i<sessionStorage.length;i++) {
+          var key=sessionStorage.key(i);
+          if(key && key.indexOf(prefix)===0) remove.push(key);
+        }
+        remove.forEach(function(key){sessionStorage.removeItem(key);});
+      } catch(e) {}
+    }
+
+    fields().forEach(function(field){
+      restoreField(field);
+      field.addEventListener('input',function(){saveField(field);});
+      field.addEventListener('change',function(){saveField(field);});
+    });
+
+    dialog.querySelectorAll('form[data-bratonien-wizard-form]').forEach(function(form){
+      form.addEventListener('submit',function(event){
+        fields().forEach(saveField);
+        var submitter=event.submitter;
+        if(submitter && submitter.hasAttribute('data-bratonien-wizard-end')) clearDraft();
+      });
+    });
+  }
+
   function initNCConnectorPolling() {
     var section=document.getElementById('nc-connector');
     if(!section) return;
@@ -138,6 +191,7 @@
 
   function initAll() {
     initBratonienTabs();
+    initNCWizardDraft();
     initNCConnectorPolling();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initAll); else initAll();
