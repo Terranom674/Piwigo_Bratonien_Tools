@@ -56,12 +56,7 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
             share_id, item_type, display_name, source_path = fields
             if item_type not in {"folder", "file"}:
                 raise ValueError(f"{path}:{line_number}: unsupported item_type {item_type!r}")
-            entries.append({
-                "share_id": share_id,
-                "item_type": item_type,
-                "display_name": display_name,
-                "source_path": source_path,
-            })
+            entries.append({"share_id": share_id, "item_type": item_type, "display_name": display_name, "source_path": source_path})
     return entries
 
 
@@ -87,8 +82,7 @@ def preferred_target(source_key: str, raw_name: str, parent_target: Path, old_ma
 def mirror_directory(source: Path, target: Path, source_key: str, target_key: Path, old_map: dict[str, str], new_map: dict[str, str]) -> None:
     target.mkdir(parents=True, exist_ok=True)
     used: set[str] = set()
-    children = sorted(source.iterdir(), key=lambda item: (item.name.casefold(), item.name))
-    for child in children:
+    for child in sorted(source.iterdir(), key=lambda item: (item.name.casefold(), item.name)):
         if child.is_symlink():
             continue
         child_source_key = f"{source_key}/{child.name}"
@@ -103,51 +97,68 @@ def mirror_directory(source: Path, target: Path, source_key: str, target_key: Pa
             child_target.symlink_to(child.resolve())
 
 
+def remove_tree(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
 def build(manifest: Path, destination: Path, state_file: Path) -> None:
     entries = load_manifest(manifest)
     old_map = load_map(state_file)
     new_map: dict[str, str] = {}
     staging = destination.with_name(f".{destination.name}.next")
     previous = destination.with_name(f".{destination.name}.previous")
+    state_staging = state_file.with_suffix(state_file.suffix + ".next")
 
-    if staging.exists():
-        shutil.rmtree(staging)
+    remove_tree(staging)
+    remove_tree(previous)
+    if state_staging.exists():
+        state_staging.unlink()
     staging.mkdir(parents=True)
 
-    used_roots: set[str] = set()
-    for entry in sorted(entries, key=lambda item: (item["display_name"].casefold(), item["share_id"])):
-        source = Path(entry["source_path"])
-        source_key = f"share:{entry['share_id']}"
-        preferred = preferred_target(source_key, entry["display_name"], Path("."), old_map)
-        is_file_share = entry["item_type"] == "file"
-        root_name = unique_name(preferred, used_roots, is_file_share)
-        root_key = Path(root_name)
-        new_map[source_key] = root_key.as_posix()
+    try:
+        used_roots: set[str] = set()
+        for entry in sorted(entries, key=lambda item: (item["display_name"].casefold(), item["share_id"])):
+            source = Path(entry["source_path"])
+            source_key = f"share:{entry['share_id']}"
+            preferred = preferred_target(source_key, entry["display_name"], Path("."), old_map)
+            is_file_share = entry["item_type"] == "file"
+            root_name = unique_name(preferred, used_roots, is_file_share)
+            root_key = Path(root_name)
+            new_map[source_key] = root_key.as_posix()
+            if is_file_share:
+                if not source.is_file():
+                    raise FileNotFoundError(f"source is not a readable file: {source}")
+                (staging / root_name).symlink_to(source.resolve())
+            else:
+                if not source.is_dir():
+                    raise FileNotFoundError(f"source is not a readable directory: {source}")
+                mirror_directory(source, staging / root_name, source_key, root_key, old_map, new_map)
 
-        if is_file_share:
-            if not source.is_file():
-                raise FileNotFoundError(f"source is not a readable file: {source}")
-            (staging / root_name).symlink_to(source.resolve())
-            continue
+        state_staging.parent.mkdir(parents=True, exist_ok=True)
+        with state_staging.open("w", encoding="utf-8") as handle:
+            json.dump(new_map, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
 
-        if not source.is_dir():
-            raise FileNotFoundError(f"source is not a readable directory: {source}")
-        mirror_directory(source, staging / root_name, source_key, root_key, old_map, new_map)
-
-    state_staging = state_file.with_suffix(state_file.suffix + ".next")
-    state_staging.parent.mkdir(parents=True, exist_ok=True)
-    with state_staging.open("w", encoding="utf-8") as handle:
-        json.dump(new_map, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
-
-    if previous.exists():
-        shutil.rmtree(previous)
-    if destination.exists():
-        destination.rename(previous)
-    staging.rename(destination)
-    state_staging.replace(state_file)
-    if previous.exists():
-        shutil.rmtree(previous)
+        had_destination = destination.exists()
+        if had_destination:
+            destination.rename(previous)
+        try:
+            staging.rename(destination)
+            state_staging.replace(state_file)
+        except Exception:
+            remove_tree(destination)
+            if had_destination and previous.exists():
+                previous.rename(destination)
+            raise
+        remove_tree(previous)
+    except Exception:
+        remove_tree(staging)
+        if state_staging.exists():
+            state_staging.unlink()
+        raise
 
 
 def main() -> int:
