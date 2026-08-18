@@ -14,6 +14,53 @@ function bratonien_tools_current_version()
   return '0.0.0';
 }
 
+function bratonien_tools_self_update_fetch_text($url, &$body, &$details)
+{
+  $body = '';
+  $details = '';
+
+  if (function_exists('curl_init'))
+  {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, array(
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_FOLLOWLOCATION => true,
+      CURLOPT_MAXREDIRS => 3,
+      CURLOPT_CONNECTTIMEOUT => 10,
+      CURLOPT_TIMEOUT => 20,
+      CURLOPT_USERAGENT => 'Bratonien-Tools-Updater/'.bratonien_tools_current_version(),
+      CURLOPT_HTTPHEADER => array('Accept: application/vnd.github+json, text/plain;q=0.9, */*;q=0.8'),
+    ));
+    $response = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false || $errno !== 0)
+    {
+      $details = 'cURL-Fehler '.$errno.': '.$error;
+      return false;
+    }
+    if ($http < 200 || $http >= 300)
+    {
+      $details = 'HTTP '.$http;
+      return false;
+    }
+
+    $body = (string)$response;
+    return true;
+  }
+
+  if (function_exists('fetchRemote') && fetchRemote($url, $body))
+  {
+    return true;
+  }
+
+  $details = 'Remote-Inhalt konnte nicht geladen werden.';
+  return false;
+}
+
 function bratonien_tools_remote_update_info($force = false)
 {
   $cache_key = 'bratonien_self_update_status';
@@ -28,28 +75,68 @@ function bratonien_tools_remote_update_info($force = false)
   }
 
   $current = bratonien_tools_current_version();
-  $remote_main = '';
-  $ok = function_exists('fetchRemote') && fetchRemote('https://raw.githubusercontent.com/Terranom674/Piwigo_Bratonien_Tools/main/main.inc.php', $remote_main);
-  if (!$ok || !preg_match('/Version:\s*([\w.-]+)/i', (string)$remote_main, $m))
+  $commit_json = '';
+  $details = '';
+  $commit_url = 'https://api.github.com/repos/Terranom674/Piwigo_Bratonien_Tools/commits/main';
+
+  if (!bratonien_tools_self_update_fetch_text($commit_url, $commit_json, $details))
   {
     $data = array(
       'checked_at' => time(),
       'current' => $current,
       'remote' => null,
+      'signature' => null,
+      'main_sha256' => null,
       'update_available' => false,
-      'error' => 'GitHub konnte nicht erreicht oder die Versionsnummer nicht gelesen werden.',
+      'error' => 'GitHub konnte nicht erreicht oder der aktuelle Commit nicht ermittelt werden.'.($details !== '' ? ' Details: '.$details : ''),
     );
   }
   else
   {
-    $remote = trim($m[1]);
-    $data = array(
-      'checked_at' => time(),
-      'current' => $current,
-      'remote' => $remote,
-      'update_available' => version_compare($remote, $current, '>'),
-      'error' => null,
-    );
+    $commit = json_decode($commit_json, true);
+    $signature = is_array($commit) ? strtolower(trim((string)($commit['sha'] ?? ''))) : '';
+    if (!preg_match('/^[a-f0-9]{40}$/', $signature))
+    {
+      $data = array(
+        'checked_at' => time(),
+        'current' => $current,
+        'remote' => null,
+        'signature' => null,
+        'main_sha256' => null,
+        'update_available' => false,
+        'error' => 'GitHub lieferte keine gültige Commit-Signatur für main.',
+      );
+    }
+    else
+    {
+      $remote_main = '';
+      $raw_url = 'https://raw.githubusercontent.com/Terranom674/Piwigo_Bratonien_Tools/'.$signature.'/main.inc.php';
+      if (!bratonien_tools_self_update_fetch_text($raw_url, $remote_main, $details) || !preg_match('/Version:\s*([\w.-]+)/i', (string)$remote_main, $m))
+      {
+        $data = array(
+          'checked_at' => time(),
+          'current' => $current,
+          'remote' => null,
+          'signature' => $signature,
+          'main_sha256' => null,
+          'update_available' => false,
+          'error' => 'Die Plugin-Version des ermittelten GitHub-Commits konnte nicht gelesen werden.'.($details !== '' ? ' Details: '.$details : ''),
+        );
+      }
+      else
+      {
+        $remote = trim($m[1]);
+        $data = array(
+          'checked_at' => time(),
+          'current' => $current,
+          'remote' => $remote,
+          'signature' => $signature,
+          'main_sha256' => hash('sha256', (string)$remote_main),
+          'update_available' => version_compare($remote, $current, '>'),
+          'error' => null,
+        );
+      }
+    }
   }
 
   if (function_exists('conf_update_param'))
@@ -72,16 +159,17 @@ function bratonien_tools_self_update_check()
     throw new RuntimeException($info['error']);
   }
 
+  $signature_label = !empty($info['signature']) ? substr($info['signature'], 0, 12) : 'unbekannt';
   if (!empty($info['update_available']))
   {
     return array(
-      'message' => 'Update verfügbar: '.$info['current'].' → '.$info['remote'].'.',
+      'message' => 'Update verfügbar: '.$info['current'].' → '.$info['remote'].' · Signatur '.$signature_label.'.',
       'self_update' => $info,
     );
   }
 
   return array(
-    'message' => 'Bratonien Tools ist aktuell (Version '.$info['current'].').',
+    'message' => 'Bratonien Tools ist aktuell (Version '.$info['current'].', Signatur '.$signature_label.').',
     'self_update' => $info,
   );
 }
@@ -172,6 +260,23 @@ function bratonien_tools_download_update_archive($url, &$data, &$details)
   return true;
 }
 
+function bratonien_tools_self_update_find_source($extract_dir, $signature)
+{
+  $expected = rtrim($extract_dir, '/').'/Piwigo_Bratonien_Tools-'.$signature;
+  if (is_dir($expected))
+  {
+    return $expected;
+  }
+
+  $candidates = glob(rtrim($extract_dir, '/').'/Piwigo_Bratonien_Tools-*', GLOB_ONLYDIR);
+  if (is_array($candidates) && count($candidates) === 1)
+  {
+    return $candidates[0];
+  }
+
+  return '';
+}
+
 function bratonien_tools_self_update_run()
 {
   global $template;
@@ -202,6 +307,13 @@ function bratonien_tools_self_update_run()
     );
   }
 
+  $signature = strtolower(trim((string)($info['signature'] ?? '')));
+  $expected_main_sha256 = strtolower(trim((string)($info['main_sha256'] ?? '')));
+  if (!preg_match('/^[a-f0-9]{40}$/', $signature) || !preg_match('/^[a-f0-9]{64}$/', $expected_main_sha256))
+  {
+    throw new RuntimeException('Update abgebrochen: Version oder Signatur des Zielstands ist unvollständig.');
+  }
+
   $work_root = rtrim(PHPWG_ROOT_PATH, '/').'/_data/bratonien-updater';
   if (!is_dir($work_root) && !@mkdir($work_root, 0755, true))
   {
@@ -216,7 +328,7 @@ function bratonien_tools_self_update_run()
 
   $zip_data = '';
   $download_details = '';
-  $archive_url = 'https://codeload.github.com/Terranom674/Piwigo_Bratonien_Tools/zip/refs/heads/main';
+  $archive_url = 'https://codeload.github.com/Terranom674/Piwigo_Bratonien_Tools/zip/'.$signature;
   if (!bratonien_tools_download_update_archive($archive_url, $zip_data, $download_details))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
@@ -245,12 +357,12 @@ function bratonien_tools_self_update_run()
   }
   $zip->close();
 
-  $source = $extract_dir.'/Piwigo_Bratonien_Tools-main';
-  $source_main = $source.'/main.inc.php';
-  if (!is_file($source_main))
+  $source = bratonien_tools_self_update_find_source($extract_dir, $signature);
+  $source_main = $source !== '' ? $source.'/main.inc.php' : '';
+  if ($source === '' || !is_file($source_main))
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Das geladene Archiv enthält kein gültiges Bratonien-Tools-Plugin. Erwartet wurde: '.$source_main);
+    throw new RuntimeException('Das geladene Archiv enthält kein gültiges Bratonien-Tools-Plugin für die erwartete Signatur '.substr($signature, 0, 12).'.');
   }
 
   $remote_main = @file_get_contents($source_main);
@@ -259,11 +371,18 @@ function bratonien_tools_self_update_run()
     bratonien_tools_self_update_rrmdir($run_dir);
     throw new RuntimeException('Die geladene Plugin-Version konnte nicht verifiziert werden. main.inc.php fehlt oder enthält keine lesbare Plugin-/Versionsangabe.');
   }
+
   $package_version = trim($vm[1]);
+  $package_main_sha256 = hash('sha256', (string)$remote_main);
+  if (!hash_equals($expected_main_sha256, $package_main_sha256))
+  {
+    bratonien_tools_self_update_rrmdir($run_dir);
+    throw new RuntimeException('Signaturprüfung fehlgeschlagen: Das geladene Paket gehört nicht exakt zum zuvor geprüften GitHub-Stand '.substr($signature, 0, 12).'.');
+  }
   if ($package_version !== $info['remote'])
   {
     bratonien_tools_self_update_rrmdir($run_dir);
-    throw new RuntimeException('Versionsprüfung fehlgeschlagen: Erwartet '.$info['remote'].', erhalten '.$package_version.'.');
+    throw new RuntimeException('Versionsprüfung fehlgeschlagen: Erwartet '.$info['remote'].', erhalten '.$package_version.'; Signatur '.substr($signature, 0, 12).'.');
   }
 
   $plugin_dir = rtrim(BRATONIEN_TOOLS_PATH, '/');
@@ -320,11 +439,13 @@ function bratonien_tools_self_update_run()
     'checked_at' => time(),
     'current' => $package_version,
     'remote' => $package_version,
+    'signature' => $signature,
+    'main_sha256' => $package_main_sha256,
     'update_available' => false,
     'error' => null,
   );
   return array(
-    'message' => 'Bratonien Tools wurde auf Version '.$package_version.' aktualisiert. Backup: '.$backup_dir,
+    'message' => 'Bratonien Tools wurde auf Version '.$package_version.' aktualisiert. Signatur '.substr($signature, 0, 12).'. Backup: '.$backup_dir,
     'self_update' => $updated_info,
   );
 }
