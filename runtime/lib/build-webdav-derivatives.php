@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.5.22';
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.6.0';
 
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
@@ -48,8 +48,6 @@ if (!function_exists('bratonien_tools_webdav_image_source_info') || !function_ex
 
 try
 {
-  echo 'WebDAV-Derivative-Builder: '.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION."\n";
-
   $variants = bratonien_tools_webdav_derivative_variants();
   if (!$variants)
   {
@@ -57,10 +55,11 @@ try
   }
 
   $images = 0;
-  $generated = 0;
+  $generated_or_ready = 0;
   $identity = 0;
   $metadata_repaired = 0;
   $errors = 0;
+  $error_lines = array();
 
   $result = pwg_query('SELECT * FROM '.IMAGES_TABLE.' ORDER BY id');
   while ($row = pwg_db_fetch_assoc($result))
@@ -74,7 +73,15 @@ try
     if (!$preview)
     {
       $errors++;
-      fwrite(STDERR, 'Bild #'.$image_id.": vorbereitetes WebDAV-Preview fehlt.\n");
+      $error_lines[] = 'Bild #'.$image_id.': vorbereitetes WebDAV-Preview fehlt.';
+      continue;
+    }
+
+    $preview_ext = strtolower(pathinfo($preview, PATHINFO_EXTENSION));
+    if (!in_array($preview_ext, array('jpg', 'jpeg', 'png', 'gif'), true))
+    {
+      $errors++;
+      $error_lines[] = 'Bild #'.$image_id.': Preview-Format '.$preview_ext.' ist nicht Piwigo-kompatibel; Precache muss neu erzeugt werden.';
       continue;
     }
 
@@ -82,7 +89,7 @@ try
     if (!is_array($size) || empty($size[0]) || empty($size[1]))
     {
       $errors++;
-      fwrite(STDERR, 'Bild #'.$image_id.": Abmessungen des WebDAV-Previews konnten nicht gelesen werden.\n");
+      $error_lines[] = 'Bild #'.$image_id.': Preview ist kein lesbares Bild: '.$preview;
       continue;
     }
 
@@ -113,20 +120,21 @@ try
           continue;
         }
 
-        if (bratonien_tools_webdav_generate_derivative($params, $src))
+        $detail = '';
+        if (bratonien_tools_webdav_generate_derivative($params, $src, $detail))
         {
-          $generated++;
+          $generated_or_ready++;
         }
         else
         {
           $errors++;
-          fwrite(STDERR, 'Bild #'.$image_id.' '.$variant_name.": Derivat konnte nicht erzeugt werden.\n");
+          $error_lines[] = 'Bild #'.$image_id.' '.$variant_name.': '.($detail !== '' ? $detail : 'Derivat konnte nicht erzeugt werden.');
         }
       }
       catch (Throwable $e)
       {
         $errors++;
-        fwrite(STDERR, 'Bild #'.$image_id.' '.$variant_name.': '.$e->getMessage()."\n");
+        $error_lines[] = 'Bild #'.$image_id.' '.$variant_name.': '.get_class($e).': '.$e->getMessage();
       }
     }
   }
@@ -137,16 +145,30 @@ try
     invalidate_user_cache(true);
   }
 
-  echo 'WebDAV-Derivate: bilder='.$images.
+  if ($errors > 0)
+  {
+    foreach (array_slice($error_lines, 0, 30) as $line)
+    {
+      fwrite(STDERR, $line."\n");
+    }
+    if (count($error_lines) > 30)
+    {
+      fwrite(STDERR, 'Weitere Fehler: '.(count($error_lines) - 30)."\n");
+    }
+  }
+
+  echo 'WebDAV-Derivative-Builder: version='.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION.
+    ' bilder='.$images.
     ' varianten='.count($variants).
-    ' erzeugt='.$generated.
+    ' bereit='.$generated_or_ready.
     ' identisch='.$identity.
     ' metadaten_repariert='.$metadata_repaired.
     ' fehler='.$errors."\n";
+
   exit($errors > 0 ? 1 : 0);
 }
 catch (Throwable $e)
 {
-  fwrite(STDERR, 'WebDAV-Derivate: '.$e->getMessage()."\n");
+  fwrite(STDERR, 'WebDAV-Derivate: '.get_class($e).': '.$e->getMessage()."\n");
   exit(1);
 }
