@@ -143,9 +143,11 @@ try
         'GALLERY_ROOT='.webdav_shell_value($galleryRoot),
         'STATE_DIR='.webdav_shell_value($stateDir),
         'STATUS_FILE='.webdav_shell_value($statusFile),
-        // In dieser Stufe wird nur der parallele Shadow Tree gebaut.
-        // Piwigo-Registrierung wird erst nach Sichtpruefung bewusst freigeschaltet.
-        'PIWIGO_SYNC_ENABLED=0',
+        // Der WebDAV-Zweig registriert seinen fertigen Shadow Tree selbst.
+        // Damit ist er nicht von der Aktivitaets-Gate einer bestehenden
+        // lokalen Verbindung abhaengig. Bestehende Verbindungen bleiben
+        // unveraendert und koennen parallel weiterlaufen.
+        'PIWIGO_SYNC_ENABLED=1',
       );
       file_put_contents($configPath, implode("\n", $lines)."\n", LOCK_EX);
       @chmod($configPath, 0600);
@@ -156,7 +158,7 @@ try
       $config['runtime'] = array(
         'mode'=>'parallel-webdav',
         'config'=>$configPath,
-        'piwigo_sync_enabled'=>false,
+        'piwigo_sync_enabled'=>true,
         'reconciled_at'=>date('Y-m-d H:i:s'),
       );
       $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
