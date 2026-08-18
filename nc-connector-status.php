@@ -29,6 +29,9 @@ $latest = array(
   'state'=>'idle',
   'message'=>'Noch kein Connector-Status verfügbar.',
   'timestamp'=>0,
+  'last_run_label'=>'Nicht verfügbar',
+  'next_run_timestamp'=>0,
+  'next_run_label'=>'Nicht verfügbar',
   'auth_mode'=>'',
   'api'=>array('state'=>'not_run','message'=>''),
   'fallback'=>array('state'=>'not_run','message'=>''),
@@ -53,6 +56,23 @@ if (is_dir($dir))
       $latest = array_merge($latest, $decoded);
       $latest['connection_file'] = basename($file);
     }
+  }
+}
+
+if ((int)$latest['timestamp'] > 0)
+{
+  $latest['last_run_label'] = date('d.m.Y H:i:s', (int)$latest['timestamp']);
+}
+
+$system_file = BRATONIEN_TOOLS_PATH.'include/nc_connector_system.inc.php';
+if (is_readable($system_file))
+{
+  include_once($system_file);
+  if (function_exists('bratonien_tools_nc_connector_system_status'))
+  {
+    $system = bratonien_tools_nc_connector_system_status(array());
+    $latest['next_run_timestamp'] = (int)($system['next_run_timestamp'] ?? 0);
+    $latest['next_run_label'] = (string)($system['next_run_label'] ?? 'Nicht verfügbar');
   }
 }
 
