@@ -97,25 +97,35 @@ function bratonien_tools_webdav_image_source_info($image_id)
   );
 }
 
-function bratonien_tools_webdav_image_url($image_id)
+function bratonien_tools_webdav_image_url($image_id, $preview=false)
 {
   $info = bratonien_tools_webdav_image_source_info($image_id);
   if (!$info) return null;
   $url = get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-image.php?id='.(int)$image_id;
+  if ($preview) $url .= '&preview=1';
   if ($info['etag'] !== '') $url .= '&v='.rawurlencode(substr(sha1($info['etag']), 0, 12));
   return $url;
+}
+
+function bratonien_tools_webdav_preview_path(array $info)
+{
+  $connection_id = (int)($info['connection_id'] ?? 0);
+  $webdav_path = trim((string)($info['webdav_path'] ?? ''), '/');
+  if ($connection_id < 1 || $webdav_path === '') return null;
+  $path = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-preview/connection-'.$connection_id.'/'.sha1($webdav_path).'.webp';
+  return is_file($path) && is_readable($path) ? $path : null;
 }
 
 function bratonien_tools_filter_webdav_src_url($url, $src_image)
 {
   if (!is_object($src_image) || empty($src_image->id)) return $url;
-  $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id);
+  $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id, false);
   return $webdav_url ?: $url;
 }
 
 function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image, $rel_url)
 {
   if (!is_object($src_image) || empty($src_image->id)) return $url;
-  $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id);
+  $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
   return $webdav_url ?: $url;
 }
