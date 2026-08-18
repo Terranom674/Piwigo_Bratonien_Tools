@@ -67,7 +67,7 @@ function bratonien_tools_get_tools()
     'nc_connector_wizard_back' => array('handler' => 'bratonien_tools_nc_wizard_back'),
     'nc_connector_wizard_reset' => array('handler' => 'bratonien_tools_nc_wizard_reset'),
     'nc_connector_import_legacy' => array('handler' => 'bratonien_tools_nc_connector_import_legacy'),
-    'nc_connector_verify' => array('handler' => 'bratonien_tools_nc_connector_verify_managed'),
+    'nc_connector_verify' => array('handler' => 'bratonien_tools_nc_connector_verify_connection_scoped'),
     'nc_connector_prepare_takeover' => array('handler' => 'bratonien_tools_nc_connector_prepare_takeover'),
     'nc_connector_cancel_takeover' => array('handler' => 'bratonien_tools_nc_connector_cancel_takeover'),
     'nc_connector_piwigo_api_test' => array('handler' => 'bratonien_tools_nc_connector_piwigo_api_test'),
