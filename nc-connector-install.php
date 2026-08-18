@@ -58,7 +58,6 @@ function decrypt_install_credentials($blob, $hexKey)
   $decoded = json_decode($plain, true);
   if (!is_array($decoded))
   {
-    // Backward compatibility: old connections stored only the DB password.
     return array('db_password'=>$plain,'piwigo_user'=>'','piwigo_password'=>'');
   }
   if (empty($decoded['db_password'])) fail_install('Datenbankpasswort fehlt in den Connector-Zugangsdaten.');
@@ -124,10 +123,13 @@ try
     @unlink($piwigoPasswordPath);
   }
 
-  $storageLines = array('# storage_id<TAB>source_prefix<TAB>local_mount');
+  $storageLines = array('# storage_id<TAB>source_prefix<TAB>local_mount<TAB>include_prefix');
   foreach ((array)($config['storages'] ?? array()) as $storage)
   {
-    $storageLines[] = (string)($storage['storage_id'] ?? '')."\t".trim((string)($storage['source_prefix'] ?? ''), '/')."\t".(string)($storage['local_mount'] ?? '');
+    $storageLines[] = (string)($storage['storage_id'] ?? '')."\t"
+      .trim((string)($storage['source_prefix'] ?? ''), '/')."\t"
+      .(string)($storage['local_mount'] ?? '')."\t"
+      .trim((string)($storage['include_prefix'] ?? ''), '/');
   }
   if (count($storageLines) === 1) fail_install('Keine Storage-Zuordnungen gespeichert.');
   file_put_contents($storagePath, implode("\n", $storageLines)."\n", LOCK_EX); chmod($storagePath, 0600);
