@@ -87,6 +87,35 @@ function sql_reconcile(mysqli $db, $value)
   return $db->real_escape_string((string)$value);
 }
 
+function nextcloud_view_available(array $config, $password, $view)
+{
+  if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string)$view)) return false;
+  $spec = array(0=>array('file','/dev/null','r'),1=>array('pipe','w'),2=>array('pipe','w'));
+  $command = array(
+    'psql','-XAt','-v','ON_ERROR_STOP=1',
+    '-h',(string)$config['host'],'-p',(string)$config['port'],'-U',(string)$config['user'],'-d',(string)$config['database'],
+    '-c','SELECT 1 FROM '.$view.' LIMIT 1'
+  );
+  $env = $_ENV;
+  $env['PGPASSWORD'] = (string)$password;
+  $process = @proc_open($command, $spec, $pipes, null, $env);
+  if (!is_resource($process)) return false;
+  stream_get_contents($pipes[1]);
+  stream_get_contents($pipes[2]);
+  fclose($pipes[1]); fclose($pipes[2]);
+  return proc_close($process) === 0;
+}
+
+function configured_access_user(array $config)
+{
+  foreach (array('access_user','nextcloud_access_user','showcase_user') as $key)
+  {
+    $value = trim((string)($config[$key] ?? ''));
+    if ($value !== '') return $value;
+  }
+  return '';
+}
+
 $pluginRoot = dirname(__DIR__);
 $piwigoRoot = dirname($pluginRoot, 2);
 $dbConfig = $piwigoRoot.'/local/config/database.inc.php';
@@ -130,14 +159,13 @@ try
     try
     {
       if ((string)$row['adapter'] !== 'local') continue;
-
       $isActive = (int)$row['enabled'] === 1 && (string)$row['takeover_state'] === 'active';
+      $accessUser = configured_access_user($config);
       $wizardConnection = (string)($config['origin'] ?? '') === 'native'
         && trim((string)($config['nextcloud_url'] ?? '')) !== ''
-        && trim((string)($config['showcase_user'] ?? '')) !== '';
+        && $accessUser !== '';
       $verification = isset($config['verification']) && is_array($config['verification']) ? $config['verification'] : null;
       $verificationFailed = is_array($verification) && empty($verification['ok']);
-
       if (!$isActive && (!$wizardConnection || $verificationFailed)) continue;
 
       foreach (array('host','port','database','user','source_view','activity_view','gallery_root') as $key)
@@ -150,10 +178,44 @@ try
       $credentials = decrypt_reconcile((string)$row['secret_blob'], $hexKey);
       if ($credentials['db_password'] === '') fail_reconcile('Datenbankpasswort fehlt.');
 
+      $sourceMode = trim((string)($config['source_mode'] ?? ''));
+      if ($sourceMode === 'user-filesystem')
+      {
+        @unlink($configDir.'/connection-'.$id.'.conf');
+        fail_reconcile('Diese Verbindung verwendet den verworfenen experimentellen Benutzerpfad-Modus. Bitte die Verbindung mit dem aktuellen Assistenten neu anlegen.');
+      }
+
+      if ($sourceMode === '' || $sourceMode === 'legacy-view')
+      {
+        $canMigrate = $accessUser !== ''
+          && nextcloud_view_available($config, $credentials['db_password'], 'piwigo_connector_shares')
+          && nextcloud_view_available($config, $credentials['db_password'], 'piwigo_connector_activity');
+        if ($canMigrate)
+        {
+          $sourceMode = 'user-shares';
+          $config['source_mode'] = $sourceMode;
+          $config['source_view'] = 'piwigo_connector_shares';
+          $config['activity_view'] = 'piwigo_connector_activity';
+          $config['access_user'] = $accessUser;
+          $config['nextcloud_access_user'] = $accessUser;
+          unset($config['showcase_user']);
+          echo "NC Connector: Verbindung #{$id} auf generische benutzergefilterte Quellen migriert.\n";
+        }
+        else
+        {
+          $sourceMode = 'legacy-view';
+          $config['source_mode'] = $sourceMode;
+        }
+      }
+
+      if (!in_array($sourceMode, array('legacy-view','user-shares','selected-fileids'), true)) fail_reconcile('Unbekannter Quellenmodus: '.$sourceMode);
+      if ($sourceMode !== 'legacy-view' && $accessUser === '') fail_reconcile('Für die verbindungsbezogene Quelle fehlt der Nextcloud-Benutzer.');
+
+      $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
+      if ($sourceMode === 'selected-fileids' && !$roots) fail_reconcile('Für die Verbindung sind keine ausgewählten Nextcloud-Datei-IDs gespeichert.');
+
       if (!$isActive && !array_key_exists('api_enabled', $config))
       {
-        // Alte Wizard-Verbindungen ohne API, aber mit gespeichertem Fallback,
-        // duerfen niemals den globalen API-Key einer anderen Verbindung erben.
         $hasFallback = $credentials['piwigo_user'] !== '' && $credentials['piwigo_password'] !== '';
         if (!$hasFallback) fail_reconcile('Die Verbindung besitzt weder einen eigenen API-Zugang noch einen eigenen Fallback.');
         $credentials['api_key_id'] = '';
@@ -178,6 +240,7 @@ try
       $dbPasswordPath = $base.'.db-password';
       $piwigoPasswordPath = $base.'.piwigo-password';
       $storagePath = $base.'.storages.tsv';
+      $rootsPath = $base.'.roots.tsv';
       $configPath = $base.'.conf';
       $statusFile = $stateDir.'/connector-status.json';
 
@@ -190,10 +253,7 @@ try
         file_put_contents($piwigoPasswordPath, $credentials['piwigo_password']."\n", LOCK_EX);
         chmod($piwigoPasswordPath, 0600);
       }
-      else
-      {
-        @unlink($piwigoPasswordPath);
-      }
+      else @unlink($piwigoPasswordPath);
 
       $storageLines = array('# storage_id<TAB>source_prefix<TAB>local_mount<TAB>include_prefix');
       foreach ($storages as $storage)
@@ -205,6 +265,21 @@ try
       }
       file_put_contents($storagePath, implode("\n", $storageLines)."\n", LOCK_EX);
       chmod($storagePath, 0600);
+
+      if ($sourceMode === 'selected-fileids')
+      {
+        $rootLines = array('# fileid<TAB>display_name');
+        foreach ($roots as $root)
+        {
+          $fileid = (int)($root['fileid'] ?? 0);
+          $display = trim((string)($root['display_name'] ?? ''));
+          if ($fileid < 1 || $display === '' || preg_match('/[\t\r\n]/', $display)) fail_reconcile('Eine gespeicherte Nextcloud-Quelle ist ungueltig.');
+          $rootLines[] = $fileid."\t".$display;
+        }
+        file_put_contents($rootsPath, implode("\n", $rootLines)."\n", LOCK_EX);
+        chmod($rootsPath, 0600);
+      }
+      else @unlink($rootsPath);
 
       $lines = array(
         'PIWIGO_ROOT='.$piwigoRoot,
@@ -219,11 +294,14 @@ try
         'NC_ACTIVITY_VIEW='.(string)$config['activity_view'],
         'NC_DB_PASSWORD_FILE='.$dbPasswordPath,
         'STORAGE_CONFIG='.$storagePath,
+        'SOURCE_MODE='.$sourceMode,
         'QUIET_SECONDS='.(int)($config['quiet_seconds'] ?? 120),
         'MAX_WAIT_SECONDS='.(int)($config['max_wait_seconds'] ?? 900),
         'FULL_SYNC_SECONDS='.(int)($config['full_sync_seconds'] ?? 86400),
         'PIWIGO_SYNC_ENABLED=1',
       );
+      if ($sourceMode !== 'legacy-view') $lines[] = 'ACCESS_USER='.escapeshellarg($accessUser);
+      if ($sourceMode === 'selected-fileids') $lines[] = 'ROOTS_CONFIG='.$rootsPath;
       if ($fallbackAvailable)
       {
         $lines[] = 'PIWIGO_SYNC_USER='.$credentials['piwigo_user'];
@@ -240,7 +318,6 @@ try
       $now = date('Y-m-d H:i:s');
       $sql = "UPDATE `{$table}` SET enabled=1,takeover_state='active',config_json='".sql_reconcile($db,$json)."',secret_blob='".sql_reconcile($db,$row['secret_blob'])."',updated='".sql_reconcile($db,$now)."' WHERE id=".$id;
       if (!$db->query($sql)) fail_reconcile('Runtime-Status konnte nicht gespeichert werden: '.$db->error);
-
       if (!$isActive) echo "NC Connector: Verbindung #{$id} ({$row['name']}) automatisch in die gemeinsame Runtime uebernommen.\n";
     }
     catch (Throwable $e)
