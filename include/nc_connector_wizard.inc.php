@@ -152,14 +152,29 @@ function bratonien_tools_nc_wizard_http($url, $username = '', $password = '', ar
 function bratonien_tools_nc_wizard_ocs_data($body)
 {
   $decoded = json_decode((string)$body, true);
-  if (!is_array($decoded))
+  if (!is_array($decoded) || !isset($decoded['ocs']) || !is_array($decoded['ocs']))
   {
-    throw new RuntimeException('Nextcloud hat keine gültige JSON-Antwort geliefert.');
+    throw new RuntimeException('Nextcloud hat keine gültige OCS-Antwort geliefert.');
   }
 
-  if (isset($decoded['ocs']['meta']['statuscode']) && (int)$decoded['ocs']['meta']['statuscode'] !== 100)
+  $meta = isset($decoded['ocs']['meta']) && is_array($decoded['ocs']['meta'])
+    ? $decoded['ocs']['meta']
+    : array();
+  $status = strtolower(trim((string)($meta['status'] ?? '')));
+  $status_code = isset($meta['statuscode']) ? (int)$meta['statuscode'] : 0;
+
+  // OCS API v1 commonly reports 100 for success, OCS API v2 commonly 200.
+  // Some Nextcloud versions additionally expose meta.status="ok". Treat all
+  // documented success forms as success instead of turning message "OK" into
+  // an error.
+  $success = $status === 'ok' || in_array($status_code, array(100, 200), true);
+  if (!$success)
   {
-    $message = (string)($decoded['ocs']['meta']['message'] ?? 'Nextcloud hat die Anfrage abgelehnt.');
+    $message = trim((string)($meta['message'] ?? ''));
+    if ($message === '' || strtolower($message) === 'ok')
+    {
+      $message = 'Nextcloud hat die Anfrage abgelehnt.';
+    }
     throw new RuntimeException($message);
   }
 
