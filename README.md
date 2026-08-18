@@ -2,7 +2,7 @@
 
 Modulares Piwigo-Plugin für Administration, Bildverarbeitung, geschützte Freigaben, Fotoauswahl und die Anbindung von Nextcloud an Piwigo.
 
-Aktuelle Plugin-Version: **0.9.4.2**
+Aktuelle Plugin-Version: **0.9.4.4**
 
 ## Grundprinzip
 
@@ -32,9 +32,9 @@ Ablauf:
 
 1. Nextcloud-Adresse, Benutzer und Passwort eingeben.
 2. Der Assistent prüft HTTP/HTTPS, Nextcloud-Status und Anmeldung.
-3. Vorhandene passende Connector-Daten werden automatisch wiederverwendet, wenn sie sicher zugeordnet werden können.
-4. Für den Nextcloud-Datenzugriff wird zunächst nur der eingerichtete Lese-Benutzer mit Passwort abgefragt. Der übliche PostgreSQL-Weg wird automatisch geprüft.
-5. Nur wenn diese Prüfung scheitert, werden abweichende Datenbank-Adresse, Port und Datenbankname gezielt abgefragt.
+3. Derselbe in Schritt 1 angegebene Connector-Benutzer und dasselbe Passwort werden auch für den lesenden PostgreSQL-Zugriff verwendet; es gibt im normalen Ablauf keine zweite Benutzer-/Passwortabfrage.
+4. Vorhandene passende Connector-Werte für Host, Port, Datenbank und Storage-Zuordnungen werden wiederverwendet, aber erneut mit dem aktuellen Zugang geprüft.
+5. Nur wenn der übliche PostgreSQL-Weg nicht erreichbar ist, werden abweichende Datenbank-Adresse, Port und Datenbankname gezielt abgefragt. Benutzer und Passwort bleiben dabei die Angaben aus Schritt 1.
 6. Nicht automatisch zuordenbare Storage-Mounts werden einzeln bestätigt.
 7. Danach wird der Nextcloud-Benutzer gewählt, dessen Freigaben verwendet werden sollen. Empfohlen wird ein eigener `showcase`-Benutzer.
 8. Piwigo-API-Zugang testen oder bewusst überspringen.
