@@ -1,6 +1,9 @@
 (function(){
   'use strict';
 
+  var submit=document.querySelector('button[name="bratonien_tool"][value="nc_connector_wizard_save_mounts"]');
+  if(!submit)return;
+
   var script=document.currentScript;
   if(!script)return;
   var endpoint=new URL('nc-wizard-directories.php',script.src).toString();
@@ -39,18 +42,21 @@
   function enhance(data){
     if(!data||data.state!=='ok'||!data.ready||!Array.isArray(data.storages)||!data.storages.length)return;
 
-    var submit=document.querySelector('button[name="bratonien_tool"][value="nc_connector_wizard_save_mounts"]');
-    if(!submit)return;
     var form=submit.closest('form');
     if(!form||form.dataset.directoryEnhanced==='1')return;
     form.dataset.directoryEnhanced='1';
 
-    var heading=form.previousElementSibling;
-    var note=heading&&heading.previousElementSibling;
-    if(heading&&heading.tagName==='P'){
-      note=heading;
-      heading=note.previousElementSibling;
+    var dialog=document.getElementById('bratonien-nc-wizard-dialog');
+    if(dialog){
+      dialog.querySelectorAll('p.bratonien-base-note').forEach(function(paragraph){
+        if(paragraph.textContent.indexOf('Der Assistent verwendet den Zugang aus dem ersten Schritt')!==-1){
+          paragraph.innerHTML='<strong>Nextcloud wurde gefunden.</strong> Die vorhandene Reader-Verbindung wurde automatisch erkannt und erfolgreich für den Datenzugriff verwendet.';
+        }
+      });
     }
+
+    var note=form.previousElementSibling;
+    var heading=note&&note.previousElementSibling;
     if(heading&&/^H[1-6]$/.test(heading.tagName))heading.textContent='Verzeichnisse auswählen';
     if(note&&note.tagName==='P')note.textContent='Wähle die Verzeichnisse aus, die berücksichtigt werden sollen. Du kannst mehrere hinzufügen oder wieder entfernen. Bleibt die Liste leer, wird automatisch das Stammverzeichnis verwendet.';
 
