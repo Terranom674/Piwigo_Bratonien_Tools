@@ -42,6 +42,42 @@
     var initial='',hash=location.hash?location.hash.slice(1):'';panels.forEach(function(item){if(item.definition.id===hash||(item.definition.sections||[]).indexOf(hash)!==-1)initial=item.definition.id;});if(!initial){try{initial=localStorage.getItem('bratonien-tools-active-tab')||'';}catch(e){}}if(!panels.some(function(i){return i.definition.id===initial;}))initial=panels[0].definition.id;activate(initial,false);
   }
 
+  function initNCWizardLifecycle(){
+    var section=document.getElementById('nc-connector');if(!section)return;
+    var dialog=document.getElementById('bratonien-nc-wizard-dialog');
+    var openButton=document.getElementById('bratonien-nc-wizard-open');
+    var closeButton=document.getElementById('bratonien-nc-wizard-close');
+    var storageKey='bratonienNcWizardOpen';
+    var resetBusy=false;
+
+    function token(){var input=section.querySelector('input[name="pwg_token"]');return input?input.value:'';}
+    function setOpen(value){try{if(value)sessionStorage.setItem(storageKey,'1');else sessionStorage.removeItem(storageKey);}catch(e){}}
+    function resetServer(){
+      var pwgToken=token();
+      if(!pwgToken)return Promise.reject(new Error('CSRF token missing'));
+      var body=new URLSearchParams();body.set('pwg_token',pwgToken);body.set('bratonien_tool','nc_connector_wizard_reset');
+      return fetch(window.location.href,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});
+    }
+    function closeAfterReset(){
+      if(resetBusy)return;resetBusy=true;setOpen(false);
+      resetServer().catch(function(){}).finally(function(){resetBusy=false;if(dialog){if(typeof dialog.close==='function'&&dialog.open)dialog.close();else dialog.removeAttribute('open');}});
+    }
+
+    if(openButton){
+      openButton.addEventListener('click',function(event){
+        if(resetBusy)return;event.preventDefault();event.stopImmediatePropagation();resetBusy=true;setOpen(true);
+        resetServer().then(function(){window.location.reload();}).catch(function(){setOpen(false);resetBusy=false;});
+      },true);
+    }
+    if(closeButton){
+      closeButton.addEventListener('click',function(event){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();},true);
+    }
+    if(dialog){
+      dialog.addEventListener('cancel',function(event){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();},true);
+      dialog.addEventListener('click',function(event){if(event.target===dialog){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();}},true);
+    }
+  }
+
   function initNCConnectorPolling(){
     var section=document.getElementById('nc-connector');if(!section)return;
     var endpoint='plugins/bratonien_tools/nc-connector-status.php';
@@ -73,7 +109,7 @@
     poll();window.setInterval(poll,5000);
   }
 
-  function initAll(){initBratonienTabs();initNCConnectorPolling();}
+  function initAll(){initBratonienTabs();initNCWizardLifecycle();initNCConnectorPolling();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initAll);else initAll();
 })();
 </script>
