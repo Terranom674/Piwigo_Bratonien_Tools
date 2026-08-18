@@ -11,20 +11,31 @@ function bratonien_tools_nc_wizard_apply_known_database_profile(array &$state)
     return false;
   }
 
+  $base_host = strtolower(trim((string)parse_url((string)$state['base_url'], PHP_URL_HOST)));
+
   foreach (bratonien_tools_nc_connector_connections() as $candidate)
   {
     $config = isset($candidate['config']) && is_array($candidate['config']) ? $candidate['config'] : array();
     $candidate_url = trim((string)($config['nextcloud_url'] ?? ''));
-    if ($candidate_url === '') continue;
+    $match = false;
 
-    try
+    if ($candidate_url !== '')
     {
-      if (bratonien_tools_nc_wizard_normalize_url($candidate_url) !== (string)$state['base_url']) continue;
+      try
+      {
+        $match = bratonien_tools_nc_wizard_normalize_url($candidate_url) === (string)$state['base_url'];
+      }
+      catch (Throwable $ignored)
+      {
+        $match = false;
+      }
     }
-    catch (Throwable $ignored)
+    elseif ($base_host !== '')
     {
-      continue;
+      $match = strtolower(trim((string)($config['host'] ?? ''))) === $base_host;
     }
+
+    if (!$match) continue;
 
     $connection = bratonien_tools_nc_connector_connection((int)$candidate['id'], true);
     if (!$connection || !is_array($connection['config'] ?? null)) continue;
@@ -70,17 +81,121 @@ function bratonien_tools_nc_wizard_apply_known_database_profile(array &$state)
 
 function bratonien_tools_nc_wizard_scan_with_known_database()
 {
-  $result = bratonien_tools_nc_wizard_scan();
   $state = bratonien_tools_nc_wizard_state();
+  $host_input = trim((string)($_POST['nc_wizard_host'] ?? $state['host_input']));
+  $username = trim((string)($_POST['nc_wizard_user'] ?? $state['username']));
+  $password = array_key_exists('nc_wizard_password', $_POST) ? (string)$_POST['nc_wizard_password'] : (string)$state['_password'];
 
-  if (empty($state['scan_ok'])) return $result;
+  $state['step'] = 1;
+  $state['host_input'] = $host_input;
+  $state['username'] = $username;
+  $state['_password'] = $password;
+  bratonien_tools_nc_wizard_store($state);
+
+  if ($username === '' || $password === '') throw new RuntimeException('Nextcloud-Benutzer und Passwort werden für den Scan benötigt.');
+
+  $base_url = '';
+  $status_data = null;
+  foreach (bratonien_tools_nc_wizard_candidate_urls($host_input) as $candidate_url)
+  {
+    try
+    {
+      $response = bratonien_tools_nc_wizard_http($candidate_url.'/status.php');
+      if ($response['status'] < 200 || $response['status'] >= 300) continue;
+
+      $candidate_status = json_decode($response['body'], true);
+      if (!is_array($candidate_status) || empty($candidate_status['installed'])) continue;
+
+      $base_url = $candidate_url;
+      $status_data = $candidate_status;
+      break;
+    }
+    catch (Throwable $ignored)
+    {
+    }
+  }
+
+  if ($base_url === '' || !is_array($status_data)) throw new RuntimeException('Unter dieser Adresse konnte keine Nextcloud erreicht werden. HTTP und HTTPS wurden automatisch geprüft.');
+
+  $user_response = bratonien_tools_nc_wizard_http(
+    $base_url.'/ocs/v2.php/cloud/user?format=json',
+    $username,
+    $password,
+    array('OCS-APIRequest: true')
+  );
+
+  if ($user_response['status'] === 401 || $user_response['status'] === 403) throw new RuntimeException('Nextcloud hat Benutzername oder Passwort abgelehnt.');
+  if ($user_response['status'] < 200 || $user_response['status'] >= 300) throw new RuntimeException('Nextcloud ist erreichbar, aber die Anmeldung konnte nicht geprüft werden.');
+
+  $user_data = bratonien_tools_nc_wizard_ocs_data($user_response['body']);
+
+  $users = array();
+  $can_list_users = false;
+  try
+  {
+    $users_response = bratonien_tools_nc_wizard_http(
+      $base_url.'/ocs/v2.php/cloud/users?format=json',
+      $username,
+      $password,
+      array('OCS-APIRequest: true')
+    );
+
+    if ($users_response['status'] >= 200 && $users_response['status'] < 300)
+    {
+      $users_data = bratonien_tools_nc_wizard_ocs_data($users_response['body']);
+      if (isset($users_data['users']) && is_array($users_data['users']))
+      {
+        $users = array_values(array_filter(array_map('strval', $users_data['users'])));
+        sort($users, SORT_NATURAL | SORT_FLAG_CASE);
+        $can_list_users = true;
+      }
+    }
+  }
+  catch (Throwable $ignored)
+  {
+  }
+
+  $resolved_username = trim((string)($user_data['id'] ?? $username));
+  if ($resolved_username === '') $resolved_username = $username;
+  $url_host = (string)parse_url($base_url, PHP_URL_HOST);
+
+  $state = array_merge($state, array(
+    'step'=>2,
+    'scan_ok'=>true,
+    'base_url'=>$base_url,
+    'host_input'=>$host_input,
+    'username'=>$resolved_username,
+    'display_name'=>(string)($user_data['display-name'] ?? $user_data['displayname'] ?? ''),
+    'version'=>(string)($status_data['versionstring'] ?? $status_data['version'] ?? ''),
+    'product'=>(string)($status_data['productname'] ?? 'Nextcloud'),
+    'users'=>$users,
+    'can_list_users'=>$can_list_users,
+    'showcase_user'=>'',
+    'connection_name'=>$url_host !== '' ? $url_host : 'Nextcloud',
+    'scan_message'=>'Nextcloud wurde erkannt und der Benutzerzugriff wurde bestätigt.',
+    '_password'=>$password,
+    'api_status'=>'pending',
+    'api_username'=>'',
+    'api_error'=>'',
+    'db_host'=>strtolower($url_host),
+    'db_port'=>'5432',
+    'db_database'=>'nextcloud',
+    'db_user'=>'',
+    'db_password_set'=>false,
+    '_db_password'=>'',
+    'source_view'=>'piwigo_showcase_sources',
+    'activity_view'=>'piwigo_showcase_activity',
+    'gallery_root'=>rtrim(PHPWG_ROOT_PATH, '/').'/galleries/nextcloud',
+    'storages'=>array(),
+    'storage_candidates'=>array(),
+    'technical_stage'=>'auto_check',
+    'technical_source'=>'Automatische Prüfung',
+    'technical_error'=>'',
+    'technical_complete'=>false,
+  ));
 
   if (!bratonien_tools_nc_wizard_apply_known_database_profile($state))
   {
-    $state['db_user'] = '';
-    $state['_db_password'] = '';
-    $state['db_password_set'] = false;
-    $state['technical_complete'] = false;
     $state['technical_stage'] = 'database_details';
     $state['technical_source'] = 'Keine bekannte Reader-Verbindung gefunden';
     $state['technical_error'] = 'Für diese Nextcloud ist noch keine bekannte Datenbank-Reader-Verbindung gespeichert. Die Nextcloud-Anmeldedaten werden nicht als PostgreSQL-Zugang verwendet.';
