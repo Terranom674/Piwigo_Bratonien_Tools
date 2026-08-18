@@ -43,9 +43,33 @@
   }
 
   function initNCConnectorPolling(){
-    var section=document.getElementById('nc-connector');if(!section)return;var lastSeen=null;var endpoint='plugins/bratonien_tools/nc-connector-status.php';
-    function wizardIsOpen(){var dialog=document.getElementById('bratonien-nc-wizard-dialog');if(dialog&&dialog.open)return true;try{return sessionStorage.getItem('bratonienNcWizardOpen')==='1';}catch(e){return false;}}
-    function poll(){fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'}).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();}).then(function(data){var timestamp=parseInt(data.timestamp||0,10);if(!timestamp)return;if(lastSeen===null){lastSeen=timestamp;return;}if(timestamp>lastSeen){lastSeen=timestamp;if(!wizardIsOpen())window.location.reload();}}).catch(function(){});}
+    var section=document.getElementById('nc-connector');if(!section)return;
+    var endpoint='plugins/bratonien_tools/nc-connector-status.php';
+
+    function valueNodeForLabel(labelText){
+      var labels=[].slice.call(section.querySelectorAll('.bratonien-label'));
+      for(var i=0;i<labels.length;i++){
+        if((labels[i].textContent||'').trim()===labelText){
+          var node=labels[i].nextElementSibling;
+          return node&&node.tagName==='STRONG'?node:null;
+        }
+      }
+      return null;
+    }
+
+    var lastRunNode=valueNodeForLabel('Letzter Lauf');
+    var nextRunNode=valueNodeForLabel('Nächster Lauf');
+
+    function poll(){
+      fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
+        .then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();})
+        .then(function(data){
+          if(lastRunNode&&data.last_run_label)lastRunNode.textContent=data.last_run_label;
+          if(nextRunNode&&data.next_run_label)nextRunNode.textContent=data.next_run_label;
+        })
+        .catch(function(){});
+    }
+
     poll();window.setInterval(poll,5000);
   }
 
