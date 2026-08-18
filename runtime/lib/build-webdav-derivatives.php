@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.5.23';
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.6.1';
 
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
