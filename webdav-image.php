@@ -58,7 +58,7 @@ if (!empty($_GET['preview']))
   {
     $mtime = @filemtime($preview) ?: time();
     $etag = sha1($preview.'|'.$mtime.'|'.(@filesize($preview) ?: 0));
-    header('Content-Type: image/webp');
+    header('Content-Type: '.bratonien_tools_webdav_preview_content_type($preview));
     header('Content-Length: '.(string)filesize($preview));
     header('ETag: "'.$etag.'"');
     header('Cache-Control: private, max-age=86400, must-revalidate');
@@ -69,7 +69,7 @@ if (!empty($_GET['preview']))
       http_response_code(304);
       exit;
     }
-    if ($_SERVER['REQUEST_METHOD'] !== 'HEAD') readfile($preview);
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'HEAD') readfile($preview);
     exit;
   }
 }
@@ -120,7 +120,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.5.19',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.6.0',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
@@ -152,7 +152,7 @@ if (!empty($_SERVER['HTTP_RANGE']))
   $range = trim((string)$_SERVER['HTTP_RANGE']);
   if (preg_match('/^bytes=(.+)$/i', $range, $m)) $options[CURLOPT_RANGE] = $m[1];
 }
-if ($_SERVER['REQUEST_METHOD'] === 'HEAD')
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD')
 {
   $options[CURLOPT_NOBODY] = true;
 }
