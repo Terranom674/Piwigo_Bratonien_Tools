@@ -52,6 +52,12 @@
 
     function token(){var input=section.querySelector('input[name="pwg_token"]');return input?input.value:'';}
     function setOpen(value){try{if(value)sessionStorage.setItem(storageKey,'1');else sessionStorage.removeItem(storageKey);}catch(e){}}
+    function showWizard(){
+      setOpen(true);
+      if(!dialog)return;
+      if(typeof dialog.showModal==='function'&&!dialog.open)dialog.showModal();
+      else dialog.setAttribute('open','open');
+    }
     function resetServer(){
       var pwgToken=token();
       if(!pwgToken)return Promise.reject(new Error('CSRF token missing'));
@@ -65,8 +71,7 @@
 
     if(openButton){
       openButton.addEventListener('click',function(event){
-        if(resetBusy)return;event.preventDefault();event.stopImmediatePropagation();resetBusy=true;setOpen(true);
-        resetServer().then(function(){window.location.reload();}).catch(function(){setOpen(false);resetBusy=false;});
+        event.preventDefault();event.stopImmediatePropagation();showWizard();
       },true);
     }
     if(closeButton){
@@ -75,12 +80,14 @@
     if(dialog){
       dialog.addEventListener('cancel',function(event){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();},true);
       dialog.addEventListener('click',function(event){if(event.target===dialog){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();}},true);
+      try{if(sessionStorage.getItem(storageKey)==='1')showWizard();}catch(e){}
     }
   }
 
   function initNCConnectorPolling(){
     var section=document.getElementById('nc-connector');if(!section)return;
     var endpoint='plugins/bratonien_tools/nc-connector-status.php';
+    var pollTimer=null;
 
     function valueNodeForLabel(labelText){
       var labels=[].slice.call(section.querySelectorAll('.bratonien-label'));
@@ -108,18 +115,25 @@
     var nextRunNode=valueNodeForLabel('Nächster Lauf');
     var lastResultNode=lastResultValueNode();
 
+    function render(data){
+      if(lastRunNode&&typeof data.last_run_label==='string'&&data.last_run_label!=='')lastRunNode.textContent=data.last_run_label;
+      if(nextRunNode&&typeof data.next_run_label==='string'&&data.next_run_label!=='')nextRunNode.textContent=data.next_run_label;
+      if(lastResultNode&&typeof data.message==='string'&&data.message!=='')lastResultNode.textContent=data.message;
+    }
+
     function poll(){
-      fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
+      fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}})
         .then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();})
-        .then(function(data){
-          if(lastRunNode&&data.last_run_label)lastRunNode.textContent=data.last_run_label;
-          if(nextRunNode&&data.next_run_label)nextRunNode.textContent=data.next_run_label;
-          if(lastResultNode&&typeof data.message==='string'&&data.message!=='')lastResultNode.textContent=data.message;
-        })
+        .then(render)
         .catch(function(){});
     }
 
-    poll();window.setInterval(poll,5000);
+    function schedule(){
+      if(pollTimer)window.clearInterval(pollTimer);
+      pollTimer=window.setInterval(poll,5000);
+    }
+
+    poll();schedule();
   }
 
   function initAll(){initBratonienTabs();initNCWizardLifecycle();initNCConnectorPolling();}
