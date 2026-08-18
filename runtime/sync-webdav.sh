@@ -160,9 +160,28 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         exit "$PIWIGO_EXIT"
     fi
 
+    DERIVATIVE_OUTPUT=""
+    DERIVATIVE_EXIT=0
+    if DERIVATIVE_OUTPUT="$(php "$SCRIPT_DIR/lib/build-webdav-derivatives.php" \
+        --piwigo-root="$PIWIGO_ROOT" \
+        --connection-id="$CONNECTION_ID" 2>&1)"; then
+        DERIVATIVE_EXIT=0
+    else
+        DERIVATIVE_EXIT=$?
+    fi
+    [[ -z "$DERIVATIVE_OUTPUT" ]] || printf '%s\n' "$DERIVATIVE_OUTPUT"
+    if [[ "$DERIVATIVE_EXIT" -ne 0 ]]; then
+        DETAIL="Exit-Code: $DERIVATIVE_EXIT"
+        if [[ -n "$DERIVATIVE_OUTPUT" ]]; then
+            DETAIL+="; Ausgabe: $(printf '%s\n' "$DERIVATIVE_OUTPUT" | compact_output)"
+        fi
+        write_status error "Piwigo-Derivate für WebDAV-Bilder konnten nicht erzeugt werden" "$DETAIL"
+        exit "$DERIVATIVE_EXIT"
+    fi
+
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo synchronisiert" \
+            "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt" \
             "" \
             "api" \
             "ok" \
@@ -171,7 +190,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "Fallback wurde nicht benötigt"
     elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo über Fallback synchronisiert" \
+            "WebDAV eingelesen, Piwigo über Fallback synchronisiert und Derivate erzeugt" \
             "" \
             "fallback" \
             "not_used" \
@@ -179,7 +198,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "ok" \
             "Benutzername/Passwort-Fallback erfolgreich"
     else
-        write_status ok "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo synchronisiert"
+        write_status ok "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt"
     fi
 else
     write_status ok "WebDAV eingelesen und Vorschaubilder erzeugt; Registrierung erfolgt über den bestehenden produktiven Piwigo-Sync"
