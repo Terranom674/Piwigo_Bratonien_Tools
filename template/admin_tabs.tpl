@@ -95,6 +95,7 @@
 
     var lastRunNode=valueNodeForLabel('Letzter Lauf');
     var nextRunNode=valueNodeForLabel('Nächster Lauf');
+    var lastResultNode=valueNodeForLabel('Letztes Ergebnis');
 
     function poll(){
       fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
@@ -102,6 +103,7 @@
         .then(function(data){
           if(lastRunNode&&data.last_run_label)lastRunNode.textContent=data.last_run_label;
           if(nextRunNode&&data.next_run_label)nextRunNode.textContent=data.next_run_label;
+          if(lastResultNode&&typeof data.message==='string'&&data.message!=='')lastResultNode.textContent=data.message;
         })
         .catch(function(){});
     }
