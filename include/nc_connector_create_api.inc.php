@@ -68,6 +68,21 @@ function bratonien_tools_nc_connector_create_local_api_first()
     'piwigo_auth' => 'api-first',
   );
 
+  foreach (array(
+    'nextcloud_url' => 'nc_nextcloud_url',
+    'showcase_user' => 'nc_showcase_user',
+    'nextcloud_access_user' => 'nc_access_user',
+    'nextcloud_product' => 'nc_product',
+    'nextcloud_version' => 'nc_version',
+  ) as $config_key => $post_key)
+  {
+    $value = trim((string)($_POST[$post_key] ?? ''));
+    if ($value !== '')
+    {
+      $config[$config_key] = $value;
+    }
+  }
+
   bratonien_tools_nc_connector_view_name($config['source_view']);
   bratonien_tools_nc_connector_view_name($config['activity_view']);
 
