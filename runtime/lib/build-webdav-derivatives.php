@@ -6,6 +6,8 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.5.22';
+
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
 $connection_id = (int)($options['connection-id'] ?? 0);
@@ -31,7 +33,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/build-webdav-derivatives.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Derivative-Builder/0.9.5.21';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Derivative-Builder/'.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION;
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -46,6 +48,8 @@ if (!function_exists('bratonien_tools_webdav_image_source_info') || !function_ex
 
 try
 {
+  echo 'WebDAV-Derivative-Builder: '.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION."\n";
+
   $variants = bratonien_tools_webdav_derivative_variants();
   if (!$variants)
   {
