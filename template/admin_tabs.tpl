@@ -11,9 +11,7 @@
 .bratonien-card { margin-left:0; margin-right:0; }
 @media (max-width:760px) { .bratonien-tabs{gap:5px}.bratonien-tab{border-bottom:1px solid rgba(255,255,255,.16);border-radius:4px;margin-bottom:0;padding:9px 11px} }
 </style>
-
 <div id="bratonien-tabs-anchor"></div>
-
 <script>
 (function () {
   'use strict';
@@ -27,174 +25,32 @@
       { id:'wartung', label:'Wartung / Cache' },
       { id:'system', label:'System & Updates' }
     ];
-    var panels = [];
-    definitions.forEach(function (d) {
-      var ids=d.sections||[d.id], elements=[];
+    var panels=[];
+    definitions.forEach(function(d){
+      var ids=d.sections||[d.id],elements=[];
       ids.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.add('bratonien-tab-panel');elements.push(el);}});
-      if (!elements.length) return;
-      panels.push({definition:d,elements:elements});
+      if(elements.length)panels.push({definition:d,elements:elements});
     });
-    if (!panels.length) return;
-
-    var anchor = document.getElementById('bratonien-tabs-anchor');
-    if (!anchor) return;
-    var tabs = document.createElement('div');
-    tabs.className = 'bratonien-tabs';
-    tabs.setAttribute('role','tablist');
-    tabs.setAttribute('aria-label','Bratonien Tools Bereiche');
-
-    panels.forEach(function (item) {
-      var b = document.createElement('button');
-      b.type='button';
-      b.className='bratonien-tab';
-      b.id='bratonien-tab-'+item.definition.id;
-      b.dataset.tab=item.definition.id;
-      b.setAttribute('role','tab');
-      b.textContent=item.definition.label;
-      tabs.appendChild(b);
-      item.elements.forEach(function(el){el.setAttribute('role','tabpanel');el.setAttribute('aria-labelledby',b.id);});
-    });
+    if(!panels.length)return;
+    var anchor=document.getElementById('bratonien-tabs-anchor');if(!anchor)return;
+    var tabs=document.createElement('div');tabs.className='bratonien-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Bratonien Tools Bereiche');
+    panels.forEach(function(item){var b=document.createElement('button');b.type='button';b.className='bratonien-tab';b.id='bratonien-tab-'+item.definition.id;b.dataset.tab=item.definition.id;b.setAttribute('role','tab');b.textContent=item.definition.label;tabs.appendChild(b);item.elements.forEach(function(el){el.setAttribute('role','tabpanel');el.setAttribute('aria-labelledby',b.id);});});
     anchor.replaceWith(tabs);
-
-    function activate(id, remember) {
-      var valid=false;
-      panels.forEach(function (item) {
-        var active=item.definition.id===id;
-        item.elements.forEach(function(el){el.hidden=!active;});
-        var b=tabs.querySelector('[data-tab="'+item.definition.id+'"]');
-        if (b) {
-          b.classList.toggle('is-active',active);
-          b.setAttribute('aria-selected',active?'true':'false');
-          b.tabIndex=active?0:-1;
-        }
-        if (active) valid=true;
-      });
-      if (!valid) return activate(panels[0].definition.id,remember);
-      if (remember!==false) { try { localStorage.setItem('bratonien-tools-active-tab',id); } catch(e) {} }
-    }
-
-    tabs.addEventListener('click',function(e){ var b=e.target.closest('.bratonien-tab'); if(b) activate(b.dataset.tab); });
-    tabs.addEventListener('keydown',function(e){
-      if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
-      var buttons=[].slice.call(tabs.querySelectorAll('.bratonien-tab'));
-      var i=buttons.indexOf(document.activeElement); if(i<0) return;
-      e.preventDefault(); i += e.key==='ArrowRight'?1:-1; if(i>=buttons.length)i=0; if(i<0)i=buttons.length-1;
-      buttons[i].focus(); activate(buttons[i].dataset.tab);
-    });
-
-    var initial='';
-    var hash=location.hash?location.hash.slice(1):'';
-    panels.forEach(function(item){if(item.definition.id===hash||(item.definition.sections||[]).indexOf(hash)!==-1)initial=item.definition.id;});
-    if(!initial){ try { initial=localStorage.getItem('bratonien-tools-active-tab')||''; } catch(e){} }
-    if(!panels.some(function(i){return i.definition.id===initial})) initial=panels[0].definition.id;
-    activate(initial,false);
+    function activate(id,remember){var valid=false;panels.forEach(function(item){var active=item.definition.id===id;item.elements.forEach(function(el){el.hidden=!active;});var b=tabs.querySelector('[data-tab="'+item.definition.id+'"]');if(b){b.classList.toggle('is-active',active);b.setAttribute('aria-selected',active?'true':'false');b.tabIndex=active?0:-1;}if(active)valid=true;});if(!valid)return activate(panels[0].definition.id,remember);if(remember!==false){try{localStorage.setItem('bratonien-tools-active-tab',id);}catch(e){}}}
+    tabs.addEventListener('click',function(e){var b=e.target.closest('.bratonien-tab');if(b)activate(b.dataset.tab);});
+    tabs.addEventListener('keydown',function(e){if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;var buttons=[].slice.call(tabs.querySelectorAll('.bratonien-tab'));var i=buttons.indexOf(document.activeElement);if(i<0)return;e.preventDefault();i+=e.key==='ArrowRight'?1:-1;if(i>=buttons.length)i=0;if(i<0)i=buttons.length-1;buttons[i].focus();activate(buttons[i].dataset.tab);});
+    var initial='',hash=location.hash?location.hash.slice(1):'';panels.forEach(function(item){if(item.definition.id===hash||(item.definition.sections||[]).indexOf(hash)!==-1)initial=item.definition.id;});if(!initial){try{initial=localStorage.getItem('bratonien-tools-active-tab')||'';}catch(e){}}if(!panels.some(function(i){return i.definition.id===initial;}))initial=panels[0].definition.id;activate(initial,false);
   }
 
-  function initNCWizardDraft() {
-    var dialog=document.getElementById('bratonien-nc-wizard-dialog');
-    if(!dialog) return;
-    var prefix='bratonienNcWizardDraft:';
-
-    function fields() {
-      return [].slice.call(dialog.querySelectorAll('input[name^="nc_wizard_"], select[name^="nc_wizard_"], textarea[name^="nc_wizard_"]'));
-    }
-
-    function saveField(field) {
-      if(!field.name || field.type==='submit' || field.type==='button') return;
-      try {
-        if(field.type==='checkbox' || field.type==='radio') sessionStorage.setItem(prefix+field.name,field.checked?'1':'0');
-        else sessionStorage.setItem(prefix+field.name,field.value);
-      } catch(e) {}
-    }
-
-    function restoreField(field) {
-      if(!field.name || field.type==='submit' || field.type==='button') return;
-      try {
-        var value=sessionStorage.getItem(prefix+field.name);
-        if(value===null) return;
-        if(field.type==='checkbox' || field.type==='radio') field.checked=value==='1';
-        else field.value=value;
-      } catch(e) {}
-    }
-
-    function clearDraft() {
-      try {
-        var remove=[];
-        for(var i=0;i<sessionStorage.length;i++) {
-          var key=sessionStorage.key(i);
-          if(key && key.indexOf(prefix)===0) remove.push(key);
-        }
-        remove.forEach(function(key){sessionStorage.removeItem(key);});
-      } catch(e) {}
-    }
-
-    fields().forEach(function(field){
-      restoreField(field);
-      field.addEventListener('input',function(){saveField(field);});
-      field.addEventListener('change',function(){saveField(field);});
-    });
-
-    dialog.querySelectorAll('form[data-bratonien-wizard-form]').forEach(function(form){
-      form.addEventListener('submit',function(event){
-        fields().forEach(saveField);
-        var submitter=event.submitter;
-        if(submitter && submitter.hasAttribute('data-bratonien-wizard-end')) clearDraft();
-      });
-    });
+  function initNCConnectorPolling(){
+    var section=document.getElementById('nc-connector');if(!section)return;var lastSeen=null;var endpoint='plugins/bratonien_tools/nc-connector-status.php';
+    function wizardIsOpen(){var dialog=document.getElementById('bratonien-nc-wizard-dialog');if(dialog&&dialog.open)return true;try{return sessionStorage.getItem('bratonienNcWizardOpen')==='1';}catch(e){return false;}}
+    function poll(){fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'}).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();}).then(function(data){var timestamp=parseInt(data.timestamp||0,10);if(!timestamp)return;if(lastSeen===null){lastSeen=timestamp;return;}if(timestamp>lastSeen){lastSeen=timestamp;if(!wizardIsOpen())window.location.reload();}}).catch(function(){});}
+    poll();window.setInterval(poll,5000);
   }
 
-  function initNCConnectorPolling() {
-    var section=document.getElementById('nc-connector');
-    if(!section) return;
-    var lastSeen=null;
-    var endpoint='plugins/bratonien_tools/nc-connector-status.php';
-
-    function wizardIsOpen() {
-      var dialog=document.getElementById('bratonien-nc-wizard-dialog');
-      if(dialog && dialog.open) return true;
-      try { return sessionStorage.getItem('bratonienNcWizardOpen')==='1'; } catch(e) { return false; }
-    }
-
-    function poll() {
-      fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
-        .then(function(response){if(!response.ok) throw new Error('HTTP '+response.status); return response.json();})
-        .then(function(data){
-          var timestamp=parseInt(data.timestamp||0,10);
-          if(!timestamp) return;
-
-          if(lastSeen===null) {
-            lastSeen=timestamp;
-            var resultVisible=section.textContent.indexOf('Letztes Ergebnis:')!==-1;
-            if(!resultVisible && data.message && !wizardIsOpen()) {
-              var reloadKey='bratonien-nc-status-reload-'+timestamp;
-              try {
-                if(sessionStorage.getItem(reloadKey)!=='1') {
-                  sessionStorage.setItem(reloadKey,'1');
-                  window.location.reload();
-                }
-              } catch(e) {}
-            }
-            return;
-          }
-
-          if(timestamp>lastSeen) {
-            lastSeen=timestamp;
-            if(!wizardIsOpen()) window.location.reload();
-          }
-        })
-        .catch(function(){});
-    }
-
-    poll();
-    window.setInterval(poll,5000);
-  }
-
-  function initAll() {
-    initBratonienTabs();
-    initNCWizardDraft();
-    initNCConnectorPolling();
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initAll); else initAll();
+  function initAll(){initBratonienTabs();initNCConnectorPolling();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initAll);else initAll();
 })();
 </script>
 {/literal}
