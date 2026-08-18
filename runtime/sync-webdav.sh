@@ -58,6 +58,10 @@ for target in (status_file, public_file):
 PY
 }
 
+compact_output() {
+    tail -n 12 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//'
+}
+
 failure() {
     local code="$1" command="$2" line="$3"
     trap - ERR
@@ -89,13 +93,29 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --state "$SHADOW_MAP_FILE"
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
-    php "$SCRIPT_DIR/lib/piwigo-sync.php" \
+    trap - ERR
+    PIWIGO_OUTPUT=""
+    PIWIGO_EXIT=0
+    if PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
         --piwigo-root="$PIWIGO_ROOT" \
         --connection-id="$CONNECTION_ID" \
-        --base-url="http://127.0.0.1"
+        --base-url="http://127.0.0.1" 2>&1)"; then
+        PIWIGO_EXIT=0
+    else
+        PIWIGO_EXIT=$?
+    fi
+    [[ -z "$PIWIGO_OUTPUT" ]] || printf '%s\n' "$PIWIGO_OUTPUT"
+
+    if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
+        DETAIL="Exit-Code: $PIWIGO_EXIT"
+        if [[ -n "$PIWIGO_OUTPUT" ]]; then
+            DETAIL+="; Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | compact_output)"
+        fi
+        write_status error "Piwigo-Synchronisierung des WebDAV-Shadow-Trees fehlgeschlagen" "$DETAIL"
+        exit "$PIWIGO_EXIT"
+    fi
+
     write_status ok "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich"
 else
     write_status ok "WebDAV-Shadow-Tree erfolgreich; Registrierung erfolgt im selben Minutenlauf über den bestehenden produktiven Piwigo-Sync"
 fi
-
-trap - ERR
