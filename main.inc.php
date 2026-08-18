@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.4.5
+Version: 0.9.4.6
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -106,6 +106,14 @@ function bratonien_tools_prepare_private_album_permissions()
 
 function bratonien_tools_admin_menu($menu)
 {
+  global $template;
+
+  if (isset($template) && is_object($template) && isset($template->html_head_elements) && is_array($template->html_head_elements))
+  {
+    $src = get_root_url().'plugins/'.rawurlencode(BRATONIEN_TOOLS_ID).'/nc-wizard-directories.js?v=0.9.4.6';
+    $template->html_head_elements[] = '<script src="'.htmlspecialchars($src, ENT_QUOTES, 'UTF-8').'" defer></script>';
+  }
+
   $menu[] = array(
     'NAME' => 'Bratonien Tools',
     'URL' => get_root_url() . 'admin.php?page=plugin-' . BRATONIEN_TOOLS_ID,
