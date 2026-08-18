@@ -52,7 +52,7 @@
         </form>
 
       {elseif $NC_CONNECTOR.wizard.step == 2}
-        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong> Der Assistent verwendet den Zugang aus dem ersten Schritt auch für den benötigten Lesezugriff.</p>
+        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong> Für den Datenzugriff wird die bekannte Reader-Verbindung verwendet. Verzeichnisse werden ausschließlich mit dem angemeldeten Nextcloud-Benutzer gelesen.</p>
         <div class="bratonien-form-grid">
           <span class="bratonien-label">Adresse</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
           <span class="bratonien-label">Version</span><strong>{if $NC_CONNECTOR.wizard.version}{$NC_CONNECTOR.wizard.version|escape:html}{else}Nicht gemeldet{/if}</strong>
@@ -62,7 +62,7 @@
         {if $NC_CONNECTOR.wizard.technical_stage == 'database_details'}
           <hr>
           <h5>Datenbank-Adresse prüfen</h5>
-          <p class="bratonien-base-note">Der Zugang aus dem ersten Schritt bleibt unverändert. Nur die Verbindungsadresse konnte nicht automatisch bestätigt werden.</p>
+          <p class="bratonien-base-note">Die bekannte Reader-Verbindung konnte mit der gespeicherten Adresse nicht bestätigt werden.</p>
           {if $NC_CONNECTOR.wizard.technical_error}<details><summary>Technische Details</summary><p class="bratonien-main-cache__warning">{$NC_CONNECTOR.wizard.technical_error|escape:html}</p></details>{/if}
           <form method="post" data-bratonien-wizard-form>
             <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
@@ -76,46 +76,103 @@
 
         {elseif $NC_CONNECTOR.wizard.technical_stage == 'mounts'}
           <hr>
-          <h5>Speicherort bestätigen</h5>
-          <p class="bratonien-base-note">Die Datenquelle wurde gefunden. Nur Speicherorte, die nicht sicher erkannt werden konnten, müssen jetzt einmalig zugeordnet werden.</p>
-          <form method="post" data-bratonien-wizard-form>
-            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          {if $NC_CONNECTOR.wizard.directory_selection_ready}
+            <h5>Verzeichnisse auswählen</h5>
+            <p class="bratonien-base-note">Es werden nur Verzeichnisse angezeigt, auf die <strong>{$NC_CONNECTOR.wizard.username|escape:html}</strong> in Nextcloud Zugriff hat. Mehrere Verzeichnisse können hinzugefügt werden. Bleibt die Auswahl leer, wird automatisch das Stammverzeichnis verwendet.</p>
+
             <div class="bratonien-form-grid">
-              {foreach from=$NC_CONNECTOR.wizard.storage_candidates item=storage key=storage_index}
-                <span class="bratonien-label">Speicher {$storage_index+1}</span>
-                {if $storage.local_mount}
-                  <strong>Automatisch erkannt</strong>
-                  <input type="hidden" name="nc_wizard_storage_mount[{$storage_index|escape:html}]" value="{$storage.local_mount|escape:html}">
+              <span class="bratonien-label">Ausgewählt</span>
+              <div>
+                {if $NC_CONNECTOR.wizard.directory_selected|@count > 0}
+                  {foreach from=$NC_CONNECTOR.wizard.directory_selected item=selected_path}
+                    <form method="post" class="bratonien-actions" style="margin:.25rem 0" data-bratonien-wizard-form>
+                      <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                      <input type="hidden" name="nc_wizard_directory_remove" value="{$selected_path|escape:html}">
+                      <strong style="flex:1">{if $selected_path}{$selected_path|escape:html}{else}Stammverzeichnis{/if}</strong>
+                      <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_directory_remove">Entfernen</button>
+                    </form>
+                  {/foreach}
                 {else}
-                  <input name="nc_wizard_storage_mount[{$storage_index|escape:html}]" type="text" placeholder="Eingebundener Speicherpfad" required>
+                  <span class="bratonien-base-note">Keine Auswahl – Stammverzeichnis wird verwendet.</span>
                 {/if}
-              {/foreach}
+              </div>
+
+              <span class="bratonien-label">Aktueller Ordner</span><strong>/{if $NC_CONNECTOR.wizard.directory_path}{$NC_CONNECTOR.wizard.directory_path|escape:html}{/if}</strong>
             </div>
-            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Speicher prüfen</button></p>
-          </form>
+
+            <div class="bratonien-actions" style="margin:.75rem 0">
+              <form method="post" data-bratonien-wizard-form>
+                <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_directory_add">Diesen Ordner hinzufügen</button>
+              </form>
+              {if $NC_CONNECTOR.wizard.directory_path}
+                <form method="post" data-bratonien-wizard-form>
+                  <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                  <input type="hidden" name="nc_wizard_directory_path" value="{$NC_CONNECTOR.wizard.directory_parent|escape:html}">
+                  <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_directory_browse">Eine Ebene hoch</button>
+                </form>
+              {/if}
+            </div>
+
+            <div style="margin:.75rem 0">
+              {if $NC_CONNECTOR.wizard.directory_children|@count > 0}
+                {foreach from=$NC_CONNECTOR.wizard.directory_children item=directory_name key=directory_path}
+                  <form method="post" style="margin:.3rem 0" data-bratonien-wizard-form>
+                    <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                    <input type="hidden" name="nc_wizard_directory_path" value="{$directory_path|escape:html}">
+                    <button class="buttonLike" style="width:100%;text-align:left" type="submit" name="bratonien_tool" value="nc_connector_wizard_directory_browse">📁 {$directory_name|escape:html}</button>
+                  </form>
+                {/foreach}
+              {else}
+                <p class="bratonien-base-note">Keine Unterordner vorhanden.</p>
+              {/if}
+            </div>
+
+            <form method="post" data-bratonien-wizard-form>
+              <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+              {foreach from=$NC_CONNECTOR.wizard.storage_candidates item=storage key=storage_index}
+                <input type="hidden" name="nc_wizard_storage_mount[{$storage_index|escape:html}]" value="{$storage.local_mount|escape:html}">
+              {/foreach}
+              <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Verzeichnisse übernehmen</button></p>
+            </form>
+          {else}
+            <h5>Speicherort bestätigen</h5>
+            <p class="bratonien-base-note">Die Datenquelle wurde gefunden. Ein technischer Speicherort konnte nicht automatisch zugeordnet werden.</p>
+            <form method="post" data-bratonien-wizard-form>
+              <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+              <div class="bratonien-form-grid">
+                {foreach from=$NC_CONNECTOR.wizard.storage_candidates item=storage key=storage_index}
+                  <span class="bratonien-label">Speicher {$storage_index+1}</span>
+                  {if $storage.local_mount}
+                    <strong>Automatisch erkannt</strong>
+                    <input type="hidden" name="nc_wizard_storage_mount[{$storage_index|escape:html}]" value="{$storage.local_mount|escape:html}">
+                  {else}
+                    <input name="nc_wizard_storage_mount[{$storage_index|escape:html}]" type="text" placeholder="Eingebundener Speicherpfad" required>
+                  {/if}
+                {/foreach}
+              </div>
+              <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Speicher prüfen</button></p>
+            </form>
+          {/if}
 
         {elseif $NC_CONNECTOR.wizard.technical_complete}
           <hr>
-          <h5>Welche Freigaben sollen verwendet werden?</h5>
-          <p class="bratonien-base-note"><strong>Empfehlung:</strong> ein eigener Showcase-Benutzer. So bleibt die Verbindung unabhängig von persönlichen Konten.</p>
+          <h5>Verbindung benennen</h5>
+          <p class="bratonien-base-note">Diese Verbindung verwendet ausschließlich den in Schritt 1 angemeldeten Nextcloud-Benutzer.</p>
           <form method="post" data-bratonien-wizard-form>
             <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
             <div class="bratonien-form-grid">
               <label class="bratonien-label" for="nc_wizard_connection_name">Name der Verbindung</label><input id="nc_wizard_connection_name" name="nc_wizard_connection_name" type="text" value="{$NC_CONNECTOR.wizard.connection_name|escape:html}" required>
-              <label class="bratonien-label" for="nc_wizard_showcase_user">Nextcloud-Benutzer</label>
-              {if $NC_CONNECTOR.wizard.can_list_users && $NC_CONNECTOR.wizard.users|@count > 0}
-                <select id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" required>
-                  {foreach from=$NC_CONNECTOR.wizard.users item=nc_user}<option value="{$nc_user|escape:html}"{if $nc_user == 'showcase'} selected{/if}>{$nc_user|escape:html}{if $nc_user == 'showcase'} · empfohlen{/if}</option>{/foreach}
-                </select>
-              {else}
-                <input id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" type="text" value="{if $NC_CONNECTOR.wizard.showcase_user}{$NC_CONNECTOR.wizard.showcase_user|escape:html}{else}showcase{/if}" required>
-              {/if}
+              <span class="bratonien-label">Nextcloud-Benutzer</span><strong>{$NC_CONNECTOR.wizard.username|escape:html}</strong>
             </div>
             <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_select_user">Weiter</button></p>
           </form>
         {/if}
 
-        <form method="post" style="margin-top:1rem" data-bratonien-wizard-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset" data-bratonien-wizard-end>Neu beginnen</button></form>
+        <div class="bratonien-actions" style="margin-top:1rem">
+          <form method="post" data-bratonien-wizard-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_back">Zurück</button></form>
+          <form method="post" data-bratonien-wizard-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset" data-bratonien-wizard-end>Neu beginnen</button></form>
+        </div>
 
       {elseif $NC_CONNECTOR.wizard.step == 3}
         <p class="bratonien-base-note"><strong>Nextcloud ist vorbereitet.</strong> Jetzt wird der bevorzugte Piwigo-Zugang geprüft.</p>
@@ -128,13 +185,14 @@
           </div>
           <div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_api_test">API testen</button><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_api_skip" formnovalidate>Überspringen</button></div>
         </form>
+        <form method="post" style="margin-top:1rem" data-bratonien-wizard-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_back">Zurück</button></form>
 
       {elseif $NC_CONNECTOR.wizard.step == 4}
         <p class="bratonien-base-note"><strong>Fast fertig.</strong> Die Verbindung wurde noch nicht angelegt. Erst der letzte Button übernimmt die Einstellungen.</p>
         <div class="bratonien-form-grid">
           <span class="bratonien-label">Verbindung</span><strong>{$NC_CONNECTOR.wizard.connection_name|escape:html}</strong>
           <span class="bratonien-label">Nextcloud</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
-          <span class="bratonien-label">Freigaben von</span><strong>{$NC_CONNECTOR.wizard.showcase_user|escape:html}</strong>
+          <span class="bratonien-label">Nextcloud-Benutzer</span><strong>{$NC_CONNECTOR.wizard.username|escape:html}</strong>
           <span class="bratonien-label">Piwigo-API</span><strong>{if $NC_CONNECTOR.wizard.api_status == 'ok'}Erfolgreich geprüft{else}Übersprungen{/if}</strong>
         </div>
         <hr>
@@ -148,6 +206,7 @@
           </div>
           <div class="bratonien-actions"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_finish" data-bratonien-wizard-end>Verbindung anlegen</button><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset" formnovalidate data-bratonien-wizard-end>Abbrechen</button></div>
         </form>
+        <form method="post" style="margin-top:1rem" data-bratonien-wizard-form><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_back">Zurück</button></form>
       {/if}
     </div>
   </dialog>
