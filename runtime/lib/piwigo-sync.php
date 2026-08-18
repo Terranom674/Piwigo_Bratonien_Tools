@@ -63,7 +63,7 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 900,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_USERAGENT => 'Bratonien-NC-Connector/0.9.3.26',
+    CURLOPT_USERAGENT => 'Bratonien-NC-Connector',
   );
   if ($headers)
   {
