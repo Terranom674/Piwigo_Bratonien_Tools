@@ -32,7 +32,28 @@
   <dialog id="bratonien-nc-wizard-dialog" style="width:min(980px,calc(100vw - 3rem));max-height:88vh;overflow:auto;background:#444;color:inherit;border:1px solid #777;border-radius:4px;padding:0;box-shadow:0 18px 60px rgba(0,0,0,.55)">
     <div style="padding:1.25rem 1.5rem">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem">
-        <div><h4 style="margin:0">Neue Verbindung</h4><p class="bratonien-base-note" style="margin:.35rem 0 0"><strong>Schritt {$NC_CONNECTOR.wizard.step|escape:html} von 4</strong></p></div>
+        <div>
+          <h4 style="margin:0">Neue Verbindung</h4>
+          <p class="bratonien-base-note" style="margin:.35rem 0 0"><strong>
+            {if $NC_CONNECTOR.wizard.step == 1}
+              Anmeldung
+            {elseif $NC_CONNECTOR.wizard.step == 2 && $NC_CONNECTOR.wizard.technical_stage == 'database_details'}
+              Datenbank prüfen
+            {elseif $NC_CONNECTOR.wizard.step == 2 && $NC_CONNECTOR.wizard.technical_stage == 'mounts' && !$NC_CONNECTOR.wizard.directory_selection_ready}
+              Speicher zuordnen
+            {elseif $NC_CONNECTOR.wizard.step == 2 && $NC_CONNECTOR.wizard.technical_stage == 'mounts' && $NC_CONNECTOR.wizard.directory_selection_ready}
+              Verzeichnisse auswählen
+            {elseif $NC_CONNECTOR.wizard.step == 2 && $NC_CONNECTOR.wizard.technical_complete}
+              Verbindung benennen
+            {elseif $NC_CONNECTOR.wizard.step == 3}
+              Piwigo-API
+            {elseif $NC_CONNECTOR.wizard.step == 4}
+              Abschluss
+            {else}
+              Einrichtung
+            {/if}
+          </strong></p>
+        </div>
         <button class="buttonLike" type="button" id="bratonien-nc-wizard-close">Schließen</button>
       </div>
 
