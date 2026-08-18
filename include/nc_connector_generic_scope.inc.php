@@ -54,6 +54,8 @@ function bratonien_tools_nc_wizard_finish_generic_scope()
   $_POST['nc_piwigo_password']=$fallback_password;
   $_POST['nc_nextcloud_url']=(string)$state['base_url'];
   $_POST['nc_access_user']=(string)$state['username'];
+  $_POST['nc_nextcloud_user']=(string)$state['username'];
+  $_POST['nc_nextcloud_password']=(string)$state['_password'];
   $_POST['nc_product']=(string)$state['product'];
   $_POST['nc_version']=(string)$state['version'];
   $_POST['nc_api_validated']=($state['api_status'] ?? '')==='ok'?'1':'0';
