@@ -28,11 +28,22 @@ function bratonien_tools_nc_connector_create_local_api_first()
     throw new RuntimeException('Fallback-Benutzer und Fallback-Passwort muessen entweder beide angegeben oder beide leer gelassen werden.');
   }
 
-  $api = bratonien_tools_nc_api_credentials();
   $validated_pending_api = (string)($_POST['nc_api_validated'] ?? '') === '1';
-  if (($api['key_id'] ?? '') === '' && $fallback_user === '' && !$validated_pending_api)
+  $api_key_id = trim((string)($_POST['nc_connection_api_key_id'] ?? ''));
+  $api_key_secret = trim((string)($_POST['nc_connection_api_key_secret'] ?? ''));
+  if (($api_key_id === '') !== ($api_key_secret === ''))
   {
-    throw new RuntimeException('Es ist weder ein geprüfter Piwigo-API-Zugang noch ein Benutzername/Passwort-Fallback vorhanden.');
+    throw new RuntimeException('API-Schluessel-ID und API-Geheimnis muessen entweder beide vorhanden oder beide leer sein.');
+  }
+  if ($validated_pending_api && $api_key_id === '')
+  {
+    $legacy_api = bratonien_tools_nc_api_credentials();
+    $api_key_id = trim((string)($legacy_api['key_id'] ?? ''));
+    $api_key_secret = trim((string)($legacy_api['key_secret'] ?? ''));
+  }
+  if ($api_key_id === '' && $fallback_user === '')
+  {
+    throw new RuntimeException('Fuer diese Verbindung ist weder ein eigener gepruefter API-Zugang noch ein Benutzername/Passwort-Fallback vorhanden.');
   }
 
   $port = (int)($_POST['nc_port'] ?? 5432);
@@ -42,7 +53,7 @@ function bratonien_tools_nc_connector_create_local_api_first()
   if (strpos($gallery_root, './') === 0)
   {
     $piwigo_root = realpath(PHPWG_ROOT_PATH);
-    if ($piwigo_root === false) throw new RuntimeException('Piwigo-Stammverzeichnis konnte nicht aufgelöst werden.');
+    if ($piwigo_root === false) throw new RuntimeException('Piwigo-Stammverzeichnis konnte nicht aufgeloest werden.');
     $gallery_root = rtrim($piwigo_root, '/').'/'.ltrim(substr($gallery_root, 2), '/');
   }
   if ($gallery_root === '' || $gallery_root[0] !== '/') throw new RuntimeException('Der Galerie-Pfad muss ein absoluter Pfad sein.');
@@ -60,7 +71,9 @@ function bratonien_tools_nc_connector_create_local_api_first()
     'max_wait_seconds'=>max(60,(int)($_POST['nc_max_wait_seconds'] ?? 900)),
     'full_sync_seconds'=>max(300,(int)($_POST['nc_full_sync_seconds'] ?? 86400)),
     'storages'=>bratonien_tools_nc_connector_parse_storages($_POST['nc_storages'] ?? ''),
-    'origin'=>'native','piwigo_auth'=>'api-first',
+    'origin'=>'native',
+    'piwigo_auth'=>'connection-scoped',
+    'api_enabled'=>$api_key_id !== '',
   );
   foreach (array('nextcloud_url'=>'nc_nextcloud_url','showcase_user'=>'nc_showcase_user','nextcloud_access_user'=>'nc_access_user','nextcloud_product'=>'nc_product','nextcloud_version'=>'nc_version') as $config_key=>$post_key)
   {
@@ -69,9 +82,19 @@ function bratonien_tools_nc_connector_create_local_api_first()
   bratonien_tools_nc_connector_view_name($config['source_view']);
   bratonien_tools_nc_connector_view_name($config['activity_view']);
 
+  $secret_payload = json_encode(array(
+    'v'=>2,
+    'db_password'=>(string)$_POST['nc_db_password'],
+    'piwigo_user'=>$fallback_user,
+    'piwigo_password'=>$fallback_password,
+    'api_key_id'=>$api_key_id,
+    'api_key_secret'=>$api_key_secret,
+  ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($secret_payload)) throw new RuntimeException('Connector-Zugangsdaten konnten nicht serialisiert werden.');
+  $secret_blob = bratonien_tools_nc_connector_encrypt_secret($secret_payload);
+
   $table=bratonien_tools_nc_connector_table(); bratonien_tools_nc_connector_ensure_table(); $now=date('Y-m-d H:i:s');
   $connection_key='local-'.bin2hex(random_bytes(12));
-  $secret_blob=bratonien_tools_nc_connector_encrypt_credentials((string)$_POST['nc_db_password'],$fallback_user,$fallback_password);
   $config_json=json_encode($config,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
   if(!is_string($config_json)) throw new RuntimeException('Connector-Konfiguration konnte nicht serialisiert werden.');
 
@@ -90,6 +113,6 @@ function bratonien_tools_nc_connector_create_local_api_first()
 
   return array(
     'connection_id'=>$id,
-    'message'=>$fallback_user==='' ? 'Nextcloud-Verbindung wurde API-first ohne dauerhaft gespeicherten Benutzername/Passwort-Fallback angelegt. Bitte technisch pruefen und danach im LXC aktivieren.' : 'Nextcloud-Verbindung wurde API-first mit verschluesseltem Benutzername/Passwort-Fallback angelegt. Bitte technisch pruefen und danach im LXC aktivieren.'
+    'message'=>'Nextcloud-Verbindung wurde mit verbindungseigener Piwigo-Authentifizierung angelegt.'
   );
 }
