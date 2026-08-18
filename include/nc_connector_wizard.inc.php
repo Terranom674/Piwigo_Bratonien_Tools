@@ -91,6 +91,25 @@ function bratonien_tools_nc_wizard_normalize_url($host)
   return rtrim($url, '/');
 }
 
+function bratonien_tools_nc_wizard_candidate_urls($host)
+{
+  $host = trim((string)$host);
+  if ($host === '')
+  {
+    throw new RuntimeException('Bitte die Adresse der Nextcloud angeben.');
+  }
+
+  if (preg_match('#^https?://#i', $host))
+  {
+    return array(bratonien_tools_nc_wizard_normalize_url($host));
+  }
+
+  return array(
+    bratonien_tools_nc_wizard_normalize_url('https://'.$host),
+    bratonien_tools_nc_wizard_normalize_url('http://'.$host),
+  );
+}
+
 function bratonien_tools_nc_wizard_http($url, $username = '', $password = '', array $headers = array())
 {
   if (!function_exists('curl_init'))
@@ -124,7 +143,7 @@ function bratonien_tools_nc_wizard_http($url, $username = '', $password = '', ar
 
   if ($body === false || $errno !== 0)
   {
-    throw new RuntimeException('Nextcloud konnte nicht erreicht werden: '.$error);
+    throw new RuntimeException($error !== '' ? $error : 'Verbindung fehlgeschlagen.');
   }
 
   return array('status'=>$status, 'body'=>(string)$body);
@@ -227,16 +246,35 @@ function bratonien_tools_nc_wizard_scan()
     throw new RuntimeException('Nextcloud-Benutzer und Passwort werden für den Scan benötigt.');
   }
 
-  $base_url = bratonien_tools_nc_wizard_normalize_url($host_input);
-  $status_response = bratonien_tools_nc_wizard_http($base_url.'/status.php');
-  if ($status_response['status'] < 200 || $status_response['status'] >= 300)
+  $base_url = '';
+  $status_data = null;
+  foreach (bratonien_tools_nc_wizard_candidate_urls($host_input) as $candidate_url)
   {
-    throw new RuntimeException('Unter diesem Host wurde keine erreichbare Nextcloud-Instanz erkannt (HTTP '.$status_response['status'].').');
+    try
+    {
+      $status_response = bratonien_tools_nc_wizard_http($candidate_url.'/status.php');
+      if ($status_response['status'] < 200 || $status_response['status'] >= 300)
+      {
+        continue;
+      }
+      $candidate_status = json_decode($status_response['body'], true);
+      if (!is_array($candidate_status) || empty($candidate_status['installed']))
+      {
+        continue;
+      }
+      $base_url = $candidate_url;
+      $status_data = $candidate_status;
+      break;
+    }
+    catch (Throwable $ignored)
+    {
+      continue;
+    }
   }
-  $status_data = json_decode($status_response['body'], true);
-  if (!is_array($status_data) || empty($status_data['installed']))
+
+  if ($base_url === '' || !is_array($status_data))
   {
-    throw new RuntimeException('Der Host antwortet, wurde aber nicht als installierte Nextcloud-Instanz erkannt.');
+    throw new RuntimeException('Unter dieser Adresse konnte keine Nextcloud erreicht werden. Der Assistent hat die möglichen Web-Zugänge automatisch geprüft.');
   }
 
   $user_response = bratonien_tools_nc_wizard_http(
@@ -251,7 +289,7 @@ function bratonien_tools_nc_wizard_scan()
   }
   if ($user_response['status'] < 200 || $user_response['status'] >= 300)
   {
-    throw new RuntimeException('Nextcloud-Benutzerprüfung ist fehlgeschlagen (HTTP '.$user_response['status'].').');
+    throw new RuntimeException('Nextcloud ist erreichbar, aber die Anmeldung konnte nicht geprüft werden.');
   }
   $user_data = bratonien_tools_nc_wizard_ocs_data($user_response['body']);
 
@@ -305,7 +343,7 @@ function bratonien_tools_nc_wizard_scan()
   bratonien_tools_nc_wizard_fill_profile($state);
   bratonien_tools_nc_wizard_store($state);
 
-  return array('message'=>'Nextcloud-Scan erfolgreich. Erkannte Werte wurden übernommen; fehlende Angaben werden jetzt gezielt abgefragt.');
+  return array('message'=>'Nextcloud wurde gefunden und der Zugang bestätigt. Fehlende Angaben werden jetzt nur noch bei Bedarf abgefragt.');
 }
 
 function bratonien_tools_nc_wizard_save_technical()
