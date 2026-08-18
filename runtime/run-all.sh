@@ -29,6 +29,20 @@ if [[ ${#configs[@]} -eq 0 && ${#webdav_configs[@]} -eq 0 ]]; then
 fi
 
 result=0
+
+# WebDAV zuerst: Der parallele Shadow Tree muss bereits vollständig stehen,
+# bevor der weiterhin produktive lokale Weg seine normale Piwigo-
+# Dateisynchronisierung ausführt. So wird der neue Baum im selben Minutenlauf
+# sichtbar, ohne dass der WebDAV-Zweig selbst eine zweite globale Piwigo-
+# Synchronisierung startet.
+for config in "${webdav_configs[@]}"; do
+    name="$(basename "$config")"
+    echo "NC Connector WebDAV parallel: $name"
+    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
+        result=1
+    fi
+done
+
 for config in "${configs[@]}"; do
     name="$(basename "$config")"
     connection_id=""
@@ -57,14 +71,6 @@ for config in "${configs[@]}"; do
 
     echo "NC Connector lokal: $name"
     if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
-        result=1
-    fi
-done
-
-for config in "${webdav_configs[@]}"; do
-    name="$(basename "$config")"
-    echo "NC Connector WebDAV parallel: $name"
-    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
         result=1
     fi
 done
