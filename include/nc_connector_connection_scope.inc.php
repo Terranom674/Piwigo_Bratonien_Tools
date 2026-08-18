@@ -94,3 +94,49 @@ function bratonien_tools_nc_connector_delete_any()
   pwg_query("DELETE FROM `$table` WHERE id=".$id." LIMIT 1");
   return array('message'=>'Connector-Verbindung wurde gelöscht und für weitere Laufzeitabrufe gesperrt. Nextcloud- und Piwigo-Bilder blieben unverändert.');
 }
+
+function bratonien_tools_nc_connector_verify_connection_scoped()
+{
+  $result = bratonien_tools_nc_connector_verify_managed();
+  $id = (int)($_POST['connection_id'] ?? 0);
+  $connection = bratonien_tools_nc_connector_connection($id, true);
+  if (!$connection) return $result;
+
+  $config = is_array($connection['config'] ?? null) ? $connection['config'] : array();
+  if ((string)($config['origin'] ?? '') !== 'native' || array_key_exists('api_enabled', $config)) return $result;
+
+  $credentials = bratonien_tools_nc_connector_credentials_from_blob($connection['secret_blob'] ?? '');
+  $db_password = (string)($credentials['db_password'] ?? '');
+  $fallback_user = (string)($credentials['piwigo_user'] ?? '');
+  $fallback_password = (string)($credentials['piwigo_password'] ?? '');
+  if ($db_password === '') return $result;
+
+  $api_key_id = '';
+  $api_key_secret = '';
+  if ($fallback_user === '')
+  {
+    $legacy_api = bratonien_tools_nc_api_credentials();
+    $api_key_id = trim((string)($legacy_api['key_id'] ?? ''));
+    $api_key_secret = trim((string)($legacy_api['key_secret'] ?? ''));
+  }
+
+  $payload = json_encode(array(
+    'v'=>2,
+    'db_password'=>$db_password,
+    'piwigo_user'=>$fallback_user,
+    'piwigo_password'=>$fallback_password,
+    'api_key_id'=>$api_key_id,
+    'api_key_secret'=>$api_key_secret,
+  ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($payload)) throw new RuntimeException('Verbindungsauthentifizierung konnte nicht migriert werden.');
+
+  $config['piwigo_auth'] = 'connection-scoped';
+  $config['api_enabled'] = $api_key_id !== '';
+  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($config_json)) throw new RuntimeException('Connector-Konfiguration konnte nicht migriert werden.');
+
+  $blob = bratonien_tools_nc_connector_encrypt_secret($payload);
+  $table = bratonien_tools_nc_connector_table();
+  pwg_query("UPDATE `$table` SET config_json='".pwg_db_real_escape_string($config_json)."', secret_blob='".pwg_db_real_escape_string($blob)."' WHERE id=".$id." LIMIT 1");
+  return $result;
+}
