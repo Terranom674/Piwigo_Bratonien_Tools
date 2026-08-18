@@ -32,17 +32,18 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
 write_status() {
-    local state="$1" message="$2" detail="${3:-}"
-    python3 - "$STATUS_FILE" "$PIWIGO_ROOT" "$CONNECTION_ID" "$state" "$message" "$detail" <<'PY'
+    local state="$1" message="$2" detail="${3:-}" auth_mode="${4:-webdav}" api_state="${5:-not_run}" api_message="${6:-}" fallback_state="${7:-not_run}" fallback_message="${8:-}"
+    python3 - "$STATUS_FILE" "$PIWIGO_ROOT" "$CONNECTION_ID" "$state" "$message" "$detail" "$auth_mode" "$api_state" "$api_message" "$fallback_state" "$fallback_message" <<'PY'
 import json, os, sys, tempfile, time
-status_file, piwigo_root, connection_id, state, message, detail = sys.argv[1:]
+(status_file, piwigo_root, connection_id, state, message, detail, auth_mode,
+ api_state, api_message, fallback_state, fallback_message) = sys.argv[1:]
 payload = {
     "state": state,
     "message": message,
     "timestamp": int(time.time()),
-    "auth_mode": "webdav",
-    "api": {"state": "not_run", "message": ""},
-    "fallback": {"state": "not_run", "message": ""},
+    "auth_mode": auth_mode,
+    "api": {"state": api_state, "message": api_message},
+    "fallback": {"state": fallback_state, "message": fallback_message},
     "error_detail": detail if state == "error" else "",
 }
 public_file = os.path.join(piwigo_root.rstrip('/'), '_data', 'bratonien-tools', 'nc-connector-status', f'connection-{connection_id}.json')
@@ -111,11 +112,52 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         if [[ -n "$PIWIGO_OUTPUT" ]]; then
             DETAIL+="; Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | compact_output)"
         fi
-        write_status error "Piwigo-Synchronisierung des WebDAV-Shadow-Trees fehlgeschlagen" "$DETAIL"
+
+        if grep -qi 'Invalid username/password' <<<"$PIWIGO_OUTPUT"; then
+            write_status error \
+                "Piwigo-Fallback fehlgeschlagen: Benutzername oder Passwort ist ungültig" \
+                "$DETAIL" \
+                "fallback" \
+                "not_configured" \
+                "Für diese Verbindung ist keine nutzbare API konfiguriert" \
+                "error" \
+                "Piwigo hat Benutzername oder Passwort des Fallback-Zugangs abgelehnt"
+        elif grep -qi 'Kein gespeicherter Benutzername/Passwort-Fallback\|Kein verbindungseigener Piwigo-Zugang' <<<"$PIWIGO_OUTPUT"; then
+            write_status error \
+                "Piwigo-Zugang fehlt: API und Fallback sind nicht nutzbar" \
+                "$DETAIL" \
+                "failed" \
+                "not_configured" \
+                "Für diese Verbindung ist keine nutzbare API konfiguriert" \
+                "not_configured" \
+                "Kein vollständiger Fallback-Zugang gespeichert"
+        else
+            write_status error "Piwigo-Synchronisierung des WebDAV-Shadow-Trees fehlgeschlagen" "$DETAIL"
+        fi
         exit "$PIWIGO_EXIT"
     fi
 
-    write_status ok "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich"
+    if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
+        write_status ok \
+            "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich" \
+            "" \
+            "api" \
+            "ok" \
+            "Piwigo-API erfolgreich" \
+            "not_needed" \
+            "Fallback wurde nicht benötigt"
+    elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
+        write_status ok \
+            "WebDAV-Shadow-Tree und Piwigo-Synchronisierung über Fallback erfolgreich" \
+            "" \
+            "fallback" \
+            "not_used" \
+            "API war nicht nutzbar" \
+            "ok" \
+            "Benutzername/Passwort-Fallback erfolgreich"
+    else
+        write_status ok "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich"
+    fi
 else
     write_status ok "WebDAV-Shadow-Tree erfolgreich; Registrierung erfolgt im selben Minutenlauf über den bestehenden produktiven Piwigo-Sync"
 fi
