@@ -26,12 +26,16 @@ function bratonien_tools_webdav_image_source_info($image_id)
   if ($resolved === false) return $cache[$image_id] = null;
 
   $normalized = str_replace('\\', '/', $resolved);
-  if (!preg_match('#/nc-webdav-source/connection-([0-9]+)/#', $normalized, $match))
+  if (!preg_match('#/nc-webdav-source/connection-([0-9]+)/root-([0-9]+)/(.*)$#', $normalized, $match))
   {
     return $cache[$image_id] = null;
   }
 
   $connection_id = (int)$match[1];
+  $root_fileid = (int)$match[2];
+  $relative_path = trim((string)$match[3], '/');
+  if ($relative_path === '') return $cache[$image_id] = null;
+
   $table = defined('BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE')
     ? BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE
     : $GLOBALS['prefixeTable'].'bratonien_tools_nc_connections';
@@ -44,29 +48,52 @@ function bratonien_tools_webdav_image_source_info($image_id)
     return $cache[$image_id] = null;
   }
 
-  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
-  if ($state_dir === '') return $cache[$image_id] = null;
-  $mapping_file = $state_dir.'/webdav-map.json';
-  if (!is_readable($mapping_file)) return $cache[$image_id] = null;
-  $mapping = json_decode((string)file_get_contents($mapping_file), true);
-  if (!is_array($mapping) || !isset($mapping['files']) || !is_array($mapping['files']))
+  $root_path = '';
+  $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
+  foreach ($roots as $root)
   {
-    return $cache[$image_id] = null;
+    if ((int)($root['fileid'] ?? 0) === $root_fileid)
+    {
+      $root_path = trim((string)($root['webdav_path'] ?? ''), '/');
+      break;
+    }
   }
+  if ($root_path === '') return $cache[$image_id] = null;
 
-  $entry = $mapping['files'][$resolved] ?? $mapping['files'][$normalized] ?? null;
-  if (!is_array($entry) || (string)($entry['kind'] ?? '') !== 'file')
+  $webdav_path = $root_path.'/'.$relative_path;
+  $content_type = '';
+  $size = 0;
+  $etag = '';
+
+  // Metadata is optional. Routing must not depend on the root-owned runtime map.
+  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+  if ($state_dir !== '')
   {
-    return $cache[$image_id] = null;
+    $mapping_file = $state_dir.'/webdav-map.json';
+    if (is_readable($mapping_file))
+    {
+      $mapping = json_decode((string)file_get_contents($mapping_file), true);
+      if (is_array($mapping) && isset($mapping['files']) && is_array($mapping['files']))
+      {
+        $entry = $mapping['files'][$resolved] ?? $mapping['files'][$normalized] ?? null;
+        if (is_array($entry) && (string)($entry['kind'] ?? '') === 'file')
+        {
+          $webdav_path = trim((string)($entry['webdav_path'] ?? $webdav_path), '/');
+          $content_type = (string)($entry['content_type'] ?? '');
+          $size = (int)($entry['size'] ?? 0);
+          $etag = (string)($entry['etag'] ?? '');
+        }
+      }
+    }
   }
 
   return $cache[$image_id] = array(
     'image_id'=>$image_id,
     'connection_id'=>$connection_id,
-    'webdav_path'=>(string)($entry['webdav_path'] ?? ''),
-    'content_type'=>(string)($entry['content_type'] ?? ''),
-    'size'=>(int)($entry['size'] ?? 0),
-    'etag'=>(string)($entry['etag'] ?? ''),
+    'webdav_path'=>$webdav_path,
+    'content_type'=>$content_type,
+    'size'=>$size,
+    'etag'=>$etag,
   );
 }
 
