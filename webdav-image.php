@@ -51,6 +51,29 @@ if (!pwg_db_num_rows($access_result)) bratonien_tools_webdav_image_abort(403, 'K
 $source = bratonien_tools_webdav_image_source_info($image_id);
 if (!$source) bratonien_tools_webdav_image_abort(404, 'Keine WebDAV-Quelle für dieses Bild gefunden.');
 
+if (!empty($_GET['preview']))
+{
+  $preview = bratonien_tools_webdav_preview_path($source);
+  if ($preview)
+  {
+    $mtime = @filemtime($preview) ?: time();
+    $etag = sha1($preview.'|'.$mtime.'|'.(@filesize($preview) ?: 0));
+    header('Content-Type: image/webp');
+    header('Content-Length: '.(string)filesize($preview));
+    header('ETag: "'.$etag.'"');
+    header('Cache-Control: private, max-age=86400, must-revalidate');
+    header('X-Content-Type-Options: nosniff');
+    $client_etag = trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''), " \t\r\n\"");
+    if ($client_etag !== '' && hash_equals($etag, $client_etag))
+    {
+      http_response_code(304);
+      exit;
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'HEAD') readfile($preview);
+    exit;
+  }
+}
+
 $table = $GLOBALS['prefixeTable'].'bratonien_tools_nc_connections';
 $result = pwg_query('SELECT config_json, secret_blob FROM `'.$table.'` WHERE id='.(int)$source['connection_id'].' LIMIT 1');
 if (!pwg_db_num_rows($result)) bratonien_tools_webdav_image_abort(404, 'WebDAV-Verbindung nicht gefunden.');
@@ -97,7 +120,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.5.17',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.5.19',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
