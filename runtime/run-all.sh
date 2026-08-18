@@ -6,7 +6,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
 
 if ! php "$SCRIPT_DIR/reconcile.php"; then
-    echo "NC Connector: gespeicherte Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
+    echo "NC Connector: gespeicherte lokale Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
+    exit 1
+fi
+
+if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
+    echo "NC Connector: WebDAV-Testverbindungen konnten nicht mit der parallelen Runtime abgeglichen werden." >&2
     exit 1
 fi
 
@@ -16,9 +21,10 @@ if ! php "$SCRIPT_DIR/cleanup-stale.php"; then
 fi
 
 configs=("$CONFIG_DIR"/connection-*.conf)
+webdav_configs=("$CONFIG_DIR"/webdav-connection-*.conf)
 
-if [[ ${#configs[@]} -eq 0 ]]; then
-    echo "Keine aktiven NC-Connector-Verbindungen konfiguriert."
+if [[ ${#configs[@]} -eq 0 && ${#webdav_configs[@]} -eq 0 ]]; then
+    echo "Keine NC-Connector-Verbindungen konfiguriert."
     exit 0
 fi
 
@@ -49,8 +55,16 @@ for config in "${configs[@]}"; do
         continue
     fi
 
-    echo "NC Connector: $name"
+    echo "NC Connector lokal: $name"
     if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
+        result=1
+    fi
+done
+
+for config in "${webdav_configs[@]}"; do
+    name="$(basename "$config")"
+    echo "NC Connector WebDAV parallel: $name"
+    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
         result=1
     fi
 done
