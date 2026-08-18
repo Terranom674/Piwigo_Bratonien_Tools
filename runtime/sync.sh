@@ -11,6 +11,17 @@ source "$CONFIG_FILE"
 
 NC_ACTIVITY_VIEW="${NC_ACTIVITY_VIEW:-piwigo_showcase_activity}"
 NC_DB_VIEW="${NC_DB_VIEW:-piwigo_showcase_sources}"
+SOURCE_MODE="${SOURCE_MODE:-showcase-view}"
+ACCESS_USER="${ACCESS_USER:-}"
+
+case "$SOURCE_MODE" in
+    showcase-view|user-filesystem) ;;
+    *) echo "Unbekannter SOURCE_MODE: $SOURCE_MODE" >&2; exit 1 ;;
+esac
+if [[ "$SOURCE_MODE" == "user-filesystem" && -z "$ACCESS_USER" ]]; then
+    echo "ACCESS_USER fehlt fuer die benutzerbezogene Verbindung." >&2
+    exit 1
+fi
 
 if [[ -n "$PIWIGO_SYNC_OVERRIDE_VALUE" ]]; then
     case "$PIWIGO_SYNC_OVERRIDE_VALUE" in
@@ -165,7 +176,13 @@ if [[ "$NEEDS_LOCAL_REPAIR" == "0" && "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; the
     [[ "$PIWIGO_ALBUMS_INTACT" == "0" ]] || NEEDS_LOCAL_REPAIR=1
 fi
 
-if [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
+if [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
+    # Benutzerbezogene Verbindungen werden pro Timerlauf aus ihrem eigenen
+    # lokalen Home-Dateibaum aufgebaut. Die alte globale Showcase-Aktivitaets-
+    # View darf hier weder Daten anderer Benutzer steuern noch Aenderungen
+    # dieses Benutzers verschlucken.
+    GATE_RESULT=0
+elif [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
     GATE_RESULT=0
 else
     ERROR_STAGE="Nextcloud-Aktivität prüfen"
@@ -199,13 +216,21 @@ if [[ "$GATE_RESULT" != "0" ]]; then
     exit "$GATE_RESULT"
 fi
 
-run_stage \
-    "Nextcloud-Dateiliste lesen" \
-    "Dateiliste aus Nextcloud konnte nicht erstellt werden" \
-    python3 "$SCRIPT_DIR/lib/build_manifest.py" \
-    --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER" \
-    --password-file "$NC_DB_PASSWORD_FILE" --view "$NC_DB_VIEW" \
-    --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
+if [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
+    run_stage \
+        "Benutzer-Dateiliste lesen" \
+        "Dateiliste des Nextcloud-Benutzers konnte nicht erstellt werden" \
+        python3 "$SCRIPT_DIR/lib/build_user_manifest.py" \
+        --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
+else
+    run_stage \
+        "Nextcloud-Dateiliste lesen" \
+        "Dateiliste aus Nextcloud konnte nicht erstellt werden" \
+        python3 "$SCRIPT_DIR/lib/build_manifest.py" \
+        --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER" \
+        --password-file "$NC_DB_PASSWORD_FILE" --view "$NC_DB_VIEW" \
+        --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
+fi
 
 run_stage \
     "Lokalen Galeriebaum aktualisieren" \
@@ -261,27 +286,29 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     fi
 fi
 
-ERROR_STAGE="Aktivitätsstand speichern"
-ERROR_MESSAGE="Aktivitätsstand konnte nicht gespeichert werden"
-if COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
-    --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
-    --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
-    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"; then
-    COMMIT_EXIT=0
-else
-    COMMIT_EXIT=$?
-fi
-if [[ -n "$COMMIT_OUTPUT" ]]; then
-    printf '%s\n' "$COMMIT_OUTPUT"
-fi
-if [[ "$COMMIT_EXIT" -ne 0 ]]; then
-    ERROR_DETAIL="Schritt: Aktivitätsstand speichern. Exit-Code: $COMMIT_EXIT."
-    if [[ -n "$COMMIT_OUTPUT" ]]; then
-        ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$COMMIT_OUTPUT" | compact_output)"
+if [[ "$SOURCE_MODE" != "user-filesystem" ]]; then
+    ERROR_STAGE="Aktivitätsstand speichern"
+    ERROR_MESSAGE="Aktivitätsstand konnte nicht gespeichert werden"
+    if COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
+        --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
+        --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
+        --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"; then
+        COMMIT_EXIT=0
+    else
+        COMMIT_EXIT=$?
     fi
-    trap - ERR
-    write_status error "Aktivitätsstand konnte nicht gespeichert werden"
-    exit "$COMMIT_EXIT"
+    if [[ -n "$COMMIT_OUTPUT" ]]; then
+        printf '%s\n' "$COMMIT_OUTPUT"
+    fi
+    if [[ "$COMMIT_EXIT" -ne 0 ]]; then
+        ERROR_DETAIL="Schritt: Aktivitätsstand speichern. Exit-Code: $COMMIT_EXIT."
+        if [[ -n "$COMMIT_OUTPUT" ]]; then
+            ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$COMMIT_OUTPUT" | compact_output)"
+        fi
+        trap - ERR
+        write_status error "Aktivitätsstand konnte nicht gespeichert werden"
+        exit "$COMMIT_EXIT"
+    fi
 fi
 
 trap - ERR
@@ -289,6 +316,8 @@ if [[ "$AUTH_MODE" == "fallback" ]]; then
     write_status warning "Synchronisierung erfolgreich über Fallback; API war nicht nutzbar"
 elif [[ "$AUTH_MODE" == "api" ]]; then
     write_status ok "Synchronisierung erfolgreich über API"
+elif [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
+    write_status ok "Benutzerbezogene Synchronisierung erfolgreich"
 else
     write_status ok "Synchronisierung erfolgreich"
 fi
