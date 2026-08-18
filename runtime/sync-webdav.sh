@@ -93,8 +93,31 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --destination "$GALLERY_ROOT" \
     --state "$SHADOW_MAP_FILE"
 
+trap - ERR
+PREVIEW_CACHE="$PIWIGO_ROOT/_data/bratonien-tools/nc-webdav-preview/connection-$CONNECTION_ID"
+PREVIEW_OUTPUT=""
+PREVIEW_EXIT=0
+if PREVIEW_OUTPUT="$(php "$SCRIPT_DIR/lib/precache-webdav-previews.php" \
+    --mapping="$WEBDAV_MAPPING_FILE" \
+    --base-url="$WEBDAV_BASE_URL" \
+    --user="$WEBDAV_USER" \
+    --password-file="$WEBDAV_PASSWORD_FILE" \
+    --cache-dir="$PREVIEW_CACHE" 2>&1)"; then
+    PREVIEW_EXIT=0
+else
+    PREVIEW_EXIT=$?
+fi
+[[ -z "$PREVIEW_OUTPUT" ]] || printf '%s\n' "$PREVIEW_OUTPUT"
+if [[ "$PREVIEW_EXIT" -ne 0 ]]; then
+    DETAIL="Exit-Code: $PREVIEW_EXIT"
+    if [[ -n "$PREVIEW_OUTPUT" ]]; then
+        DETAIL+="; Ausgabe: $(printf '%s\n' "$PREVIEW_OUTPUT" | compact_output)"
+    fi
+    write_status error "WebDAV-Vorschaubilder konnten beim Einlesen nicht erzeugt werden" "$DETAIL"
+    exit "$PREVIEW_EXIT"
+fi
+
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
-    trap - ERR
     PIWIGO_OUTPUT=""
     PIWIGO_EXIT=0
     if PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
@@ -139,7 +162,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
 
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich" \
+            "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo synchronisiert" \
             "" \
             "api" \
             "ok" \
@@ -148,7 +171,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "Fallback wurde nicht benötigt"
     elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV-Shadow-Tree und Piwigo-Synchronisierung über Fallback erfolgreich" \
+            "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo über Fallback synchronisiert" \
             "" \
             "fallback" \
             "not_used" \
@@ -156,8 +179,8 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "ok" \
             "Benutzername/Passwort-Fallback erfolgreich"
     else
-        write_status ok "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich"
+        write_status ok "WebDAV eingelesen, Vorschaubilder erzeugt und Piwigo synchronisiert"
     fi
 else
-    write_status ok "WebDAV-Shadow-Tree erfolgreich; Registrierung erfolgt im selben Minutenlauf über den bestehenden produktiven Piwigo-Sync"
+    write_status ok "WebDAV eingelesen und Vorschaubilder erzeugt; Registrierung erfolgt über den bestehenden produktiven Piwigo-Sync"
 fi
