@@ -78,9 +78,21 @@ $nc_connector = bratonien_tools_nc_connector_status();
 foreach ($nc_connector['connections'] as &$nc_connection)
 {
   $nc_connection['last_sync'] = bratonien_tools_nc_connector_connection_last_status($nc_connection);
+  $nc_connection['display_name'] = $nc_connection['name'];
+
+  $storage_lines = array();
+  $storages = isset($nc_connection['config']['storages']) && is_array($nc_connection['config']['storages'])
+    ? $nc_connection['config']['storages']
+    : array();
+  foreach ($storages as $storage)
+  {
+    $storage_lines[] = (string)($storage['storage_id'] ?? '').' | '.(string)($storage['source_prefix'] ?? '').' | '.(string)($storage['local_mount'] ?? '');
+  }
+  $nc_connection['storage_text'] = implode("\n", $storage_lines);
+
   if (!empty($nc_connection['fallback_stored']))
   {
-    $nc_connection['name'] .= ' · Fallback gespeichert';
+    $nc_connection['display_name'] .= ' · Fallback gespeichert';
     $nc_connection['verification_checks'][] = array(
       'name' => 'Piwigo-Fallback',
       'ok' => true,
@@ -90,6 +102,7 @@ foreach ($nc_connector['connections'] as &$nc_connection)
 }
 unset($nc_connection);
 $nc_connector['piwigo_api_test'] = $nc_piwigo_api_test;
+$nc_connector['wizard'] = bratonien_tools_nc_wizard_state();
 $nc_system_defaults = array(
   'timer_name' => 'bratonien-nc-connector.timer',
   'timer_active' => false,
