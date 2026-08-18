@@ -189,6 +189,11 @@ function bratonien_tools_webdav_generate_derivative($params, $src_image)
   if (!class_exists('pwg_image')) require_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
 
   $derivative = new DerivativeImage($params, $src_image);
+  if ($derivative->same_as_source())
+  {
+    return true;
+  }
+
   $target = $derivative->get_path();
   if ($target === '' || strpos($target, PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR) !== 0) return false;
 
@@ -249,8 +254,6 @@ function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image,
   {
     if (bratonien_tools_webdav_generate_derivative($params, $src_image))
     {
-      // Keep Piwigo's normal derivative URL. The file behind it now contains
-      // the derivative generated from the prepared WebDAV preview.
       return $url;
     }
   }
@@ -259,8 +262,6 @@ function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image,
     error_log('Bratonien WebDAV derivative #'.(int)$src_image->id.': '.$e->getMessage());
   }
 
-  // Last-resort display fallback: show the prepared preview/original stream
-  // instead of allowing Piwigo to derive from the 1x1 placeholder.
   $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
   return $webdav_url ?: $url;
 }
