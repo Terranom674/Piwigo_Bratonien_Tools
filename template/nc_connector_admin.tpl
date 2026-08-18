@@ -264,14 +264,28 @@
     {if $NC_CONNECTOR.connection_count > 0}
       {foreach from=$NC_CONNECTOR.connections item=connection}
         <details style="margin:.6rem 0">
-          <summary><strong>{$connection.display_name|escape:html}</strong> · {if $connection.enabled}aktiv{else}{$connection.takeover_state|escape:html}{/if}</summary>
+          <summary><strong>{$connection.display_name|escape:html}</strong> · {if $connection.enabled}aktiv{else}{$connection.takeover_state|escape:html}{/if}{if isset($connection.last_sync) && ($connection.last_sync.state == 'error' || $connection.last_sync.state == 'warning')} · Laufzeitproblem{/if}</summary>
           <div style="padding:.75rem 0">
             <form method="post" class="bratonien-actions"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="connection_id" value="{$connection.id|escape:html}"><input name="connection_name" type="text" value="{$connection.name|escape:html}" required><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_update_name">Name speichern</button></form>
             <div class="bratonien-actions" style="margin-top:.6rem">
               {if $connection.adapter == 'local' && !$connection.enabled}<form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="connection_id" value="{$connection.id|escape:html}"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_verify">Verbindung prüfen</button></form>{/if}
-              {if !$connection.enabled && $connection.takeover_state != 'active'}<form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="connection_id" value="{$connection.id|escape:html}"><button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="nc_connector_delete" onclick="return confirm('Verbindung wirklich löschen? Bilder in Nextcloud oder Piwigo werden nicht gelöscht.');">Löschen</button></form>{/if}
+              <form method="post"><input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}"><input type="hidden" name="connection_id" value="{$connection.id|escape:html}"><button class="buttonLike bratonien-delete-button" type="submit" name="bratonien_tool" value="nc_connector_delete" onclick="return confirm('Verbindung wirklich löschen? Die Verbindung wird sofort aus Bratonien Tools entfernt und beim nächsten Connector-Lauf auch aus der Laufzeit entfernt. Bilder in Nextcloud oder Piwigo werden nicht gelöscht.');">Löschen</button></form>
             </div>
-            {if isset($connection.last_sync) && $connection.last_sync.timestamp > 0}<p class="bratonien-base-note"><strong>Letzter Abgleich:</strong> {$connection.last_sync.label|escape:html} · {$connection.last_sync.message|escape:html}</p>{/if}
+            {if isset($connection.last_sync) && $connection.last_sync.timestamp > 0}
+              <p class="bratonien-base-note"><strong>Letzter Abgleich:</strong> {$connection.last_sync.label|escape:html} · {$connection.last_sync.message|escape:html}</p>
+              {if $connection.last_sync.state == 'error'}<p class="bratonien-main-cache__warning"><strong>Laufzeitfehler:</strong> {$connection.last_sync.message|escape:html}</p>{/if}
+              {if $connection.last_sync.state == 'warning'}<p class="bratonien-main-cache__warning"><strong>Laufzeitwarnung:</strong> {$connection.last_sync.message|escape:html}</p>{/if}
+              {if $connection.last_sync.api_state == 'error'}<p class="bratonien-main-cache__warning"><strong>API:</strong> {$connection.last_sync.api_message|escape:html}</p>{/if}
+              {if $connection.last_sync.fallback_state == 'error'}<p class="bratonien-main-cache__warning"><strong>Fallback:</strong> {$connection.last_sync.fallback_message|escape:html}</p>{/if}
+              {if $connection.last_sync.error_detail}<details><summary>Technische Laufzeitdetails</summary><p class="bratonien-main-cache__warning">{$connection.last_sync.error_detail|escape:html}</p></details>{/if}
+            {else}
+              <p class="bratonien-base-note"><strong>Laufzeit:</strong> Noch kein Laufstatus für diese Verbindung vorhanden.</p>
+            {/if}
+            {if isset($connection.config.api_enabled)}
+              <p class="bratonien-base-note"><strong>Piwigo-Zugang dieser Verbindung:</strong> {if $connection.config.api_enabled}eigene API{elseif $connection.fallback_stored}Fallback{else}kein Zugang gespeichert{/if}</p>
+            {else}
+              <p class="bratonien-base-note"><strong>Piwigo-Zugang:</strong> bestehende Legacy-Konfiguration</p>
+            {/if}
             {if $connection.verification_checks|@count > 0}<details><summary>Letzte Prüfung</summary><ul>{foreach from=$connection.verification_checks item=check}<li>{if $check.ok}✓{else}✗{/if} {$check.name|escape:html}: {$check.detail|escape:html}</li>{/foreach}</ul></details>{/if}
             <details style="margin-top:.75rem"><summary>Technische Einstellungen</summary>
               {if $connection.enabled || $connection.takeover_state == 'active'}<p class="bratonien-main-cache__warning">Aktive Verbindungen können technisch nicht geändert werden.</p>{else}
