@@ -10,11 +10,6 @@ if ! php "$SCRIPT_DIR/reconcile.php"; then
     exit 1
 fi
 
-if ! php "$SCRIPT_DIR/reconcile-user-scope.php"; then
-    echo "NC Connector: benutzerbezogene Verbindungen konnten nicht sicher vorbereitet werden." >&2
-    exit 1
-fi
-
 configs=("$CONFIG_DIR"/connection-*.conf)
 
 if [[ ${#configs[@]} -eq 0 ]]; then
@@ -43,7 +38,8 @@ for config in "${configs[@]}"; do
         rm -f -- "$CONFIG_DIR/connection-$connection_id.conf" \
             "$CONFIG_DIR/connection-$connection_id.db-password" \
             "$CONFIG_DIR/connection-$connection_id.piwigo-password" \
-            "$CONFIG_DIR/connection-$connection_id.storages.tsv"
+            "$CONFIG_DIR/connection-$connection_id.storages.tsv" \
+            "$CONFIG_DIR/connection-$connection_id.roots.tsv"
         rm -f -- "$tombstone_dir/deleted-$connection_id"
         continue
     fi
