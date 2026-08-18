@@ -4,6 +4,12 @@ set -Eeuo pipefail
 CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
+
+if ! php "$SCRIPT_DIR/reconcile.php"; then
+    echo "NC Connector: gespeicherte Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
+    exit 1
+fi
+
 configs=("$CONFIG_DIR"/connection-*.conf)
 
 if [[ ${#configs[@]} -eq 0 ]]; then
