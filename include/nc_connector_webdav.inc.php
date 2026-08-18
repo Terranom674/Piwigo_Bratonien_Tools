@@ -14,7 +14,10 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
 {
   $state = bratonien_tools_nc_wizard_state();
 
-  if (empty($state['scan_ok'])) throw new RuntimeException('Die Nextcloud-Verbindung wurde noch nicht erfolgreich geprüft.');
+  if (empty($state['scan_ok']) || empty($state['technical_complete']))
+  {
+    throw new RuntimeException('Die WebDAV-Verbindung wurde im Assistenten noch nicht vollständig vorbereitet.');
+  }
 
   $base_url = rtrim(trim((string)($state['base_url'] ?? '')), '/');
   $username = trim((string)($state['username'] ?? ''));
@@ -36,8 +39,10 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $roots = array();
   foreach ($selected as $path)
   {
+    $fileid = isset($selected_ids[$path]) ? (int)$selected_ids[$path] : 0;
+    if ($fileid < 1) throw new RuntimeException('Für ein ausgewähltes Nextcloud-Verzeichnis fehlt die eindeutige Datei-ID.');
     $roots[] = array(
-      'fileid'=>isset($selected_ids[$path]) ? (int)$selected_ids[$path] : 0,
+      'fileid'=>$fileid,
       'display_name'=>basename($path),
       'webdav_path'=>$path,
     );
@@ -47,6 +52,12 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   if ($name === '') $name = 'Nextcloud WebDAV';
   $gallery_root = rtrim(trim((string)($state['gallery_root'] ?? '')), '/');
   if ($gallery_root === '') $gallery_root = rtrim(PHPWG_ROOT_PATH, '/').'/galleries';
+
+  $api_key_id = ($state['api_status'] ?? '') === 'ok' ? trim((string)($state['_api_key_id'] ?? '')) : '';
+  $api_key_secret = ($state['api_status'] ?? '') === 'ok' ? trim((string)($state['_api_key_secret'] ?? '')) : '';
+  $fallback_user = trim((string)($state['_fallback_user'] ?? ''));
+  $fallback_password = (string)($state['_fallback_password'] ?? '');
+  $api_enabled = $api_key_id !== '' && $api_key_secret !== '';
 
   $config = array(
     'origin'=>'native',
@@ -64,7 +75,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     'full_sync_seconds'=>86400,
     'parallel_test'=>true,
     'piwigo_auth'=>'connection-scoped',
-    'api_enabled'=>false,
+    'api_enabled'=>$api_enabled,
   );
 
   foreach (array('product'=>'nextcloud_product', 'version'=>'nextcloud_version') as $state_key=>$config_key)
@@ -76,10 +87,10 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $secret_payload = json_encode(array(
     'v'=>3,
     'db_password'=>'',
-    'piwigo_user'=>'',
-    'piwigo_password'=>'',
-    'api_key_id'=>'',
-    'api_key_secret'=>'',
+    'piwigo_user'=>$fallback_user,
+    'piwigo_password'=>$fallback_password,
+    'api_key_id'=>$api_key_id,
+    'api_key_secret'=>$api_key_secret,
     'nextcloud_user'=>$username,
     'nextcloud_password'=>$password,
   ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
