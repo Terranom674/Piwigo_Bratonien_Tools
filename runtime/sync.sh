@@ -50,6 +50,12 @@ API_MESSAGE=""
 FALLBACK_STATE="not_run"
 FALLBACK_MESSAGE=""
 ERROR_DETAIL=""
+ERROR_STAGE="Vorbereitung"
+ERROR_MESSAGE="Synchronisierung fehlgeschlagen"
+
+compact_output() {
+    tail -n 8 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//'
+}
 
 write_status() {
     local state="$1" message="$2"
@@ -86,11 +92,47 @@ PY
 }
 
 failure() {
-    [[ -n "$ERROR_DETAIL" ]] || ERROR_DETAIL="Synchronisierung wurde durch einen technischen Fehler abgebrochen."
-    write_status error "Synchronisierung fehlgeschlagen"
+    local exit_code="${1:-1}"
+    local failed_command="${2:-unbekannt}"
+    local failed_line="${3:-?}"
+    trap - ERR
+    if [[ -z "$ERROR_DETAIL" ]]; then
+        ERROR_DETAIL="Schritt: $ERROR_STAGE. Exit-Code: $exit_code. Zeile: $failed_line. Fehlgeschlagener Befehl: $failed_command"
+    fi
+    write_status error "$ERROR_MESSAGE"
+    exit "$exit_code"
 }
-trap failure ERR
+trap 'failure $? "$BASH_COMMAND" "$LINENO"' ERR
 
+run_stage() {
+    local stage="$1"
+    local message="$2"
+    shift 2
+    local output=""
+    local exit_code=0
+
+    ERROR_STAGE="$stage"
+    ERROR_MESSAGE="$message"
+    set +e
+    output="$("$@" 2>&1)"
+    exit_code=$?
+    set -e
+    if [[ -n "$output" ]]; then
+        printf '%s\n' "$output"
+    fi
+    if [[ "$exit_code" -ne 0 ]]; then
+        ERROR_DETAIL="Schritt: $stage. Exit-Code: $exit_code."
+        if [[ -n "$output" ]]; then
+            ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$output" | compact_output)"
+        fi
+        trap - ERR
+        write_status error "$message"
+        exit "$exit_code"
+    fi
+}
+
+ERROR_STAGE="Lokalen Zustand prüfen"
+ERROR_MESSAGE="Lokaler Connector-Zustand konnte nicht geprüft werden"
 NEEDS_LOCAL_REPAIR=0
 if [[ ! -s "$MAP_FILE" ]]; then
     NEEDS_LOCAL_REPAIR=1
@@ -125,14 +167,18 @@ fi
 if [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
     GATE_RESULT=0
 else
-    if python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
+    ERROR_STAGE="Nextcloud-Aktivität prüfen"
+    ERROR_MESSAGE="Nextcloud-Aktivität konnte nicht geprüft werden"
+    set +e
+    GATE_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
         --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
         --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
         --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" \
-        --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS"; then
-        GATE_RESULT=0
-    else
-        GATE_RESULT=$?
+        --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS" 2>&1)"
+    GATE_RESULT=$?
+    set -e
+    if [[ -n "$GATE_OUTPUT" ]]; then
+        printf '%s\n' "$GATE_OUTPUT"
     fi
 fi
 
@@ -141,17 +187,33 @@ if [[ "$GATE_RESULT" == "3" ]]; then
     write_status ok "Keine Änderungen gefunden"
     exit 0
 fi
-[[ "$GATE_RESULT" == "0" ]] || { ERROR_DETAIL="Activity-Gate fehlgeschlagen (Exit-Code $GATE_RESULT)."; exit "$GATE_RESULT"; }
+if [[ "$GATE_RESULT" != "0" ]]; then
+    ERROR_DETAIL="Schritt: Nextcloud-Aktivität prüfen. Exit-Code: $GATE_RESULT."
+    if [[ -n "${GATE_OUTPUT:-}" ]]; then
+        ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$GATE_OUTPUT" | compact_output)"
+    fi
+    trap - ERR
+    write_status error "Nextcloud-Aktivität konnte nicht geprüft werden"
+    exit "$GATE_RESULT"
+fi
 
-python3 "$SCRIPT_DIR/lib/build_manifest.py" \
+run_stage \
+    "Nextcloud-Dateiliste lesen" \
+    "Dateiliste aus Nextcloud konnte nicht erstellt werden" \
+    python3 "$SCRIPT_DIR/lib/build_manifest.py" \
     --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER" \
     --password-file "$NC_DB_PASSWORD_FILE" --view "$NC_DB_VIEW" \
     --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
 
-python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
+run_stage \
+    "Lokalen Galeriebaum aktualisieren" \
+    "Lokaler Galeriebaum konnte nicht aktualisiert werden" \
+    python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" --destination "$GALLERY_ROOT" --state "$MAP_FILE"
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
+    ERROR_STAGE="Piwigo synchronisieren"
+    ERROR_MESSAGE="Piwigo-Synchronisierung fehlgeschlagen"
     set +e
     PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
         --piwigo-root="$PIWIGO_ROOT" \
@@ -189,17 +251,34 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     fi
 
     if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
-        ERROR_DETAIL="$(tail -n 3 <<<"$PIWIGO_OUTPUT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/[[:space:]]$//')"
+        ERROR_DETAIL="Schritt: Piwigo synchronisieren. Exit-Code: $PIWIGO_EXIT. Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | compact_output)"
         trap - ERR
-        write_status error "Synchronisierung fehlgeschlagen"
+        write_status error "Piwigo-Synchronisierung fehlgeschlagen"
         exit "$PIWIGO_EXIT"
     fi
 fi
 
-python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
+ERROR_STAGE="Aktivitätsstand speichern"
+ERROR_MESSAGE="Aktivitätsstand konnte nicht gespeichert werden"
+set +e
+COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
     --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
     --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
-    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW"
+    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"
+COMMIT_EXIT=$?
+set -e
+if [[ -n "$COMMIT_OUTPUT" ]]; then
+    printf '%s\n' "$COMMIT_OUTPUT"
+fi
+if [[ "$COMMIT_EXIT" -ne 0 ]]; then
+    ERROR_DETAIL="Schritt: Aktivitätsstand speichern. Exit-Code: $COMMIT_EXIT."
+    if [[ -n "$COMMIT_OUTPUT" ]]; then
+        ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$COMMIT_OUTPUT" | compact_output)"
+    fi
+    trap - ERR
+    write_status error "Aktivitätsstand konnte nicht gespeichert werden"
+    exit "$COMMIT_EXIT"
+fi
 
 trap - ERR
 if [[ "$AUTH_MODE" == "fallback" ]]; then
