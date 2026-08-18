@@ -32,7 +32,7 @@ function fetch_remote_blob($url, $user, $password)
     CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
     CURLOPT_USERPWD => $user.':'.$password,
     CURLOPT_FAILONERROR => false,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.5.23',
+    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.6.1',
   ));
   $body = curl_exec($ch);
   $errno = curl_errno($ch);
