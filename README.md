@@ -2,7 +2,7 @@
 
 Modulares Piwigo-Plugin für Administration, Bildverarbeitung, geschützte Freigaben, Fotoauswahl und die Anbindung von Nextcloud an Piwigo.
 
-Aktuelle Plugin-Version: **0.9.5.6**
+Aktuelle Plugin-Version: **0.9.6.1**
 
 ## Grundprinzip
 
@@ -17,166 +17,126 @@ Der NC Connector synchronisiert ausdrücklich ausgewählte Nextcloud-Inhalte mit
 ### Datenmodell
 
 - Nextcloud bleibt die Quelle der Originaldateien.
-- Originalbilder werden nicht in eine zweite dauerhafte Bibliothek kopiert.
-- Ein Shadow Tree erzeugt die für Piwigo benötigte Verzeichnisstruktur.
-- Der bestehende produktive Weg verwendet lokale bereits vorhandene Speicherpfade und Symlinks auf die Originale.
+- Originalbilder werden nicht dauerhaft in eine zweite Bibliothek unter Piwigo kopiert.
+- Ein Shadow Tree erzeugt die für Piwigo benötigte Ordnerstruktur.
 - Ordner werden als physische Piwigo-Alben synchronisiert.
-- Root-Dateien können als echte Piwigo-Orphans ohne Albumzuordnung registriert werden.
-- Entfernte Quellen werden aus Shadow Tree und Piwigo entfernt, das Nextcloud-Original bleibt erhalten.
+- Root-Dateien können als Piwigo-Orphans registriert werden.
 - Neu importierte physische Connector-Alben werden privat angelegt.
+- Entfernte Quellen werden aus Shadow Tree und Piwigo entfernt; die Nextcloud-Originale bleiben erhalten.
 
-### Bestehende produktive Quellenmodi
+### Bestehende lokale Quellenmodi
 
-Der bestehende Connector unterstützt weiterhin getrennte Quellenmodi:
+Der bestehende Connector unterstützt weiterhin:
 
 - `legacy-view`
 - `user-shares`
 - `selected-fileids`
 
-Diese Modi bleiben während der Entwicklung des neuen WebDAV-Wegs vollständig erhalten. Es gibt keine automatische Migration bestehender Verbindungen.
+Diese Modi bleiben erhalten. Es gibt keine automatische Migration auf WebDAV.
 
-### Verbindungsassistent
+### WebDAV-Modus
 
-Neue Verbindungen werden bevorzugt mit einem Endnutzer-Assistenten angelegt.
+Der neue Endnutzerpfad verwendet `source_mode=webdav-placeholder` und `adapter=remote`.
 
-Der aktuelle Assistent kann Nextcloud per HTTP/HTTPS und OCS prüfen und Verzeichnisse per WebDAV anzeigen. Für den bestehenden produktiven lokalen Weg existieren weiterhin PostgreSQL-/View-/Storage-Mapping-Schritte, sofern sie benötigt werden.
+Benötigt werden nur:
 
-Wizard-Geheimnisse werden während der Einrichtung serverseitig in der Sitzung gehalten. Ein fehlgeschlagener Test leert die Eingaben nicht. Ein API-Test verändert die dauerhafte API-Konfiguration erst beim erfolgreichen Abschluss des Assistenten.
+- Nextcloud-Adresse;
+- Nextcloud-Benutzer bzw. App-Passwort;
+- normaler WebDAV-Zugriff auf die Inhalte dieses Benutzers;
+- eine normale Piwigo-Installation mit ihrer vorhandenen PHP-/Bildverarbeitungsumgebung.
 
-Die vollständige technische Maske bleibt weiterhin über **Ohne Assistent anlegen** sowie bei bestehenden Verbindungen unter **Technische Einstellungen** erreichbar.
+Nicht vorausgesetzt werden:
 
-### Lokaler produktiver Adapter
+- PostgreSQL-Zugriff auf Nextcloud;
+- `occ`-Adminzugriff;
+- Storage-IDs oder Backend-Pfade;
+- zusätzliche Host-Mounts;
+- FUSE;
+- davfs;
+- rclone.
 
-Der derzeit produktive Adapter verwendet je nach bestehender Verbindung:
+### WebDAV-Ablauf
 
-- PostgreSQL-Reader;
-- Source-/Activity-Views;
-- explizite Storage-Zuordnungen auf bereits vorhandene lokale Mounts;
-- Plugin-eigene Runtime und getrennten State pro Verbindung.
-
-Dieser Weg bleibt erhalten, bis der neue WebDAV-Weg vollständig End-to-End funktioniert.
-
-### Neuer WebDAV-Weg
-
-Der neue Quellenmodus wird zusätzlich zu den bestehenden Modi entwickelt als `webdav-placeholder`.
-
-Ziel:
-
-- nur normale Nextcloud-Anmeldung bzw. App-Passwort und WebDAV benötigen;
-- keine Nextcloud-PostgreSQL-Rechte voraussetzen;
-- keine Storage-IDs oder Backend-Pfade voraussetzen;
-- keine zusätzlichen Host-Mounts voraussetzen;
-- kein FUSE, davfs oder rclone voraussetzen;
-- keine Originalbilder dauerhaft nach Piwigo kopieren.
-
-Grundidee:
-
-1. Nextcloud-Verzeichnisse werden über WebDAV/PROPFIND gelesen.
-2. Ordner, Dateinamen, Datei-ID, MIME-Typ, Größe, ETag und WebDAV-Pfad werden erfasst.
-3. Für Bilder wird nur eine winzige lokale Platzhalterquelle erzeugt.
-4. Der bestehende Shadow Tree bildet daraus die reale Ordner-/Dateinamensstruktur für Piwigo.
-5. Ein Mapping verbindet den Piwigo-/Shadow-Tree-Pfad mit der WebDAV-Quelle.
-6. Wenn Piwigo echte Bilddaten benötigt, wird das Original bei Bedarf über WebDAV gelesen.
-7. Piwigo-Derivate werden normal in `_data/i/` gecacht.
-8. Das Original bleibt ausschließlich in Nextcloud.
-
-Vorhandene Bausteine:
-
-- `runtime/lib/build_webdav_placeholder_source.py` – rekursiver WebDAV-Scan, Platzhalterquelle, Manifest und Mapping;
-- `include/nc_connector_webdav.inc.php` – paralleler, zunächst deaktivierter Connection-Typ `webdav-placeholder`;
-- Secret-Format v3 mit verbindungseigenem `nextcloud_user` und `nextcloud_password`.
-
-Neue WebDAV-Testverbindungen werden als `adapter=remote` und deaktiviert gespeichert. Sie verändern keine bestehenden Verbindungen und werden noch nicht von der produktiven Runtime aktiviert.
-
-### Gemessene WebDAV-Performance
-
-Ein realer Test mit einem 16.091.204-Byte-Bild ergab vom Piwigo-System:
-
-- interne Nextcloud-Adresse: 1,829 s bei 8.796.915 Byte/s;
-- externe Nextcloud-Adresse: 1,865 s bei 8.627.524 Byte/s.
-
-Damit war die externe Verbindung in diesem Test nur ungefähr 2 % langsamer. Der WebDAV-Ansatz wird deshalb weiterverfolgt. Wichtig bleibt, dass Piwigo-Derivate lokal gecacht werden und WebDAV nicht bei jedem Thumbnail-Aufruf erneut verwendet wird.
-
-### Activity Gate
-
-Der bestehende regelmäßige Lauf berücksichtigt:
-
-- Nextcloud-Aktivität;
-- Signatur der sichtbaren Quellen;
-- Quiet-Time;
-- maximale Wartezeit;
-- periodischen Full-Sync;
-- notwendigen Reparaturlauf bei beschädigtem Shadow Tree oder fehlenden Piwigo-Alben.
-
-Der neue WebDAV-Modus erhält später eine eigene Änderungserkennung, insbesondere über WebDAV-Metadaten wie ETag.
+1. Der Assistent prüft Nextcloud und liest die sichtbaren Verzeichnisse per WebDAV.
+2. Ausgewählte Verzeichnisse werden rekursiv per PROPFIND eingelesen.
+3. Ordner, Dateiname, Nextcloud-Datei-ID, MIME-Typ, Größe, ETag und WebDAV-Pfad werden erfasst.
+4. `runtime/lib/build_webdav_placeholder_source.py` erzeugt eine lokale Platzhalterquelle ohne dauerhafte Originalkopie.
+5. `runtime/lib/shadow_tree.py` baut daraus den verbindungseigenen Shadow Tree.
+6. Der WebDAV-Galeriebaum liegt unter `_data/bratonien-tools/nc-webdav-gallery/connection-ID`.
+7. Jede WebDAV-Verbindung wird als eigene physische Piwigo-Site registriert. Die ausgewählte Nextcloud-Wurzel erscheint dadurch direkt als Album; technische `bratonien-webdav-ID`-Wrapper bleiben unsichtbar.
+8. `runtime/lib/precache-webdav-previews.php` erzeugt vorbereitete Arbeitsbilder als JPEG beziehungsweise PNG mit maximal 4096 px Kantenlänge.
+9. `runtime/lib/build-webdav-derivatives.php` korrigiert die Piwigo-Bildabmessungen und erzeugt die konfigurierten Standard- und Custom-Derivate im Hintergrundlauf.
+10. Der Frontend-Aufruf erzeugt keine Derivate. Fehlt eines, wird das vorbereitete Arbeitsbild als sicherer Fallback ausgeliefert.
+11. Wenn das Original benötigt wird, streamt `webdav-image.php` es serverseitig direkt aus Nextcloud. Zugangsdaten werden dem Browser nicht offengelegt.
 
 ### Piwigo-Synchronisierung
 
-Der produktive Lauf ist API-first:
+Der WebDAV-Pfad nutzt die vorhandene Piwigo-Synchronisationslogik mit einer verbindungseigenen Site.
 
-1. `bratonien.nc.syncProductive` für physische Alben und Bilder;
-2. `bratonien.nc.syncOrphans` für Root-Dateien;
-3. Benutzername/Passwort nur als optionaler Fallback.
+Nach dem Dateiabgleich laufen die vorhandenen Nacharbeiten, darunter:
 
-Die produktive direkte API-Synchronisierung ist aktuell ausdrücklich für **Piwigo 16.4.0** freigegeben. Bei einer anderen Piwigo-Version wird sie nicht stillschweigend als kompatibel angenommen.
+- Metadaten-Synchronisierung;
+- Bild- und Kategorieintegrität;
+- Uppercats/Kategoriestruktur;
+- globale Ränge;
+- Pfadpflege;
+- Rating-Score;
+- Benutzer-Cache-Invalidierung;
+- Orphan-Abgleich.
 
-Der direkte produktive Sync führt außerdem die für den normalen Piwigo-Import relevanten Nacharbeiten aus, darunter Albuminformationen, globale Ränge, Bildinformationen, Pfade und Cache-Invalidierung. Er ruft dafür keine Admin-Seite fernsteuernd auf.
+Die direkte produktive Synchronisierung ist aktuell ausdrücklich auf **Piwigo 16.4.0** abgestimmt.
+
+### Fallback-Zugang
+
+Piwigo wird API-first angesprochen. Ist für eine Verbindung keine API konfiguriert, kann Benutzername/Passwort als Fallback verwendet werden.
+
+Der Assistent prüft Fallback-Zugangsdaten vor dem Speichern. Eine fehlgeschlagene Prüfung schließt oder leert den Assistenten nicht.
+
+### Statusanzeige
+
+Die Administration zeigt den Laufzeitstatus regelmäßig im Hintergrund an. Dafür wird die Admin-Seite nicht neu geladen; offene Dialoge, Assistenten und aufgeklappte Bereiche bleiben erhalten.
+
+Fehler werden nach Prozessschritt getrennt dargestellt, unter anderem für WebDAV-Einlesen, Piwigo-Synchronisierung, Preview-Erzeugung und Derivat-Erzeugung.
+
+### Löschen einer Verbindung
+
+Seit **0.9.6.1** besitzt der WebDAV-Pfad einen vollständigen Lösch-Lebenszyklus:
+
+- Beim Löschen einer WebDAV-Verbindung werden ihre Piwigo-Site, Alben und Bilddatensätze entfernt.
+- Zugehörige Piwigo-Derivate werden entfernt.
+- Nextcloud-Originale bleiben unverändert.
+- Runtime-, Shadowtree-, Source-, Preview- und Statusdaten werden bereinigt.
+- `runtime/cleanup-webdav-piwigo.php` erkennt zusätzlich bereits verwaiste WebDAV-Piwigo-Sites, für die keine Connector-Verbindung mehr existiert, und bereinigt sie im gemeinsamen Runner nachträglich.
 
 ### Runtime
 
-Aktive bestehende Verbindungen werden über einen gemeinsamen systemd-Timer verarbeitet:
+Aktive Verbindungen werden über den gemeinsamen Runner verarbeitet:
 
 - `bratonien-nc-connector.timer`
 - `bratonien-nc-connector.service`
 - `runtime/run-all.sh`
-- `runtime/sync.sh`
 
 Verbindungsspezifische Konfigurationen liegen unter `/etc/bratonien-tools/nc-connector/`, State-Daten unter `/var/lib/bratonien-tools/nc-connector/connection-ID`.
 
-Der Shadow-Tree-Austausch besitzt einen Rollback: Scheitert der Wechsel auf den neuen Baum, wird der vorherige Galeriebaum wiederhergestellt.
+Die Reihenfolge des gemeinsamen Laufs ist:
 
-Der WebDAV-Parallelweg wird in der nächsten Bauphase mit einem eigenen Reconcile-/Sync-Zweig ergänzt. Bis dahin bleibt er deaktiviert und kann keine bestehende Runtime beeinflussen.
-
-### Statusanzeige
-
-Die Administration zeigt letzten und nächsten Lauf. Der Status wird regelmäßig im Hintergrund abgefragt. Dafür wird die Admin-Seite **nicht** neu geladen; offene Dialoge, Assistenten und aufgeklappte Bereiche bleiben erhalten.
-
-### Bestehende Verbindungen
-
-Bestehende Verbindungen können:
-
-- umbenannt;
-- geprüft;
-- technisch bearbeitet, solange sie nicht aktiv sind;
-- deaktiviert und anschließend gelöscht werden.
-
-Seit 0.9.5.5 hängt das Löschen einer Verbindung nicht mehr davon ab, dass der Webserver in Root-eigene Runtime-Verzeichnisse schreiben kann. Die Datenbankverbindung wird entfernt; verwaiste Runtime-Dateien werden vor einem späteren Sync bereinigt.
-
-Das Löschen einer Connector-Verbindung entfernt keine Nextcloud-Originale und keine Piwigo-Bilder.
-
-### Migrationsregel für WebDAV
-
-Der bestehende lokale Weg bleibt so lange vollständig erhalten, bis `webdav-placeholder` End-to-End funktioniert.
-
-Vor einer freiwilligen Migration bestehender Verbindungen müssen mindestens erfolgreich getestet sein:
-
-- Verbindungsanlage;
-- Verzeichnisauswahl;
-- Shadow Tree;
-- Piwigo-Registrierung;
-- echte Bildausgabe;
-- Derivat-Cache;
-- Änderungserkennung;
-- Löschen/Deaktivieren;
-- Fehlerbehandlung.
+1. lokale Verbindungen reconciliieren;
+2. WebDAV-Verbindungen reconciliieren;
+3. verwaiste WebDAV-Piwigo-Inhalte bereinigen;
+4. allgemeine verwaiste Runtime-Dateien bereinigen;
+5. WebDAV-Verbindungen synchronisieren;
+6. lokale Verbindungen synchronisieren.
 
 ## Bildcache
 
+Bratonien Tools kann:
+
 - Piwigo-Bildderivate gezielt leeren;
 - vorhandene Bildgrößen neu erzeugen;
-- Cache-Aufbau als Worker-Prozess starten und abbrechen;
-- Worker-Zahl automatisch oder manuell konfigurieren;
-- Originalbilder bleiben unangetastet.
+- den Cache-Aufbau als Worker-Prozess starten und abbrechen;
+- die Worker-Zahl automatisch oder manuell konfigurieren.
+
+Originalbilder bleiben unangetastet.
 
 ## Wasserzeichenverwaltung
 
@@ -186,7 +146,7 @@ Vor einer freiwilligen Migration bestehender Verbindungen müssen mindestens erf
 - Album-Ausnahmen und Vererbung;
 - Position, Transparenz und Skalierung;
 - eigener Runtime-Filter für Piwigo-Derivate;
-- bisherige Piwigo-Wasserzeichenkonfiguration wird beim Aktivieren gesichert.
+- Sicherung der bisherigen Piwigo-Wasserzeichenkonfiguration beim Aktivieren.
 
 ## Bilddateien und Pfade
 
@@ -229,37 +189,34 @@ Die Piwigo-Bilddetailseite erhält responsive Navigationszonen für vorheriges B
 Der integrierte Updater:
 
 - liest den Zielstand aus GitHub;
-- bindet ein Update an einen konkreten Commit statt an einen während des Updates beweglichen Branch-Stand;
+- bindet ein Update an einen konkreten Commit;
 - prüft Version und SHA-256 des Zielstands;
 - erstellt vor dem Austausch ein Backup;
-- nutzt Post/Redirect/Get, damit ein Browser-Reload keine schreibende Aktion erneut ausführt;
+- nutzt Post/Redirect/Get;
 - verlangt Webmaster-Rechte, `ZipArchive` und ausreichende Schreibrechte.
 
-## Architektur
-
-Wichtige Dateien und Verzeichnisse:
+## Wichtige Dateien und Verzeichnisse
 
 - `main.inc.php` – Plugin-Einstieg und Runtime-Hooks
-- `admin.php` – zentraler Admin-Controller mit Post/Redirect/Get
-- `include/tool_registry.inc.php` – Registry administrativer Aktionen
+- `admin.php` – zentraler Admin-Controller
 - `include/nc_connector.inc.php` – Datenmodell und gemeinsame Connector-Funktionen
-- `include/nc_connector_wizard.inc.php` – Endnutzer-Assistent und Connection-Bearbeitung
-- `include/nc_connector_manage.inc.php` – Credential-Format, Storage-Mappings, Verifikation und Löschen
-- `include/nc_connector_connection_scope.inc.php` – verbindungseigene Authentifizierung
-- `include/nc_connector_create_api.inc.php` – API-first-Verbindungserstellung und Secret v3
-- `include/nc_connector_webdav.inc.php` – paralleler WebDAV-Connection-Typ
-- `include/nc_connector_piwigo_api.inc.php` – API-Zugang und Fallback-Verwaltung
-- `include/nc_connector_system.inc.php` – Timer- und Laufzeitstatus
+- `include/nc_connector_wizard.inc.php` – Verbindungsassistent
+- `include/nc_connector_wizard_webdav_flow.inc.php` – WebDAV-first-Wizardablauf
+- `include/nc_connector_delete_safe.inc.php` – sicheres Löschen einschließlich WebDAV-Piwigo-Inhalten
 - `include/nc_productive_ws.inc.php` – produktiver Piwigo-Dateisync
 - `include/nc_orphan_ws.inc.php` – Orphan-Synchronisierung
-- `runtime/lib/activity_gate.py` – Activity Gate
-- `runtime/lib/build_manifest.py` – bestehende Auflösung der Nextcloud-Quellen auf Storage-Mounts
-- `runtime/lib/build_selected_manifest.py` – ausgewählte Nextcloud-Datei-IDs auf bestehende Storage-Pfade auflösen
-- `runtime/lib/build_webdav_placeholder_source.py` – experimentelle WebDAV-Platzhalterquelle
-- `runtime/lib/shadow_tree.py` – atomarer Shadow Tree mit Rollback
-- `runtime/lib/piwigo-sync.php` – API-first-Piwigo-Sync mit Fallback
-- `runtime/run-all.sh` – Multi-Connection-Runner und Bereinigung verwaister Runtime-Dateien
-- `runtime/sync.sh` – Ablauf einer bestehenden lokalen Verbindung
+- `include/webdav_image_runtime.inc.php` – WebDAV-Bildzuordnung, Preview-/Derivathilfen und URL-Filter
+- `webdav-image.php` – berechtigungsgeprüfter WebDAV-Bildstream
+- `runtime/reconcile-webdav.php` – WebDAV-Runtime-Reconcile
+- `runtime/cleanup-webdav-piwigo.php` – Bereinigung gelöschter/verwaister WebDAV-Verbindungen in Piwigo
+- `runtime/sync-webdav.sh` – Ablauf einer WebDAV-Verbindung
+- `runtime/run-all.sh` – gemeinsamer Multi-Connection-Runner
+- `runtime/lib/build_webdav_placeholder_source.py` – rekursiver WebDAV-Scan und Platzhalterquelle
+- `runtime/lib/precache-webdav-previews.php` – vorbereitete JPEG-/PNG-Arbeitsbilder
+- `runtime/lib/build-webdav-derivatives.php` – CLI-Derivat-Builder
+- `runtime/lib/shadow_tree.py` – atomarer Shadow Tree
+- `runtime/lib/piwigo-sync.php` – Piwigo-Sync mit API/Fallback
+- `main-cache-build.php` – allgemeiner Piwigo-Derivat-/Cache-Builder
 - `include/self_update.inc.php` – Self-Updater
 - `include/album_shares.inc.php` – geschützte Albumfreigaben
 - `include/public_selection.inc.php` – Fotoauswahl
@@ -272,20 +229,18 @@ Wichtige Dateien und Verzeichnisse:
 
 - administrative Schreibaktionen verwenden Piwigos CSRF-Schutz;
 - Connector-Zugangsdaten werden verschlüsselt gespeichert;
-- Secret v3 speichert Nextcloud-Zugangsdaten verbindungseigen und verschlüsselt;
-- Wizard-Geheimnisse werden nicht in Browser-Web-Storage persistiert;
-- bestehende lokale Storage-Mounts werden explizit zugeordnet und validiert;
+- Nextcloud-Zugangsdaten werden verbindungseigen gespeichert und nur serverseitig verwendet;
+- Wizard-Geheimnisse werden nicht im Browser-Web-Storage persistiert;
 - SQL-View-Namen werden vor Verwendung validiert;
 - produktive Piwigo-API ist versionsgebunden;
 - Originalbilder werden vom Connector nicht gelöscht;
-- der neue WebDAV-Weg soll Originalbilder nicht dauerhaft lokal speichern;
-- Update-Pakete werden an Commit und Hash gebunden;
-- bestehende Verbindungen bleiben während der WebDAV-Entwicklung unangetastet.
+- WebDAV-Originalbilder werden nicht dauerhaft lokal gespeichert;
+- Update-Pakete werden an Commit und Hash gebunden.
 
 ## Entwicklungsstand
 
-`0.9.5.x` ist der aktuelle Entwicklungsblock. Der bestehende lokale NC Connector bleibt produktiv und wird nicht durch den experimentellen WebDAV-Weg ersetzt.
+`0.9.6.x` ist die aktuelle Versionslinie.
 
-Mit 0.9.5.6 ist die parallele Verbindungsschicht angelegt: Secret v3 kann Nextcloud-Zugangsdaten speichern und `webdav-placeholder` existiert als eigener deaktivierter Connection-Typ. Der nächste Schritt ist ein strikt getrennter Reconcile-/Runtime-Zweig für diesen Modus und danach der erste Platzhalter-PoC durch den bestehenden Shadow Tree und Piwigo-Sync.
+Mit **0.9.6.1** ist der WebDAV-Pfad einschließlich Piwigo-Registrierung, vorbereiteter Bildquelle, CLI-Derivatstrecke und Lösch-/Cleanup-Lebenszyklus im Repository umgesetzt. Der bestehende lokale Connector bleibt parallel erhalten.
 
-Den detaillierten aktuellen Plan enthält `CURRENT_STATUS.md`.
+Der jeweils detaillierte Prüf- und Entwicklungsstand steht in [`CURRENT_STATUS.md`](CURRENT_STATUS.md).
