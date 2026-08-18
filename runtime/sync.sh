@@ -5,21 +5,25 @@ CONFIG_FILE="${PIWIGO_CONFIG:-/etc/bratonien-tools/nc-connector/connection-1.con
 [[ -r "$CONFIG_FILE" ]] || { echo "Konfiguration fehlt: $CONFIG_FILE" >&2; exit 1; }
 
 PIWIGO_SYNC_OVERRIDE_VALUE="${PIWIGO_SYNC_OVERRIDE-}"
-
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
-NC_ACTIVITY_VIEW="${NC_ACTIVITY_VIEW:-piwigo_showcase_activity}"
-NC_DB_VIEW="${NC_DB_VIEW:-piwigo_showcase_sources}"
-SOURCE_MODE="${SOURCE_MODE:-showcase-view}"
+: "${NC_ACTIVITY_VIEW:?NC_ACTIVITY_VIEW fehlt}"
+: "${NC_DB_VIEW:?NC_DB_VIEW fehlt}"
+SOURCE_MODE="${SOURCE_MODE:-legacy-view}"
 ACCESS_USER="${ACCESS_USER:-}"
+ROOTS_CONFIG="${ROOTS_CONFIG:-}"
 
 case "$SOURCE_MODE" in
-    showcase-view|user-filesystem) ;;
+    legacy-view|user-shares|selected-fileids) ;;
     *) echo "Unbekannter SOURCE_MODE: $SOURCE_MODE" >&2; exit 1 ;;
 esac
-if [[ "$SOURCE_MODE" == "user-filesystem" && -z "$ACCESS_USER" ]]; then
-    echo "ACCESS_USER fehlt fuer die benutzerbezogene Verbindung." >&2
+if [[ "$SOURCE_MODE" != "legacy-view" && -z "$ACCESS_USER" ]]; then
+    echo "ACCESS_USER fehlt fuer die verbindungsbezogene Datenquelle." >&2
+    exit 1
+fi
+if [[ "$SOURCE_MODE" == "selected-fileids" && ( -z "$ROOTS_CONFIG" || ! -r "$ROOTS_CONFIG" ) ]]; then
+    echo "ROOTS_CONFIG fehlt fuer die ausgewaehlten Nextcloud-Quellen." >&2
     exit 1
 fi
 
@@ -71,9 +75,7 @@ compact_output() {
 write_status() {
     local state="$1" message="$2"
     local error_detail="$ERROR_DETAIL"
-    if [[ "$state" != "error" ]]; then
-        error_detail=""
-    fi
+    [[ "$state" == "error" ]] || error_detail=""
     python3 - "$STATUS_FILE" "$PUBLIC_STATUS_FILE" "$state" "$message" "$AUTH_MODE" "$API_STATE" "$API_MESSAGE" "$FALLBACK_STATE" "$FALLBACK_MESSAGE" "$error_detail" <<'PY'
 import json, os, sys, tempfile, time
 (path, public_path, state, message, auth_mode, api_state, api_message,
@@ -116,27 +118,16 @@ failure() {
 trap 'failure $? "$BASH_COMMAND" "$LINENO"' ERR
 
 run_stage() {
-    local stage="$1"
-    local message="$2"
+    local stage="$1" message="$2"
     shift 2
-    local output=""
-    local exit_code=0
-
+    local output="" exit_code=0
     ERROR_STAGE="$stage"
     ERROR_MESSAGE="$message"
-    if output="$("$@" 2>&1)"; then
-        exit_code=0
-    else
-        exit_code=$?
-    fi
-    if [[ -n "$output" ]]; then
-        printf '%s\n' "$output"
-    fi
+    if output="$("$@" 2>&1)"; then exit_code=0; else exit_code=$?; fi
+    [[ -z "$output" ]] || printf '%s\n' "$output"
     if [[ "$exit_code" -ne 0 ]]; then
         ERROR_DETAIL="Schritt: $stage. Exit-Code: $exit_code."
-        if [[ -n "$output" ]]; then
-            ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$output" | compact_output)"
-        fi
+        [[ -z "$output" ]] || ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$output" | compact_output)"
         trap - ERR
         write_status error "$message"
         exit "$exit_code"
@@ -151,16 +142,11 @@ if [[ ! -s "$MAP_FILE" ]]; then
 else
     set +e
     python3 - "$MAP_FILE" "$GALLERY_ROOT" <<'PY'
-import json
-import sys
+import json, sys
 from pathlib import Path
-
 mapping = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 gallery = Path(sys.argv[2])
-roots = [
-    target for source, target in mapping.items()
-    if source.startswith("share:") and "/" not in source
-]
+roots = [target for source, target in mapping.items() if source.startswith("share:") and "/" not in source]
 raise SystemExit(0 if roots and all((gallery / target).is_dir() for target in roots) else 1)
 PY
     ROOTS_INTACT=$?
@@ -176,108 +162,76 @@ if [[ "$NEEDS_LOCAL_REPAIR" == "0" && "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; the
     [[ "$PIWIGO_ALBUMS_INTACT" == "0" ]] || NEEDS_LOCAL_REPAIR=1
 fi
 
-if [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
-    # Benutzerbezogene Verbindungen werden pro Timerlauf aus ihrem eigenen
-    # lokalen Home-Dateibaum aufgebaut. Die alte globale Showcase-Aktivitaets-
-    # View darf hier weder Daten anderer Benutzer steuern noch Aenderungen
-    # dieses Benutzers verschlucken.
-    GATE_RESULT=0
-elif [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
+GATE_ARGS=(
+    --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT"
+    --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE"
+    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW"
+    --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS"
+)
+if [[ "$SOURCE_MODE" != "legacy-view" ]]; then GATE_ARGS+=(--access-user "$ACCESS_USER"); fi
+if [[ "$SOURCE_MODE" == "selected-fileids" ]]; then GATE_ARGS+=(--roots-config "$ROOTS_CONFIG"); fi
+
+if [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
     GATE_RESULT=0
 else
-    ERROR_STAGE="Nextcloud-Aktivität prüfen"
-    ERROR_MESSAGE="Nextcloud-Aktivität konnte nicht geprüft werden"
-    if GATE_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
-        --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
-        --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
-        --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" \
-        --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS" 2>&1)"; then
-        GATE_RESULT=0
-    else
-        GATE_RESULT=$?
-    fi
-    if [[ -n "$GATE_OUTPUT" ]]; then
-        printf '%s\n' "$GATE_OUTPUT"
-    fi
+    ERROR_STAGE="Nextcloud-Aktivitaet pruefen"
+    ERROR_MESSAGE="Nextcloud-Aktivitaet konnte nicht geprueft werden"
+    if GATE_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" check "${GATE_ARGS[@]}" 2>&1)"; then GATE_RESULT=0; else GATE_RESULT=$?; fi
+    [[ -z "$GATE_OUTPUT" ]] || printf '%s\n' "$GATE_OUTPUT"
 fi
 
 if [[ "$GATE_RESULT" == "3" ]]; then
     trap - ERR
-    write_status ok "Keine Änderungen gefunden"
+    write_status ok "Keine Aenderungen gefunden"
     exit 0
 fi
 if [[ "$GATE_RESULT" != "0" ]]; then
-    ERROR_DETAIL="Schritt: Nextcloud-Aktivität prüfen. Exit-Code: $GATE_RESULT."
-    if [[ -n "${GATE_OUTPUT:-}" ]]; then
-        ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$GATE_OUTPUT" | compact_output)"
-    fi
+    ERROR_DETAIL="Schritt: Nextcloud-Aktivitaet pruefen. Exit-Code: $GATE_RESULT."
+    [[ -z "${GATE_OUTPUT:-}" ]] || ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$GATE_OUTPUT" | compact_output)"
     trap - ERR
-    write_status error "Nextcloud-Aktivität konnte nicht geprüft werden"
+    write_status error "Nextcloud-Aktivitaet konnte nicht geprueft werden"
     exit "$GATE_RESULT"
 fi
 
-if [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
-    run_stage \
-        "Benutzer-Dateiliste lesen" \
-        "Dateiliste des Nextcloud-Benutzers konnte nicht erstellt werden" \
-        python3 "$SCRIPT_DIR/lib/build_user_manifest.py" \
-        --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
-else
-    run_stage \
-        "Nextcloud-Dateiliste lesen" \
-        "Dateiliste aus Nextcloud konnte nicht erstellt werden" \
-        python3 "$SCRIPT_DIR/lib/build_manifest.py" \
+if [[ "$SOURCE_MODE" == "selected-fileids" ]]; then
+    run_stage "Ausgewaehlte Nextcloud-Quellen aufloesen" "Ausgewaehlte Nextcloud-Quellen konnten nicht aufgeloest werden" \
+        python3 "$SCRIPT_DIR/lib/build_selected_manifest.py" \
         --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER" \
         --password-file "$NC_DB_PASSWORD_FILE" --view "$NC_DB_VIEW" \
+        --storage-config "$STORAGE_CONFIG" --roots-config "$ROOTS_CONFIG" --output "$MANIFEST"
+else
+    MANIFEST_ARGS=(
+        --host "$NC_DB_HOST" --port "$NC_DB_PORT" --database "$NC_DB_NAME" --user "$NC_DB_USER"
+        --password-file "$NC_DB_PASSWORD_FILE" --view "$NC_DB_VIEW"
         --storage-config "$STORAGE_CONFIG" --output "$MANIFEST"
+    )
+    if [[ "$SOURCE_MODE" == "user-shares" ]]; then MANIFEST_ARGS+=(--access-user "$ACCESS_USER"); fi
+    run_stage "Nextcloud-Dateiliste lesen" "Dateiliste aus Nextcloud konnte nicht erstellt werden" \
+        python3 "$SCRIPT_DIR/lib/build_manifest.py" "${MANIFEST_ARGS[@]}"
 fi
 
-run_stage \
-    "Lokalen Galeriebaum aktualisieren" \
-    "Lokaler Galeriebaum konnte nicht aktualisiert werden" \
-    python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
-    --manifest "$MANIFEST" --destination "$GALLERY_ROOT" --state "$MAP_FILE"
+run_stage "Lokalen Galeriebaum aktualisieren" "Lokaler Galeriebaum konnte nicht aktualisiert werden" \
+    python3 "$SCRIPT_DIR/lib/shadow_tree.py" --manifest "$MANIFEST" --destination "$GALLERY_ROOT" --state "$MAP_FILE"
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     ERROR_STAGE="Piwigo synchronisieren"
     ERROR_MESSAGE="Piwigo-Synchronisierung fehlgeschlagen"
-    if PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
-        --piwigo-root="$PIWIGO_ROOT" \
-        --connection-id="$CONNECTION_ID" \
-        --base-url="http://127.0.0.1" 2>&1)"; then
-        PIWIGO_EXIT=0
-    else
-        PIWIGO_EXIT=$?
-    fi
+    if PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" --piwigo-root="$PIWIGO_ROOT" --connection-id="$CONNECTION_ID" --base-url="http://127.0.0.1" 2>&1)"; then PIWIGO_EXIT=0; else PIWIGO_EXIT=$?; fi
     printf '%s\n' "$PIWIGO_OUTPUT"
 
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
-        AUTH_MODE="api"
-        API_STATE="ok"
-        API_MESSAGE="API-Synchronisierung erfolgreich"
-        FALLBACK_STATE="not_needed"
-        FALLBACK_MESSAGE="Fallback wurde nicht benötigt"
+        AUTH_MODE="api"; API_STATE="ok"; API_MESSAGE="API-Synchronisierung erfolgreich"
+        FALLBACK_STATE="not_needed"; FALLBACK_MESSAGE="Fallback wurde nicht benoetigt"
     else
         API_LINE="$(grep -m1 '^Piwigo-API nicht nutzbar:' <<<"$PIWIGO_OUTPUT" || true)"
-        if [[ -n "$API_LINE" ]]; then
-            API_STATE="error"
-            API_MESSAGE="${API_LINE#Piwigo-API nicht nutzbar: }"
-        else
-            API_STATE="error"
-            API_MESSAGE="API-Synchronisierung war nicht erfolgreich"
-        fi
-
+        API_STATE="error"
+        if [[ -n "$API_LINE" ]]; then API_MESSAGE="${API_LINE#Piwigo-API nicht nutzbar: }"; else API_MESSAGE="API-Synchronisierung war nicht erfolgreich"; fi
         if grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
-            AUTH_MODE="fallback"
-            FALLBACK_STATE="ok"
-            FALLBACK_MESSAGE="Benutzername/Passwort-Fallback erfolgreich"
+            AUTH_MODE="fallback"; FALLBACK_STATE="ok"; FALLBACK_MESSAGE="Benutzername/Passwort-Fallback erfolgreich"
         elif [[ "$PIWIGO_EXIT" -ne 0 ]]; then
-            AUTH_MODE="failed"
-            FALLBACK_STATE="error"
-            FALLBACK_MESSAGE="$(tail -n 1 <<<"$PIWIGO_OUTPUT")"
+            AUTH_MODE="failed"; FALLBACK_STATE="error"; FALLBACK_MESSAGE="$(tail -n 1 <<<"$PIWIGO_OUTPUT")"
         fi
     fi
-
     if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
         ERROR_DETAIL="Schritt: Piwigo synchronisieren. Exit-Code: $PIWIGO_EXIT. Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | compact_output)"
         trap - ERR
@@ -286,38 +240,31 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     fi
 fi
 
-if [[ "$SOURCE_MODE" != "user-filesystem" ]]; then
-    ERROR_STAGE="Aktivitätsstand speichern"
-    ERROR_MESSAGE="Aktivitätsstand konnte nicht gespeichert werden"
-    if COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
-        --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
-        --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
-        --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"; then
-        COMMIT_EXIT=0
-    else
-        COMMIT_EXIT=$?
-    fi
-    if [[ -n "$COMMIT_OUTPUT" ]]; then
-        printf '%s\n' "$COMMIT_OUTPUT"
-    fi
-    if [[ "$COMMIT_EXIT" -ne 0 ]]; then
-        ERROR_DETAIL="Schritt: Aktivitätsstand speichern. Exit-Code: $COMMIT_EXIT."
-        if [[ -n "$COMMIT_OUTPUT" ]]; then
-            ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$COMMIT_OUTPUT" | compact_output)"
-        fi
-        trap - ERR
-        write_status error "Aktivitätsstand konnte nicht gespeichert werden"
-        exit "$COMMIT_EXIT"
-    fi
+COMMIT_ARGS=(
+    --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT"
+    --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE"
+    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW"
+)
+if [[ "$SOURCE_MODE" != "legacy-view" ]]; then COMMIT_ARGS+=(--access-user "$ACCESS_USER"); fi
+if [[ "$SOURCE_MODE" == "selected-fileids" ]]; then COMMIT_ARGS+=(--roots-config "$ROOTS_CONFIG"); fi
+
+ERROR_STAGE="Aktivitaetsstand speichern"
+ERROR_MESSAGE="Aktivitaetsstand konnte nicht gespeichert werden"
+if COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit "${COMMIT_ARGS[@]}" 2>&1)"; then COMMIT_EXIT=0; else COMMIT_EXIT=$?; fi
+[[ -z "$COMMIT_OUTPUT" ]] || printf '%s\n' "$COMMIT_OUTPUT"
+if [[ "$COMMIT_EXIT" -ne 0 ]]; then
+    ERROR_DETAIL="Schritt: Aktivitaetsstand speichern. Exit-Code: $COMMIT_EXIT."
+    [[ -z "$COMMIT_OUTPUT" ]] || ERROR_DETAIL+=" Ausgabe: $(printf '%s\n' "$COMMIT_OUTPUT" | compact_output)"
+    trap - ERR
+    write_status error "Aktivitaetsstand konnte nicht gespeichert werden"
+    exit "$COMMIT_EXIT"
 fi
 
 trap - ERR
 if [[ "$AUTH_MODE" == "fallback" ]]; then
-    write_status warning "Synchronisierung erfolgreich über Fallback; API war nicht nutzbar"
+    write_status warning "Synchronisierung erfolgreich ueber Fallback; API war nicht nutzbar"
 elif [[ "$AUTH_MODE" == "api" ]]; then
-    write_status ok "Synchronisierung erfolgreich über API"
-elif [[ "$SOURCE_MODE" == "user-filesystem" ]]; then
-    write_status ok "Benutzerbezogene Synchronisierung erfolgreich"
+    write_status ok "Synchronisierung erfolgreich ueber API"
 else
     write_status ok "Synchronisierung erfolgreich"
 fi
