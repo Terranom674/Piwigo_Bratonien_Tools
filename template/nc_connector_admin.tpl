@@ -10,8 +10,8 @@
       <div class="bratonien-form-grid">
         <span class="bratonien-label">Verbindungen</span><strong>{$NC_CONNECTOR.connection_count|escape:html}</strong>
         <span class="bratonien-label">Automatischer Abgleich</span><strong>{if $nc_system_available && $NC_CONNECTOR.system.timer_active && $NC_CONNECTOR.system.timer_enabled}Aktiv{else}Nicht aktiv{/if}</strong>
-        <span class="bratonien-label">Letzter Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.last_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
-        <span class="bratonien-label">Nächster Lauf</span><strong>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
+        <span class="bratonien-label">Letzter Lauf</span><strong data-nc-last-run>{if $nc_system_available}{$NC_CONNECTOR.system.last_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
+        <span class="bratonien-label">Nächster Lauf</span><strong data-nc-next-run>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
       </div>
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}<p class="bratonien-base-note">Letztes Ergebnis: <strong>{$NC_CONNECTOR.system.last_run_message|escape:html}</strong></p>{/if}
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_api_state == 'error'}<p class="bratonien-main-cache__warning"><strong>API:</strong> {$NC_CONNECTOR.system.last_run_api_message|escape:html}</p>{/if}
@@ -37,7 +37,7 @@
       </div>
 
       {if $NC_CONNECTOR.wizard.step == 1}
-        <p class="bratonien-base-note">Adresse und Zugang reichen für den ersten Scan. HTTP und HTTPS werden automatisch geprüft.</p>
+        <p class="bratonien-base-note">Adresse und Zugang reichen für den ersten Scan. Der Assistent prüft den erreichbaren Web-Zugang automatisch.</p>
         <form method="post" data-bratonien-wizard-form>
           <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
           <div class="bratonien-form-grid">
@@ -52,34 +52,47 @@
         </form>
 
       {elseif $NC_CONNECTOR.wizard.step == 2}
-        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong></p>
+        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong> Der Assistent prüft jetzt, wie die freigegebenen Dateien gelesen werden können.</p>
         <div class="bratonien-form-grid">
           <span class="bratonien-label">Adresse</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
           <span class="bratonien-label">Version</span><strong>{if $NC_CONNECTOR.wizard.version}{$NC_CONNECTOR.wizard.version|escape:html}{else}Nicht gemeldet{/if}</strong>
           <span class="bratonien-label">Angemeldet als</span><strong>{$NC_CONNECTOR.wizard.username|escape:html}{if $NC_CONNECTOR.wizard.display_name} · {$NC_CONNECTOR.wizard.display_name|escape:html}{/if}</strong>
         </div>
 
-        {if !$NC_CONNECTOR.wizard.db_password_set || !$NC_CONNECTOR.wizard.db_user}
+        {if $NC_CONNECTOR.wizard.technical_stage == 'reader_credentials'}
           <hr>
-          <h5>Datenzugriff einrichten</h5>
-          <p class="bratonien-base-note">Diese Angaben konnte Nextcloud nicht selbst liefern. Sie werden nur deshalb einmalig benötigt.</p>
+          <h5>Datenzugriff</h5>
+          <p class="bratonien-base-note">Nextcloud gibt den internen Lesezugang aus Sicherheitsgründen nicht über die normale API aus. Bitte nur den dafür eingerichteten Lese-Benutzer angeben. Die üblichen Verbindungswerte prüft der Assistent selbst.</p>
           <form method="post" data-bratonien-wizard-form>
             <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
             <div class="bratonien-form-grid">
-              <label class="bratonien-label">Name der Verbindung</label><input name="nc_wizard_connection_name" type="text" value="{$NC_CONNECTOR.wizard.connection_name|escape:html}" required>
-              <label class="bratonien-label">Datenbank-Host</label><input name="nc_wizard_db_host" type="text" value="{$NC_CONNECTOR.wizard.db_host|escape:html}" required>
+              <label class="bratonien-label">Lese-Benutzer</label><input name="nc_wizard_db_user" type="text" value="{$NC_CONNECTOR.wizard.db_user|escape:html}" required>
+              <label class="bratonien-label">Passwort</label><input name="nc_wizard_db_password" type="password" autocomplete="new-password" value="{$NC_CONNECTOR.wizard._db_password|escape:html}" required>
+            </div>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Automatisch prüfen</button></p>
+          </form>
+
+        {elseif $NC_CONNECTOR.wizard.technical_stage == 'database_details'}
+          <hr>
+          <h5>Datenbank-Adresse prüfen</h5>
+          <p class="bratonien-base-note">Der übliche Weg hat nicht funktioniert. Deshalb werden jetzt nur die Angaben abgefragt, die davon abweichen können.</p>
+          {if $NC_CONNECTOR.wizard.technical_error}<details><summary>Technische Details</summary><p class="bratonien-main-cache__warning">{$NC_CONNECTOR.wizard.technical_error|escape:html}</p></details>{/if}
+          <form method="post" data-bratonien-wizard-form>
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <div class="bratonien-form-grid">
+              <label class="bratonien-label">Datenbank-Adresse</label><input name="nc_wizard_db_host" type="text" value="{$NC_CONNECTOR.wizard.db_host|escape:html}" required>
               <label class="bratonien-label">Port</label><input name="nc_wizard_db_port" type="number" min="1" max="65535" value="{$NC_CONNECTOR.wizard.db_port|escape:html}" required>
               <label class="bratonien-label">Datenbank</label><input name="nc_wizard_db_database" type="text" value="{$NC_CONNECTOR.wizard.db_database|escape:html}" required>
               <label class="bratonien-label">Lese-Benutzer</label><input name="nc_wizard_db_user" type="text" value="{$NC_CONNECTOR.wizard.db_user|escape:html}" required>
               <label class="bratonien-label">Passwort</label><input name="nc_wizard_db_password" type="password" autocomplete="new-password" value="{$NC_CONNECTOR.wizard._db_password|escape:html}" required>
             </div>
-            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Prüfen und weiter</button></p>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Erneut prüfen</button></p>
           </form>
 
-        {elseif !$NC_CONNECTOR.wizard.technical_complete && $NC_CONNECTOR.wizard.storage_candidates|@count > 0}
+        {elseif $NC_CONNECTOR.wizard.technical_stage == 'mounts'}
           <hr>
           <h5>Speicherort bestätigen</h5>
-          <p class="bratonien-base-note">Nur Speicherorte, die nicht automatisch erkannt wurden, müssen ergänzt werden. Bereits erkannte Angaben sind gesperrt.</p>
+          <p class="bratonien-base-note">Die Datenquelle wurde gefunden. Nur Speicherorte, die nicht sicher erkannt werden konnten, müssen jetzt einmalig zugeordnet werden.</p>
           <form method="post" data-bratonien-wizard-form>
             <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
             <div class="bratonien-form-grid">
@@ -89,11 +102,11 @@
                   <strong>Automatisch erkannt</strong>
                   <input type="hidden" name="nc_wizard_storage_mount[{$storage_index|escape:html}]" value="{$storage.local_mount|escape:html}">
                 {else}
-                  <input name="nc_wizard_storage_mount[{$storage_index|escape:html}]" type="text" placeholder="Lokaler eingebundener Speicherpfad" required>
+                  <input name="nc_wizard_storage_mount[{$storage_index|escape:html}]" type="text" placeholder="Eingebundener Speicherpfad" required>
                 {/if}
               {/foreach}
             </div>
-            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Prüfen und weiter</button></p>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Speicher prüfen</button></p>
           </form>
 
         {elseif $NC_CONNECTOR.wizard.technical_complete}
@@ -176,7 +189,7 @@
         <label class="bratonien-label">Maximale Wartezeit</label><input name="nc_max_wait_seconds" type="number" min="60" value="900">
         <label class="bratonien-label">Vollprüfung nach</label><input name="nc_full_sync_seconds" type="number" min="300" value="86400">
       </div>
-      <p><strong>Storage-Zuordnungen</strong></p><textarea name="nc_storages" rows="4" style="width:100%" required></textarea>
+      <p><strong>Storage-Zuordnungen</strong></p><p class="bratonien-base-note">Format: Storage-ID | optionales Quellpräfix | lokaler Speicherpfad</p><textarea name="nc_storages" rows="4" style="width:100%" required></textarea>
       <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_create_local">Verbindung anlegen</button></p>
     </form>
   </details>
@@ -212,7 +225,7 @@
                     <label class="bratonien-label">Maximale Wartezeit</label><input name="nc_max_wait_seconds" type="number" min="60" value="{$connection.config.max_wait_seconds|escape:html}">
                     <label class="bratonien-label">Vollprüfung nach</label><input name="nc_full_sync_seconds" type="number" min="300" value="{$connection.config.full_sync_seconds|escape:html}">
                   </div>
-                  <p><strong>Storage-Zuordnungen</strong></p><textarea name="nc_storages" rows="4" style="width:100%" required>{$connection.storage_text|escape:html}</textarea>
+                  <p><strong>Storage-Zuordnungen</strong></p><p class="bratonien-base-note">Format: Storage-ID | optionales Quellpräfix | lokaler Speicherpfad</p><textarea name="nc_storages" rows="4" style="width:100%" required>{$connection.storage_text|escape:html}</textarea>
                   <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_update_technical">Technische Einstellungen speichern</button></p>
                 </form>
               {/if}
