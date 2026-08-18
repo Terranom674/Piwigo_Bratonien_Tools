@@ -96,6 +96,12 @@
     var lastSeen=null;
     var endpoint='plugins/bratonien_tools/nc-connector-status.php';
 
+    function wizardIsOpen() {
+      var dialog=document.getElementById('bratonien-nc-wizard-dialog');
+      if(dialog && dialog.open) return true;
+      try { return sessionStorage.getItem('bratonienNcWizardOpen')==='1'; } catch(e) { return false; }
+    }
+
     function poll() {
       fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
         .then(function(response){if(!response.ok) throw new Error('HTTP '+response.status); return response.json();})
@@ -106,7 +112,7 @@
           if(lastSeen===null) {
             lastSeen=timestamp;
             var resultVisible=section.textContent.indexOf('Letztes Ergebnis:')!==-1;
-            if(!resultVisible && data.message) {
+            if(!resultVisible && data.message && !wizardIsOpen()) {
               var reloadKey='bratonien-nc-status-reload-'+timestamp;
               try {
                 if(sessionStorage.getItem(reloadKey)!=='1') {
@@ -120,7 +126,7 @@
 
           if(timestamp>lastSeen) {
             lastSeen=timestamp;
-            window.location.reload();
+            if(!wizardIsOpen()) window.location.reload();
           }
         })
         .catch(function(){});
