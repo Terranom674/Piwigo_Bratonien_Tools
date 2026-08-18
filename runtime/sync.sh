@@ -113,10 +113,11 @@ run_stage() {
 
     ERROR_STAGE="$stage"
     ERROR_MESSAGE="$message"
-    set +e
-    output="$("$@" 2>&1)"
-    exit_code=$?
-    set -e
+    if output="$("$@" 2>&1)"; then
+        exit_code=0
+    else
+        exit_code=$?
+    fi
     if [[ -n "$output" ]]; then
         printf '%s\n' "$output"
     fi
@@ -169,14 +170,15 @@ if [[ "$NEEDS_LOCAL_REPAIR" == "1" ]]; then
 else
     ERROR_STAGE="Nextcloud-Aktivität prüfen"
     ERROR_MESSAGE="Nextcloud-Aktivität konnte nicht geprüft werden"
-    set +e
-    GATE_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
+    if GATE_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" check \
         --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
         --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
         --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" \
-        --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS" 2>&1)"
-    GATE_RESULT=$?
-    set -e
+        --quiet "$QUIET_SECONDS" --max-wait "$MAX_WAIT_SECONDS" --full-after "$FULL_SYNC_SECONDS" 2>&1)"; then
+        GATE_RESULT=0
+    else
+        GATE_RESULT=$?
+    fi
     if [[ -n "$GATE_OUTPUT" ]]; then
         printf '%s\n' "$GATE_OUTPUT"
     fi
@@ -214,13 +216,14 @@ run_stage \
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     ERROR_STAGE="Piwigo synchronisieren"
     ERROR_MESSAGE="Piwigo-Synchronisierung fehlgeschlagen"
-    set +e
-    PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
+    if PIWIGO_OUTPUT="$(php "$SCRIPT_DIR/lib/piwigo-sync.php" \
         --piwigo-root="$PIWIGO_ROOT" \
         --connection-id="$CONNECTION_ID" \
-        --base-url="http://127.0.0.1" 2>&1)"
-    PIWIGO_EXIT=$?
-    set -e
+        --base-url="http://127.0.0.1" 2>&1)"; then
+        PIWIGO_EXIT=0
+    else
+        PIWIGO_EXIT=$?
+    fi
     printf '%s\n' "$PIWIGO_OUTPUT"
 
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
@@ -260,13 +263,14 @@ fi
 
 ERROR_STAGE="Aktivitätsstand speichern"
 ERROR_MESSAGE="Aktivitätsstand konnte nicht gespeichert werden"
-set +e
-COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
+if COMMIT_OUTPUT="$(python3 "$SCRIPT_DIR/lib/activity_gate.py" commit \
     --state "$ACTIVITY_STATE" --host "$NC_DB_HOST" --port "$NC_DB_PORT" \
     --database "$NC_DB_NAME" --user "$NC_DB_USER" --password-file "$NC_DB_PASSWORD_FILE" \
-    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"
-COMMIT_EXIT=$?
-set -e
+    --view "$NC_ACTIVITY_VIEW" --source-view "$NC_DB_VIEW" 2>&1)"; then
+    COMMIT_EXIT=0
+else
+    COMMIT_EXIT=$?
+fi
 if [[ -n "$COMMIT_OUTPUT" ]]; then
     printf '%s\n' "$COMMIT_OUTPUT"
 fi
