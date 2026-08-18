@@ -3,8 +3,6 @@ set -Eeuo pipefail
 
 CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PIWIGO_ROOT="${PIWIGO_ROOT:-/var/www/piwigo}"
-TOMBSTONE_DIR="${PIWIGO_ROOT%/}/_data/bratonien-tools/nc-connector-status"
 shopt -s nullglob
 configs=("$CONFIG_DIR"/connection-*.conf)
 
@@ -21,12 +19,21 @@ for config in "${configs[@]}"; do
         connection_id="${BASH_REMATCH[1]}"
     fi
 
-    if [[ -n "$connection_id" && -f "$TOMBSTONE_DIR/deleted-$connection_id" ]]; then
+    piwigo_root="$(sed -n 's/^PIWIGO_ROOT=//p' "$config" | tail -n 1)"
+    piwigo_root="${piwigo_root%\"}"
+    piwigo_root="${piwigo_root#\"}"
+    piwigo_root="${piwigo_root%\'}"
+    piwigo_root="${piwigo_root#\'}"
+    [[ -n "$piwigo_root" ]] || piwigo_root="/var/www/piwigo"
+    tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
+
+    if [[ -n "$connection_id" && -f "$tombstone_dir/deleted-$connection_id" ]]; then
         echo "NC Connector: Verbindung $connection_id wurde geloescht; Laufzeitdateien werden entfernt."
         rm -f -- "$CONFIG_DIR/connection-$connection_id.conf" \
             "$CONFIG_DIR/connection-$connection_id.db-password" \
             "$CONFIG_DIR/connection-$connection_id.piwigo-password" \
             "$CONFIG_DIR/connection-$connection_id.storages.tsv"
+        rm -f -- "$tombstone_dir/deleted-$connection_id"
         continue
     fi
 
