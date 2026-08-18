@@ -129,7 +129,7 @@ try
     if (!is_array($config)) continue;
     if ((string)($config['origin'] ?? '') !== 'native') continue;
 
-    $accessUser = trim((string)($config['access_user'] ?? ''));
+    $accessUser = trim((string)($config['nextcloud_access_user'] ?? $config['access_user'] ?? ''));
     if ($accessUser === '') continue;
 
     try
