@@ -29,15 +29,24 @@ function bratonien_tools_nc_connector_encrypt_credentials($db_password, $piwigo_
 
 function bratonien_tools_nc_connector_parse_storages($raw)
 {
-  $storages=array();$lines=preg_split('/\r\n|\r|\n/',trim((string)$raw));
+  $storages=array();
+  $lines=preg_split('/\r\n|\r|\n/',trim((string)$raw));
   foreach($lines as $line)
   {
-    $line=trim($line);if($line==='')continue;$parts=array_map('trim',explode('|',$line));
-    if(count($parts)!==3||$parts[0]===''||$parts[1]===''||$parts[2]==='')throw new RuntimeException('Storage-Zeilen muessen das Format storage_id | source_prefix | local_mount verwenden.');
-    if($parts[2][0]!=='/')throw new RuntimeException('Der lokale Storage-Mount muss ein absoluter Pfad sein.');
-    $storages[]=array('storage_id'=>$parts[0],'source_prefix'=>$parts[1],'local_mount'=>rtrim($parts[2],'/'));
+    if(trim($line)==='') continue;
+    $parts=array_map('trim',explode('|',$line,3));
+    if(count($parts)!==3 || $parts[0]==='' || $parts[2]==='')
+    {
+      throw new RuntimeException('Eine Speicherzuordnung ist unvollständig. Benötigt werden Storage-ID und lokaler Speicherpfad.');
+    }
+    if($parts[2][0]!=='/') throw new RuntimeException('Der lokale Speicherpfad muss ein absoluter Pfad sein.');
+    $storages[]=array(
+      'storage_id'=>$parts[0],
+      'source_prefix'=>trim($parts[1],'/'),
+      'local_mount'=>rtrim($parts[2],'/'),
+    );
   }
-  if(!$storages)throw new RuntimeException('Mindestens ein Storage muss konfiguriert werden.');
+  if(!$storages) throw new RuntimeException('Mindestens ein Speicherort muss zugeordnet werden.');
   return $storages;
 }
 
