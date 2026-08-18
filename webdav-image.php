@@ -120,7 +120,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.6.0',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.6.1',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
