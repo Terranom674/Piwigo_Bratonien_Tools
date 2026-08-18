@@ -179,6 +179,76 @@ function bratonien_tools_nc_connector_piwigo_api_request($api_key_id, $api_key_s
   return bratonien_tools_nc_connector_api_payload($decoded);
 }
 
+function bratonien_tools_nc_connector_validate_fallback_credentials($username, $password)
+{
+  if (!function_exists('curl_init'))
+  {
+    throw new RuntimeException('cURL ist in PHP nicht verfuegbar. Der Piwigo-Fallback kann nicht geprueft werden.');
+  }
+
+  $username = trim((string)$username);
+  $password = (string)$password;
+  if ($username === '' || $password === '')
+  {
+    throw new RuntimeException('Piwigo-Benutzername und Passwort muessen angegeben werden.');
+  }
+
+  $cookie_file = tempnam(sys_get_temp_dir(), 'br-pwg-auth-');
+  if ($cookie_file === false)
+  {
+    throw new RuntimeException('Temporare Piwigo-Sitzung konnte nicht angelegt werden.');
+  }
+
+  try
+  {
+    $url = rtrim(get_absolute_root_url(true), '/').'/ws.php?format=json';
+    $request = function(array $fields) use ($url, $cookie_file)
+    {
+      $ch = curl_init($url);
+      curl_setopt_array($ch, array(
+        CURLOPT_RETURNTRANSFER=>true,
+        CURLOPT_POST=>true,
+        CURLOPT_POSTFIELDS=>http_build_query($fields),
+        CURLOPT_COOKIEJAR=>$cookie_file,
+        CURLOPT_COOKIEFILE=>$cookie_file,
+        CURLOPT_CONNECTTIMEOUT=>10,
+        CURLOPT_TIMEOUT=>20,
+        CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_USERAGENT=>'Bratonien-Tools-NC-Connector/'.(function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : 'dev'),
+      ));
+      $body = curl_exec($ch);
+      $errno = curl_errno($ch);
+      $error = curl_error($ch);
+      $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+      curl_close($ch);
+      if ($body === false || $errno !== 0) throw new RuntimeException('Piwigo-Fallback konnte nicht geprueft werden: '.$error);
+      if ($http < 200 || $http >= 300) throw new RuntimeException('Piwigo-Fallback-Pruefung antwortete mit HTTP '.$http.'.');
+      $decoded = bratonien_tools_nc_connector_decode_api_response((string)$body, $type);
+      if (($decoded['stat'] ?? '') !== 'ok')
+      {
+        $message = trim((string)($decoded['message'] ?? $decoded['err'] ?? 'Piwigo hat die Anmeldung abgelehnt.'));
+        throw new RuntimeException($message !== '' ? $message : 'Piwigo hat die Anmeldung abgelehnt.');
+      }
+      return bratonien_tools_nc_connector_api_payload($decoded);
+    };
+
+    $request(array('method'=>'pwg.session.login', 'username'=>$username, 'password'=>$password));
+    $status = $request(array('method'=>'pwg.session.getStatus'));
+    if (!is_array($status)) throw new RuntimeException('Piwigo hat keinen auswertbaren Benutzerstatus geliefert.');
+    $role = strtolower(trim((string)($status['status'] ?? '')));
+    if (!in_array($role, array('admin','webmaster'), true))
+    {
+      throw new RuntimeException('Der Piwigo-Fallback funktioniert, gehoert aber keinem Administrator/Webmaster.');
+    }
+    return array('username'=>(string)($status['username'] ?? $username), 'status'=>$role);
+  }
+  finally
+  {
+    @unlink($cookie_file);
+  }
+}
+
 function bratonien_tools_nc_connector_piwigo_api_test()
 {
   $api_key_id = trim((string)($_POST['nc_piwigo_api_key_id'] ?? ''));
