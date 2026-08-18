@@ -101,6 +101,7 @@ function bratonien_tools_webdav_image_url($image_id, $preview=false)
 {
   $info = bratonien_tools_webdav_image_source_info($image_id);
   if (!$info) return null;
+
   $url = get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-image.php?id='.(int)$image_id;
   if ($preview) $url .= '&preview=1';
   if ($info['etag'] !== '') $url .= '&v='.rawurlencode(substr(sha1($info['etag']), 0, 12));
@@ -112,8 +113,22 @@ function bratonien_tools_webdav_preview_path(array $info)
   $connection_id = (int)($info['connection_id'] ?? 0);
   $webdav_path = trim((string)($info['webdav_path'] ?? ''), '/');
   if ($connection_id < 1 || $webdav_path === '') return null;
-  $path = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-preview/connection-'.$connection_id.'/'.sha1($webdav_path).'.webp';
-  return is_file($path) && is_readable($path) ? $path : null;
+
+  $base = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-preview/connection-'.$connection_id.'/'.sha1($webdav_path);
+  foreach (array('jpg', 'png', 'webp') as $ext)
+  {
+    $path = $base.'.'.$ext;
+    if (is_file($path) && is_readable($path)) return $path;
+  }
+  return null;
+}
+
+function bratonien_tools_webdav_preview_content_type($path)
+{
+  $ext = strtolower(pathinfo((string)$path, PATHINFO_EXTENSION));
+  if ($ext === 'png') return 'image/png';
+  if ($ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
 }
 
 function bratonien_tools_webdav_custom_derivative_params($key)
@@ -176,55 +191,215 @@ function bratonien_tools_webdav_derivative_variants()
   return $variants;
 }
 
-function bratonien_tools_webdav_generate_derivative($params, $src_image)
+function bratonien_tools_webdav_generate_derivative($params, $src_image, &$detail=null)
 {
-  if (!is_object($src_image) || empty($src_image->id)) return false;
+  global $conf;
+
+  $detail = '';
+  if (!is_object($src_image) || empty($src_image->id))
+  {
+    $detail = 'SrcImage fehlt.';
+    return false;
+  }
+
   $info = bratonien_tools_webdav_image_source_info((int)$src_image->id);
-  if (!$info) return false;
+  if (!$info)
+  {
+    $detail = 'WebDAV-Quellzuordnung fehlt.';
+    return false;
+  }
+
   $preview = bratonien_tools_webdav_preview_path($info);
-  if (!$preview) return false;
+  if (!$preview)
+  {
+    $detail = 'Vorbereitetes WebDAV-Preview fehlt.';
+    return false;
+  }
+
+  $preview_ext = strtolower(pathinfo($preview, PATHINFO_EXTENSION));
+  if (!in_array($preview_ext, array('jpg', 'jpeg', 'png', 'gif'), true))
+  {
+    $detail = 'Preview-Format '.$preview_ext.' ist für die Piwigo-Bildbibliothek nicht sicher nutzbar.';
+    return false;
+  }
 
   if (!class_exists('DerivativeImage')) require_once(PHPWG_ROOT_PATH.'include/derivative.inc.php');
   if (!class_exists('pwg_image')) require_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
 
   $derivative = new DerivativeImage($params, $src_image);
-  if ($derivative->same_as_source()) return true;
+  if ($derivative->same_as_source())
+  {
+    $detail = 'Identisch mit Quelle; kein eigenes Derivat erforderlich.';
+    return true;
+  }
 
   $target = $derivative->get_path();
-  if ($target === '' || strpos($target, PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR) !== 0) return false;
+  $derivative_root = PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR;
+  if ($target === '' || strpos($target, $derivative_root) !== 0)
+  {
+    $detail = 'Ungültiger Derivat-Zielpfad: '.$target;
+    return false;
+  }
 
   $preview_mtime = @filemtime($preview) ?: 0;
-  if (is_file($target) && is_readable($target) && (@filemtime($target) ?: 0) >= $preview_mtime) return true;
+  if (is_file($target) && is_readable($target) && (@filemtime($target) ?: 0) >= max($preview_mtime, (int)($params->last_mod_time ?? 0)))
+  {
+    $detail = 'Bereits vorhanden.';
+    return true;
+  }
 
   $directory = dirname($target);
-  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) return false;
+  $dir_ok = function_exists('mkgetdir') ? mkgetdir($directory) : (is_dir($directory) || @mkdir($directory, 0755, true));
+  if (!$dir_ok || !is_dir($directory))
+  {
+    $detail = 'Derivat-Verzeichnis konnte nicht angelegt werden: '.$directory;
+    return false;
+  }
 
-  $image = new pwg_image($preview);
+  $image = null;
   try
   {
-    $original_size = array($image->get_width(), $image->get_height());
+    $image = new pwg_image($preview);
+    $original_size = array((int)$image->get_width(), (int)$image->get_height());
+    if ($original_size[0] < 1 || $original_size[1] < 1)
+    {
+      $detail = 'Preview-Abmessungen sind ungültig.';
+      return false;
+    }
+
     $crop_rect = null;
     $scaled_size = null;
     $params->sizing->compute($original_size, $info['coi'] ?? null, $crop_rect, $scaled_size);
+
     if ($crop_rect)
     {
-      $image->crop($crop_rect->width(), $crop_rect->height(), $crop_rect->l, $crop_rect->t);
+      if (!$image->crop($crop_rect->width(), $crop_rect->height(), $crop_rect->l, $crop_rect->t))
+      {
+        $detail = 'Crop fehlgeschlagen.';
+        return false;
+      }
+    }
+
+    $final_size = $original_size;
+    if ($crop_rect)
+    {
+      $final_size = array($crop_rect->width(), $crop_rect->height());
     }
     if ($scaled_size)
     {
-      $image->resize($scaled_size[0], $scaled_size[1]);
+      if (!$image->resize($scaled_size[0], $scaled_size[1]))
+      {
+        $detail = 'Resize fehlgeschlagen.';
+        return false;
+      }
+      $final_size = array((int)$scaled_size[0], (int)$scaled_size[1]);
     }
-    if (!empty($params->sharpen)) $image->sharpen($params->sharpen);
-    $image->write($target);
+
+    if (!empty($params->sharpen) && !$image->sharpen($params->sharpen))
+    {
+      $detail = 'Sharpen fehlgeschlagen.';
+      return false;
+    }
+
+    if ($params->will_watermark($final_size))
+    {
+      $wm = ImageStdParams::get_watermark();
+      if (!empty($wm->file))
+      {
+        $wm_path = PHPWG_ROOT_PATH.$wm->file;
+        if (!is_file($wm_path) || !is_readable($wm_path))
+        {
+          $detail = 'Wasserzeichen-Datei fehlt: '.$wm_path;
+          return false;
+        }
+
+        $wm_image = new pwg_image($wm_path);
+        try
+        {
+          $wm_size = array((int)$wm_image->get_width(), (int)$wm_image->get_height());
+          if ($final_size[0] < $wm_size[0] || $final_size[1] < $wm_size[1])
+          {
+            $wm_scaling = SizingParams::classic($final_size[0], $final_size[1]);
+            $tmp = null;
+            $wm_scaled = null;
+            $wm_scaling->compute($wm_size, null, $tmp, $wm_scaled);
+            if ($wm_scaled)
+            {
+              $wm_image->resize($wm_scaled[0], $wm_scaled[1]);
+              $wm_size = array((int)$wm_scaled[0], (int)$wm_scaled[1]);
+            }
+          }
+
+          $x = (int)round(($wm->xpos / 100) * ($final_size[0] - $wm_size[0]));
+          $y = (int)round(($wm->ypos / 100) * ($final_size[1] - $wm_size[1]));
+          $image->compose($wm_image, $x, $y, $wm->opacity);
+
+          if ($wm->xrepeat || $wm->yrepeat)
+          {
+            $xpad = $wm_size[0] + max(30, (int)round($wm_size[0] / 4));
+            $ypad = $wm_size[1] + max(30, (int)round($wm_size[1] / 4));
+            for ($i = -$wm->xrepeat; $i <= $wm->xrepeat; $i++)
+            {
+              for ($j = -$wm->yrepeat; $j <= $wm->yrepeat; $j++)
+              {
+                if (!$i && !$j) continue;
+                $x2 = $x + $i * $xpad;
+                $y2 = $y + $j * $ypad;
+                if ($x2 >= 0 && $x2 + $wm_size[0] < $final_size[0] && $y2 >= 0 && $y2 + $wm_size[1] < $final_size[1])
+                {
+                  $image->compose($wm_image, $x2, $y2, $wm->opacity);
+                }
+              }
+            }
+          }
+        }
+        finally
+        {
+          $wm_image->destroy();
+        }
+      }
+    }
+
+    if (isset($conf['derivatives_strip_metadata_threshold']) && $final_size[0] * $final_size[1] < (int)$conf['derivatives_strip_metadata_threshold'])
+    {
+      $image->strip();
+    }
+
+    $quality = (int)ImageStdParams::$quality;
+    if (isset($params->type) && in_array($params->type, array(IMG_3XLARGE, IMG_4XLARGE), true))
+    {
+      $quality = min($quality, 75);
+    }
+    $image->set_compression_quality($quality);
+
+    $written = $image->write($target);
+    if ($written === false)
+    {
+      $detail = 'Bildbibliothek konnte das Derivat nicht schreiben.';
+      return false;
+    }
+  }
+  catch (Throwable $e)
+  {
+    $detail = get_class($e).': '.$e->getMessage();
+    return false;
   }
   finally
   {
-    $image->destroy();
+    if (is_object($image)) $image->destroy();
   }
 
   @chmod($target, 0644);
   clearstatcache(true, $target);
-  return is_file($target) && is_readable($target);
+  $size = @getimagesize($target);
+  if (!is_file($target) || !is_readable($target) || !is_array($size) || empty($size[0]) || empty($size[1]))
+  {
+    $detail = 'Derivatdatei wurde nicht gültig erzeugt: '.$target;
+    return false;
+  }
+
+  $detail = 'Erzeugt: '.$target.' ('.$size[0].'x'.$size[1].').';
+  return true;
 }
 
 function bratonien_tools_filter_webdav_src_url($url, $src_image)
@@ -240,8 +415,20 @@ function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image,
   $info = bratonien_tools_webdav_image_source_info((int)$src_image->id);
   if (!$info) return $url;
 
-  // Never perform image generation in the frontend request. A failed image
-  // backend must not be able to take down the complete Piwigo page.
+  try
+  {
+    $derivative = new DerivativeImage($params, $src_image);
+    if (!$derivative->same_as_source())
+    {
+      $path = $derivative->get_path();
+      if ($path !== '' && is_file($path) && is_readable($path)) return $url;
+    }
+  }
+  catch (Throwable $e)
+  {
+    error_log('Bratonien WebDAV derivative lookup #'.(int)$src_image->id.': '.$e->getMessage());
+  }
+
   $preview_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
   return $preview_url ?: $url;
 }
