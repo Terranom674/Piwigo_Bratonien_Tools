@@ -43,6 +43,8 @@ function bratonien_tools_nc_wizard_finish_connection_scoped()
   $_POST['nc_nextcloud_url']=(string)$state['base_url'];
   $_POST['nc_showcase_user']=(string)$state['showcase_user'];
   $_POST['nc_access_user']=(string)$state['username'];
+  $_POST['nc_nextcloud_user']=(string)$state['username'];
+  $_POST['nc_nextcloud_password']=(string)$state['_password'];
   $_POST['nc_product']=(string)$state['product'];
   $_POST['nc_version']=(string)$state['version'];
   $_POST['nc_api_validated']=$state['api_status']==='ok'?'1':'0';
@@ -121,12 +123,14 @@ function bratonien_tools_nc_connector_verify_connection_scoped()
   }
 
   $payload = json_encode(array(
-    'v'=>2,
+    'v'=>3,
     'db_password'=>$db_password,
     'piwigo_user'=>$fallback_user,
     'piwigo_password'=>$fallback_password,
     'api_key_id'=>$api_key_id,
     'api_key_secret'=>$api_key_secret,
+    'nextcloud_user'=>'',
+    'nextcloud_password'=>'',
   ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($payload)) throw new RuntimeException('Verbindungsauthentifizierung konnte nicht migriert werden.');
 
@@ -148,33 +152,44 @@ function bratonien_tools_nc_connector_scoped_secret(array $connection)
   if (is_array($decoded) && array_key_exists('db_password', $decoded))
   {
     return array(
-      'v'=>2,
+      'v'=>3,
       'db_password'=>(string)($decoded['db_password'] ?? ''),
       'piwigo_user'=>(string)($decoded['piwigo_user'] ?? ''),
       'piwigo_password'=>(string)($decoded['piwigo_password'] ?? ''),
       'api_key_id'=>(string)($decoded['api_key_id'] ?? ''),
       'api_key_secret'=>(string)($decoded['api_key_secret'] ?? ''),
+      'nextcloud_user'=>(string)($decoded['nextcloud_user'] ?? ''),
+      'nextcloud_password'=>(string)($decoded['nextcloud_password'] ?? ''),
     );
   }
 
   return array(
-    'v'=>2,
+    'v'=>3,
     'db_password'=>(string)$plain,
     'piwigo_user'=>'',
     'piwigo_password'=>'',
     'api_key_id'=>'',
     'api_key_secret'=>'',
+    'nextcloud_user'=>'',
+    'nextcloud_password'=>'',
   );
 }
 
 function bratonien_tools_nc_connector_store_scoped_secret($id, array $connection, array $credentials)
 {
-  if (trim((string)($credentials['db_password'] ?? '')) === '') throw new RuntimeException('Das Datenbankpasswort der Verbindung fehlt.');
+  $config = is_array($connection['config'] ?? null) ? $connection['config'] : array();
+  $is_webdav = (string)($config['source_mode'] ?? '') === 'webdav-placeholder';
+  if (!$is_webdav && trim((string)($credentials['db_password'] ?? '')) === '') throw new RuntimeException('Das Datenbankpasswort der Verbindung fehlt.');
+  if ($is_webdav && (trim((string)($credentials['nextcloud_user'] ?? '')) === '' || (string)($credentials['nextcloud_password'] ?? '') === ''))
+  {
+    throw new RuntimeException('Die Nextcloud-Zugangsdaten der WebDAV-Verbindung fehlen.');
+  }
+
+  $credentials['v'] = 3;
   $payload = json_encode($credentials, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($payload)) throw new RuntimeException('Verbindungszugangsdaten konnten nicht serialisiert werden.');
   $blob = bratonien_tools_nc_connector_encrypt_secret($payload);
 
-  $config = is_array($connection['config'] ?? null) ? $connection['config'] : array();
   if (array_key_exists('api_enabled', $config))
   {
     $config['api_enabled'] = trim((string)($credentials['api_key_id'] ?? '')) !== '' && trim((string)($credentials['api_key_secret'] ?? '')) !== '';
