@@ -15,6 +15,32 @@ $errors = array();
 $self_update_override = null;
 $nc_piwigo_api_test = null;
 
+// Post/Redirect/Get: never leave a mutating Bratonien Tools action as the
+// browser's current request. Otherwise a normal reload can submit the same
+// action again (for example an update, delete or create action).
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !empty($_SESSION['bratonien_tools_flash']) && is_array($_SESSION['bratonien_tools_flash']))
+{
+  $flash = $_SESSION['bratonien_tools_flash'];
+  unset($_SESSION['bratonien_tools_flash']);
+
+  if (!empty($flash['messages']) && is_array($flash['messages']))
+  {
+    $messages = array_values($flash['messages']);
+  }
+  if (!empty($flash['errors']) && is_array($flash['errors']))
+  {
+    $errors = array_values($flash['errors']);
+  }
+  if (!empty($flash['self_update']) && is_array($flash['self_update']))
+  {
+    $self_update_override = $flash['self_update'];
+  }
+  if (!empty($flash['nc_piwigo_api_test']) && is_array($flash['nc_piwigo_api_test']))
+  {
+    $nc_piwigo_api_test = $flash['nc_piwigo_api_test'];
+  }
+}
+
 if (
   $_SERVER['REQUEST_METHOD'] === 'POST'
   && empty($_POST)
@@ -58,6 +84,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
     {
       $errors[] = $e->getMessage();
     }
+  }
+
+  $_SESSION['bratonien_tools_flash'] = array(
+    'messages' => $messages,
+    'errors' => $errors,
+    'self_update' => $self_update_override,
+    'nc_piwigo_api_test' => $nc_piwigo_api_test,
+  );
+
+  $redirect_url = get_root_url().'admin.php?page=plugin-'.BRATONIEN_TOOLS_ID;
+  if (!headers_sent())
+  {
+    header('Location: '.$redirect_url, true, 303);
+    exit;
   }
 }
 
