@@ -28,6 +28,13 @@ function bratonien_tools_nc_connector_create_local_api_first()
     throw new RuntimeException('Fallback-Benutzer und Fallback-Passwort muessen entweder beide angegeben oder beide leer gelassen werden.');
   }
 
+  $nextcloud_user = trim((string)($_POST['nc_nextcloud_user'] ?? $_POST['nc_access_user'] ?? ''));
+  $nextcloud_password = (string)($_POST['nc_nextcloud_password'] ?? '');
+  if (($nextcloud_user === '') !== ($nextcloud_password === ''))
+  {
+    throw new RuntimeException('Nextcloud-Benutzer und Nextcloud-Passwort muessen entweder beide vorhanden oder beide leer sein.');
+  }
+
   $wizard_auth_present = array_key_exists('nc_api_validated', $_POST);
   $validated_pending_api = (string)($_POST['nc_api_validated'] ?? '') === '1';
   $api_key_id = trim((string)($_POST['nc_connection_api_key_id'] ?? ''));
@@ -84,12 +91,14 @@ function bratonien_tools_nc_connector_create_local_api_first()
   bratonien_tools_nc_connector_view_name($config['activity_view']);
 
   $secret_payload = json_encode(array(
-    'v'=>2,
+    'v'=>3,
     'db_password'=>(string)$_POST['nc_db_password'],
     'piwigo_user'=>$fallback_user,
     'piwigo_password'=>$fallback_password,
     'api_key_id'=>$api_key_id,
     'api_key_secret'=>$api_key_secret,
+    'nextcloud_user'=>$nextcloud_user,
+    'nextcloud_password'=>$nextcloud_password,
   ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($secret_payload)) throw new RuntimeException('Connector-Zugangsdaten konnten nicht serialisiert werden.');
   $secret_blob = bratonien_tools_nc_connector_encrypt_secret($secret_payload);
