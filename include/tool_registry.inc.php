@@ -25,6 +25,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_db_bridge.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_user_scope.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_flow.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_connection_scope.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -50,7 +51,7 @@ function bratonien_tools_get_tools()
     'album_share_regenerate_link' => array('handler' => 'bratonien_tools_regenerate_album_share_link'),
     'album_share_revoke' => array('handler' => 'bratonien_tools_revoke_album_share'),
     'nc_connector_create_local' => array('handler' => 'bratonien_tools_nc_connector_create_local_api_first'),
-    'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete'),
+    'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_any'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
     'nc_connector_update_technical' => array('handler' => 'bratonien_tools_nc_connector_update_technical'),
     'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan_user_scoped'),
@@ -62,7 +63,7 @@ function bratonien_tools_get_tools()
     'nc_connector_wizard_select_user' => array('handler' => 'bratonien_tools_nc_wizard_select_current_user'),
     'nc_connector_wizard_api_test' => array('handler' => 'bratonien_tools_nc_wizard_api_test'),
     'nc_connector_wizard_api_skip' => array('handler' => 'bratonien_tools_nc_wizard_api_skip'),
-    'nc_connector_wizard_finish' => array('handler' => 'bratonien_tools_nc_wizard_finish_with_directories'),
+    'nc_connector_wizard_finish' => array('handler' => 'bratonien_tools_nc_wizard_finish_connection_scoped'),
     'nc_connector_wizard_back' => array('handler' => 'bratonien_tools_nc_wizard_back'),
     'nc_connector_wizard_reset' => array('handler' => 'bratonien_tools_nc_wizard_reset'),
     'nc_connector_import_legacy' => array('handler' => 'bratonien_tools_nc_connector_import_legacy'),
