@@ -23,17 +23,20 @@ def validate_view(name: str) -> str:
     return value
 
 
-def read_config(path: Path) -> dict[str, tuple[str, Path]]:
-    result: dict[str, tuple[str, Path]] = {}
+def read_config(path: Path) -> dict[str, list[tuple[str, Path, str]]]:
+    result: dict[str, list[tuple[str, Path, str]]] = {}
     with path.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             line=line.rstrip("\n")
             if not line or line.startswith("#"):continue
             fields=line.split("\t")
-            if len(fields)!=3:raise ValueError(f"{path}:{number}: expected storage_id, source_prefix and local_mount")
-            storage_id,prefix,mount=fields
-            if not storage_id.strip():raise ValueError(f"{path}:{number}: storage_id is empty")
-            result[storage_id]=(prefix.strip("/"),Path(mount))
+            if len(fields) not in {3,4}:raise ValueError(f"{path}:{number}: expected storage_id, source_prefix, local_mount and optional include_prefix")
+            storage_id,prefix,mount=fields[:3]
+            include_prefix=fields[3] if len(fields)==4 else ""
+            storage_id=storage_id.strip();prefix=prefix.strip("/");include_prefix=include_prefix.strip("/")
+            if not storage_id:raise ValueError(f"{path}:{number}: storage_id is empty")
+            if ".." in PurePosixPath(prefix).parts or ".." in PurePosixPath(include_prefix).parts:raise ValueError(f"{path}:{number}: unsafe prefix")
+            result.setdefault(storage_id,[]).append((prefix,Path(mount),include_prefix))
     return result
 
 
@@ -65,21 +68,36 @@ def contained_join(root: Path, relative: str) -> Path:
     return root.joinpath(*parts)
 
 
+def matches_prefix(path: str, prefix: str) -> bool:
+    if not prefix:return True
+    return path==prefix or path.startswith(prefix+"/")
+
+
+def resolve_adapter(adapters: dict[str,list[tuple[str,Path,str]]],storage_id: str,source_path: str) -> tuple[str,Path,str] | None:
+    relative=source_path.strip("/")
+    matches=[]
+    for prefix,mount,include_prefix in adapters.get(storage_id,[]):
+        if not matches_prefix(relative,prefix):continue
+        mapped_relative=relative[len(prefix):].lstrip("/") if prefix else relative
+        if not matches_prefix(mapped_relative,include_prefix):continue
+        matches.append((prefix,mount,include_prefix))
+    if not matches:return None
+    matches.sort(key=lambda item:(len(item[0]),len(item[2])),reverse=True)
+    return matches[0]
+
+
 def build(args: argparse.Namespace) -> dict[str,object]:
     validate_view(args.view);adapters=read_config(args.storage_config);rows=query_rows(args)
     if not rows and not args.allow_empty:raise RuntimeError("Nextcloud returned no Showcase shares; refusing an empty manifest")
     manifest=[];errors=[];folder_count=0;file_count=0
     for row in rows:
         if len(row)!=5:errors.append(f"invalid database row with {len(row)} columns");continue
-        share_id,item_type,display_name,storage_id,source_path=row;item_type=item_type.strip().lower()
+        share_id,item_type,display_name,storage_id,source_path=row;item_type=item_type.strip().lower();relative=source_path.strip("/")
         if item_type and item_type not in {"folder","file"}:errors.append(f"share {share_id}: unsupported item_type {item_type!r}");continue
-        adapter=adapters.get(storage_id)
-        if not adapter:errors.append(f"share {share_id}: unknown storage {storage_id}");continue
-        prefix,mount=adapter;relative=source_path.strip("/")
-        if prefix:
-            expected=prefix+"/"
-            if relative!=prefix and not relative.startswith(expected):errors.append(f"share {share_id}: path does not match configured prefix");continue
-            relative=relative[len(prefix):].lstrip("/")
+        adapter=resolve_adapter(adapters,storage_id,relative)
+        if not adapter:continue
+        prefix,mount,_include_prefix=adapter
+        if prefix:relative=relative[len(prefix):].lstrip("/")
         source=contained_join(mount,relative)
         if not mount.is_mount():errors.append(f"share {share_id}: storage mount unavailable: {mount}");continue
         if not item_type:
@@ -97,7 +115,7 @@ def build(args: argparse.Namespace) -> dict[str,object]:
         if "\t" in source_text or "\n" in source_text or "\r" in source_text:errors.append(f"share {share_id}: source path contains unsupported control characters");continue
         manifest.append(f"{share_id}\t{item_type}\t{display_name.lstrip('/')}\t{source}")
     if errors:raise RuntimeError("; ".join(errors))
-    if len(manifest)!=len(rows):raise RuntimeError("not all Showcase shares could be resolved")
+    if not manifest and rows and not args.allow_empty:raise RuntimeError("no Showcase shares match the selected directories")
     args.output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.NamedTemporaryFile("w",encoding="utf-8",dir=args.output.parent,delete=False) as handle:
         handle.write("\n".join(manifest)+("\n" if manifest else ""));temporary=Path(handle.name)
