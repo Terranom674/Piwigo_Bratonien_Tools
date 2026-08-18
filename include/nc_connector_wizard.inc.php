@@ -344,8 +344,8 @@ function bratonien_tools_nc_wizard_finish()
 {
   $state=bratonien_tools_nc_wizard_state();
   if((int)$state['step']!==4||empty($state['technical_complete'])||trim((string)$state['showcase_user'])==='') throw new RuntimeException('Der Assistent ist noch nicht vollständig.');
-  if(array_key_exists('nc_wizard_fallback_user',$_POST))$state['_fallback_user']=trim((string)$_POST['nc_wizard_fallback_user'];
-  if(array_key_exists('nc_wizard_fallback_password',$_POST))$state['_fallback_password']=(string)$_POST['nc_wizard_fallback_password'];
+  if(array_key_exists('nc_wizard_fallback_user',$_POST)) $state['_fallback_user']=trim((string)$_POST['nc_wizard_fallback_user']);
+  if(array_key_exists('nc_wizard_fallback_password',$_POST)) $state['_fallback_password']=(string)$_POST['nc_wizard_fallback_password'];
   bratonien_tools_nc_wizard_store($state);
   $fallback_user=trim((string)$state['_fallback_user']);$fallback_password=(string)$state['_fallback_password'];
   if(($fallback_user==='')!==($fallback_password==='')) throw new RuntimeException('Fallback-Benutzer und Fallback-Passwort müssen entweder beide angegeben oder beide leer gelassen werden.');
