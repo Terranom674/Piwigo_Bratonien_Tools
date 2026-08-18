@@ -52,30 +52,17 @@
         </form>
 
       {elseif $NC_CONNECTOR.wizard.step == 2}
-        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong> Der Assistent prüft jetzt, wie die freigegebenen Dateien gelesen werden können.</p>
+        <p class="bratonien-base-note"><strong>Nextcloud wurde gefunden.</strong> Der Assistent verwendet den Zugang aus dem ersten Schritt auch für den benötigten Lesezugriff.</p>
         <div class="bratonien-form-grid">
           <span class="bratonien-label">Adresse</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
           <span class="bratonien-label">Version</span><strong>{if $NC_CONNECTOR.wizard.version}{$NC_CONNECTOR.wizard.version|escape:html}{else}Nicht gemeldet{/if}</strong>
           <span class="bratonien-label">Angemeldet als</span><strong>{$NC_CONNECTOR.wizard.username|escape:html}{if $NC_CONNECTOR.wizard.display_name} · {$NC_CONNECTOR.wizard.display_name|escape:html}{/if}</strong>
         </div>
 
-        {if $NC_CONNECTOR.wizard.technical_stage == 'reader_credentials'}
-          <hr>
-          <h5>Datenzugriff</h5>
-          <p class="bratonien-base-note">Nextcloud gibt den internen Lesezugang aus Sicherheitsgründen nicht über die normale API aus. Bitte nur den dafür eingerichteten Lese-Benutzer angeben. Die üblichen Verbindungswerte prüft der Assistent selbst.</p>
-          <form method="post" data-bratonien-wizard-form>
-            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-            <div class="bratonien-form-grid">
-              <label class="bratonien-label">Lese-Benutzer</label><input name="nc_wizard_db_user" type="text" value="{$NC_CONNECTOR.wizard.db_user|escape:html}" required>
-              <label class="bratonien-label">Passwort</label><input name="nc_wizard_db_password" type="password" autocomplete="new-password" value="{$NC_CONNECTOR.wizard._db_password|escape:html}" required>
-            </div>
-            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Automatisch prüfen</button></p>
-          </form>
-
-        {elseif $NC_CONNECTOR.wizard.technical_stage == 'database_details'}
+        {if $NC_CONNECTOR.wizard.technical_stage == 'database_details'}
           <hr>
           <h5>Datenbank-Adresse prüfen</h5>
-          <p class="bratonien-base-note">Der übliche Weg hat nicht funktioniert. Deshalb werden jetzt nur die Angaben abgefragt, die davon abweichen können.</p>
+          <p class="bratonien-base-note">Der Zugang aus dem ersten Schritt bleibt unverändert. Nur die Verbindungsadresse konnte nicht automatisch bestätigt werden.</p>
           {if $NC_CONNECTOR.wizard.technical_error}<details><summary>Technische Details</summary><p class="bratonien-main-cache__warning">{$NC_CONNECTOR.wizard.technical_error|escape:html}</p></details>{/if}
           <form method="post" data-bratonien-wizard-form>
             <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
@@ -83,8 +70,6 @@
               <label class="bratonien-label">Datenbank-Adresse</label><input name="nc_wizard_db_host" type="text" value="{$NC_CONNECTOR.wizard.db_host|escape:html}" required>
               <label class="bratonien-label">Port</label><input name="nc_wizard_db_port" type="number" min="1" max="65535" value="{$NC_CONNECTOR.wizard.db_port|escape:html}" required>
               <label class="bratonien-label">Datenbank</label><input name="nc_wizard_db_database" type="text" value="{$NC_CONNECTOR.wizard.db_database|escape:html}" required>
-              <label class="bratonien-label">Lese-Benutzer</label><input name="nc_wizard_db_user" type="text" value="{$NC_CONNECTOR.wizard.db_user|escape:html}" required>
-              <label class="bratonien-label">Passwort</label><input name="nc_wizard_db_password" type="password" autocomplete="new-password" value="{$NC_CONNECTOR.wizard._db_password|escape:html}" required>
             </div>
             <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Erneut prüfen</button></p>
           </form>
