@@ -65,7 +65,6 @@ function bratonien_tools_webdav_image_source_info($image_id)
   $size = 0;
   $etag = '';
 
-  // Metadata is optional. Routing must not depend on the root-owned runtime map.
   $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
   if ($state_dir !== '')
   {
@@ -189,19 +188,13 @@ function bratonien_tools_webdav_generate_derivative($params, $src_image)
   if (!class_exists('pwg_image')) require_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
 
   $derivative = new DerivativeImage($params, $src_image);
-  if ($derivative->same_as_source())
-  {
-    return true;
-  }
+  if ($derivative->same_as_source()) return true;
 
   $target = $derivative->get_path();
   if ($target === '' || strpos($target, PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR) !== 0) return false;
 
   $preview_mtime = @filemtime($preview) ?: 0;
-  if (is_file($target) && is_readable($target) && (@filemtime($target) ?: 0) >= $preview_mtime)
-  {
-    return true;
-  }
+  if (is_file($target) && is_readable($target) && (@filemtime($target) ?: 0) >= $preview_mtime) return true;
 
   $directory = dirname($target);
   if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) return false;
@@ -221,10 +214,7 @@ function bratonien_tools_webdav_generate_derivative($params, $src_image)
     {
       $image->resize($scaled_size[0], $scaled_size[1]);
     }
-    if (!empty($params->sharpen))
-    {
-      $image->sharpen($params->sharpen);
-    }
+    if (!empty($params->sharpen)) $image->sharpen($params->sharpen);
     $image->write($target);
   }
   finally
@@ -250,18 +240,8 @@ function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image,
   $info = bratonien_tools_webdav_image_source_info((int)$src_image->id);
   if (!$info) return $url;
 
-  try
-  {
-    if (bratonien_tools_webdav_generate_derivative($params, $src_image))
-    {
-      return $url;
-    }
-  }
-  catch (Throwable $e)
-  {
-    error_log('Bratonien WebDAV derivative #'.(int)$src_image->id.': '.$e->getMessage());
-  }
-
-  $webdav_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
-  return $webdav_url ?: $url;
+  // Never perform image generation in the frontend request. A failed image
+  // backend must not be able to take down the complete Piwigo page.
+  $preview_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
+  return $preview_url ?: $url;
 }
