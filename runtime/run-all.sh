@@ -10,6 +10,11 @@ if ! php "$SCRIPT_DIR/reconcile.php"; then
     exit 1
 fi
 
+if ! php "$SCRIPT_DIR/cleanup-stale.php"; then
+    echo "NC Connector: verwaiste Laufzeitdateien konnten nicht bereinigt werden." >&2
+    exit 1
+fi
+
 configs=("$CONFIG_DIR"/connection-*.conf)
 
 if [[ ${#configs[@]} -eq 0 ]]; then
