@@ -28,6 +28,7 @@ function bratonien_tools_nc_connector_create_local_api_first()
     throw new RuntimeException('Fallback-Benutzer und Fallback-Passwort muessen entweder beide angegeben oder beide leer gelassen werden.');
   }
 
+  $wizard_auth_present = array_key_exists('nc_api_validated', $_POST);
   $validated_pending_api = (string)($_POST['nc_api_validated'] ?? '') === '1';
   $api_key_id = trim((string)($_POST['nc_connection_api_key_id'] ?? ''));
   $api_key_secret = trim((string)($_POST['nc_connection_api_key_secret'] ?? ''));
@@ -35,7 +36,7 @@ function bratonien_tools_nc_connector_create_local_api_first()
   {
     throw new RuntimeException('API-Schluessel-ID und API-Geheimnis muessen entweder beide vorhanden oder beide leer sein.');
   }
-  if ($validated_pending_api && $api_key_id === '')
+  if (($validated_pending_api || (!$wizard_auth_present && $fallback_user === '')) && $api_key_id === '')
   {
     $legacy_api = bratonien_tools_nc_api_credentials();
     $api_key_id = trim((string)($legacy_api['key_id'] ?? ''));
