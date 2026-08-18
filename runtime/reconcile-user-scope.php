@@ -21,16 +21,15 @@ function user_scope_path_has_segment($path, $segment)
   return false;
 }
 
-function user_scope_candidate($mount, $prefix, $accessUser)
+function user_scope_candidate($root, $accessUser, $sourcePrefix = '')
 {
-  $mount = rtrim((string)$mount, '/');
-  $prefix = trim((string)$prefix, '/');
-  if ($mount === '' || $mount[0] !== '/') return null;
-  $root = $mount.($prefix !== '' ? '/'.$prefix : '');
+  $root = rtrim((string)$root, '/');
+  $sourcePrefix = trim((string)$sourcePrefix, '/');
+  if ($root === '' || $root[0] !== '/') return null;
   if (!is_dir($root) || !is_readable($root)) return null;
   $real = realpath($root);
   if ($real === false || !user_scope_path_has_segment($real, $accessUser)) return null;
-  return array('local_mount'=>$mount, 'source_prefix'=>$prefix, 'root'=>$real);
+  return array('local_mount'=>$real, 'source_prefix'=>$sourcePrefix, 'root'=>$real);
 }
 
 function user_scope_storage(array $storage, $accessUser)
@@ -45,27 +44,52 @@ function user_scope_storage(array $storage, $accessUser)
     $candidates[$candidate['root']] = $candidate;
   };
 
-  $add(user_scope_candidate($mount, $prefix, $accessUser));
+  // Bereits benutzerspezifisch gespeicherter Mount.
+  $add(user_scope_candidate($mount, $accessUser, $prefix));
+
+  // Nextcloud Home-Storage liegt normalerweise unter <data>/<uid>/files.
+  // Wir akzeptieren ausschließlich Pfade, die die konkrete UID als eigenes
+  // Pfadsegment enthalten. Ein generischer Daten-Mount wird nie freigegeben.
   if ($mount !== '')
   {
-    $add(user_scope_candidate(dirname($mount).'/'.$accessUser, $prefix, $accessUser));
-    $add(user_scope_candidate($mount.'/'.$accessUser, $prefix, $accessUser));
+    $bases = array(
+      $mount,
+      dirname($mount),
+      dirname(dirname($mount)),
+    );
+    foreach (array_unique($bases) as $base)
+    {
+      $add(user_scope_candidate(rtrim($base, '/').'/'.$accessUser.'/files', $accessUser, ''));
+      $add(user_scope_candidate(rtrim($base, '/').'/'.$accessUser, $accessUser, 'files'));
+    }
   }
 
+  // Falls der alte source_prefix bereits die UID enthaelt, kann daraus ein
+  // eindeutiger benutzerspezifischer Root abgeleitet werden.
   if ($prefix !== '')
   {
     $parts = explode('/', $prefix);
-    if ($parts && (string)$parts[0] !== (string)$accessUser)
+    $userPos = array_search($accessUser, $parts, true);
+    if ($userPos !== false)
     {
-      array_shift($parts);
-      $rest = implode('/', $parts);
-      $add(user_scope_candidate($mount.'/'.$accessUser, $rest, $accessUser));
+      $before = array_slice($parts, 0, $userPos);
+      $after = array_slice($parts, $userPos + 1);
+      $base = $mount;
+      if ($before) $base .= '/'.implode('/', $before);
+      $root = $base.'/'.$accessUser;
+      if (isset($after[0]) && $after[0] === 'files')
+      {
+        $root .= '/files';
+        array_shift($after);
+      }
+      $add(user_scope_candidate($root, $accessUser, implode('/', $after)));
     }
   }
 
   if (count($candidates) !== 1)
   {
-    user_scope_fail('Der lokale Dateistamm für Nextcloud-Benutzer '.$accessUser.' konnte nicht eindeutig bestimmt werden. Die Verbindung wird aus Sicherheitsgründen nicht gestartet.');
+    $count = count($candidates);
+    user_scope_fail('Der lokale Dateistamm für Nextcloud-Benutzer '.$accessUser.' konnte nicht eindeutig bestimmt werden ('.$count.' passende Pfade). Die Verbindung wird aus Sicherheitsgründen nicht gestartet.');
   }
 
   $resolved = reset($candidates);
