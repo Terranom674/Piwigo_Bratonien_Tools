@@ -15,6 +15,15 @@ if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
     exit 1
 fi
 
+# Nach dem Reconcile kennt Piwigo alle noch aktiven WebDAV-Verbindungen. Jetzt
+# werden Sites, Alben, Bilddatensaetze und Derivate geloeschter Verbindungen
+# entfernt. Das erfasst auch Verbindungen, die bereits vor diesem Update
+# geloescht wurden.
+if ! php "$SCRIPT_DIR/cleanup-webdav-piwigo.php"; then
+    echo "NC Connector: Piwigo-Inhalte geloeschter WebDAV-Verbindungen konnten nicht bereinigt werden." >&2
+    exit 1
+fi
+
 if ! php "$SCRIPT_DIR/cleanup-stale.php"; then
     echo "NC Connector: verwaiste Laufzeitdateien konnten nicht bereinigt werden." >&2
     exit 1
