@@ -93,9 +93,20 @@
       return null;
     }
 
+    function lastResultValueNode(){
+      var notes=[].slice.call(section.querySelectorAll('.bratonien-base-note'));
+      for(var i=0;i<notes.length;i++){
+        var text=(notes[i].textContent||'').trim();
+        if(text.indexOf('Letztes Ergebnis:')===0){
+          return notes[i].querySelector('strong');
+        }
+      }
+      return null;
+    }
+
     var lastRunNode=valueNodeForLabel('Letzter Lauf');
     var nextRunNode=valueNodeForLabel('Nächster Lauf');
-    var lastResultNode=valueNodeForLabel('Letztes Ergebnis');
+    var lastResultNode=lastResultValueNode();
 
     function poll(){
       fetch(endpoint+'?_='+Date.now(),{credentials:'same-origin',cache:'no-store'})
