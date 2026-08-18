@@ -420,7 +420,7 @@
     if (technicalButton && technical) {
       technicalButton.addEventListener('click', function () {
         technical.open = !technical.open;
-        if (technical.open) technical.scrollIntoView({behavior:'smooth', block:'start'});
+        if (technical.open) technical.scrollIntoView(true);
       });
     }
   }());
