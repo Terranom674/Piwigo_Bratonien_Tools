@@ -80,6 +80,14 @@
     if(dialog){
       dialog.addEventListener('cancel',function(event){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();},true);
       dialog.addEventListener('click',function(event){if(event.target===dialog){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();}},true);
+
+      // Every wizard POST explicitly preserves the open state before the
+      // browser leaves the page. Validation errors therefore return to the
+      // same wizard step instead of closing/resetting the dialog.
+      [].slice.call(dialog.querySelectorAll('form[data-bratonien-wizard-form]')).forEach(function(form){
+        form.addEventListener('submit',function(){setOpen(true);},true);
+      });
+
       try{if(sessionStorage.getItem(storageKey)==='1')showWizard();}catch(e){}
     }
   }
