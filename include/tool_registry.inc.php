@@ -22,6 +22,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_auth.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_create_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_piwigo_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_db_bridge.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -50,8 +51,8 @@ function bratonien_tools_get_tools()
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
     'nc_connector_update_technical' => array('handler' => 'bratonien_tools_nc_connector_update_technical'),
-    'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan'),
-    'nc_connector_wizard_save_technical' => array('handler' => 'bratonien_tools_nc_wizard_save_technical'),
+    'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan_with_known_database'),
+    'nc_connector_wizard_save_technical' => array('handler' => 'bratonien_tools_nc_wizard_save_technical_with_known_database'),
     'nc_connector_wizard_save_mounts' => array('handler' => 'bratonien_tools_nc_wizard_save_mounts'),
     'nc_connector_wizard_select_user' => array('handler' => 'bratonien_tools_nc_wizard_select_user'),
     'nc_connector_wizard_api_test' => array('handler' => 'bratonien_tools_nc_wizard_api_test'),
