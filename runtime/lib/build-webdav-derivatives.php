@@ -31,7 +31,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/build-webdav-derivatives.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Derivative-Builder/0.9.5.20';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Derivative-Builder/0.9.5.21';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -54,6 +54,8 @@ try
 
   $images = 0;
   $generated = 0;
+  $identity = 0;
+  $metadata_repaired = 0;
   $errors = 0;
 
   $result = pwg_query('SELECT * FROM '.IMAGES_TABLE.' ORDER BY id');
@@ -64,11 +66,49 @@ try
     if (!$info || (int)$info['connection_id'] !== $connection_id) continue;
 
     $images++;
+    $preview = bratonien_tools_webdav_preview_path($info);
+    if (!$preview)
+    {
+      $errors++;
+      fwrite(STDERR, 'Bild #'.$image_id.": vorbereitetes WebDAV-Preview fehlt.\n");
+      continue;
+    }
+
+    $size = @getimagesize($preview);
+    if (!is_array($size) || empty($size[0]) || empty($size[1]))
+    {
+      $errors++;
+      fwrite(STDERR, 'Bild #'.$image_id.": Abmessungen des WebDAV-Previews konnten nicht gelesen werden.\n");
+      continue;
+    }
+
+    $preview_width = (int)$size[0];
+    $preview_height = (int)$size[1];
+    if ((int)($row['width'] ?? 0) !== $preview_width || (int)($row['height'] ?? 0) !== $preview_height || (int)($row['rotation'] ?? 0) !== 0)
+    {
+      pwg_query(
+        'UPDATE '.IMAGES_TABLE.
+        ' SET width='.$preview_width.', height='.$preview_height.', rotation=0'.
+        ' WHERE id='.$image_id
+      );
+      $row['width'] = $preview_width;
+      $row['height'] = $preview_height;
+      $row['rotation'] = 0;
+      $metadata_repaired++;
+    }
+
     $src = new SrcImage($row);
     foreach ($variants as $variant_name => $params)
     {
       try
       {
+        $probe = new DerivativeImage($params, $src);
+        if ($probe->same_as_source())
+        {
+          $identity++;
+          continue;
+        }
+
         if (bratonien_tools_webdav_generate_derivative($params, $src))
         {
           $generated++;
@@ -87,7 +127,18 @@ try
     }
   }
 
-  echo 'WebDAV-Derivate: bilder='.$images.' varianten='.count($variants).' bereit='.$generated.' fehler='.$errors."\n";
+  if ($metadata_repaired > 0)
+  {
+    update_category('all');
+    invalidate_user_cache(true);
+  }
+
+  echo 'WebDAV-Derivate: bilder='.$images.
+    ' varianten='.count($variants).
+    ' erzeugt='.$generated.
+    ' identisch='.$identity.
+    ' metadaten_repariert='.$metadata_repaired.
+    ' fehler='.$errors."\n";
   exit($errors > 0 ? 1 : 0);
 }
 catch (Throwable $e)
