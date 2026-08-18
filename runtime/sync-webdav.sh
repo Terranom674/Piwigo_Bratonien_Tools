@@ -95,7 +95,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         --base-url="http://127.0.0.1"
     write_status ok "WebDAV-Shadow-Tree und Piwigo-Synchronisierung erfolgreich"
 else
-    write_status ok "WebDAV-Shadow-Tree erfolgreich; Piwigo-Synchronisierung bleibt bewusst deaktiviert"
+    write_status ok "WebDAV-Shadow-Tree erfolgreich; Registrierung erfolgt im selben Minutenlauf über den bestehenden produktiven Piwigo-Sync"
 fi
 
 trap - ERR
