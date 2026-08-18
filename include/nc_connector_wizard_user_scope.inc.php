@@ -138,11 +138,13 @@ function bratonien_tools_nc_wizard_scan_user_scoped()
     'source_view'=>'piwigo_showcase_sources','activity_view'=>'piwigo_showcase_activity','gallery_root'=>rtrim(PHPWG_ROOT_PATH, '/').'/galleries/nextcloud',
     'storages'=>array(),'storage_candidates'=>array(),'technical_stage'=>'auto_check','technical_source'=>'Automatische Prüfung','technical_error'=>'','technical_complete'=>false,
     'directory_selection_ready'=>false,'directory_path'=>'','directory_parent'=>'','directory_children'=>array(),'directory_selected'=>array(),
+    'database_prompted'=>false,'mount_prompted'=>false,
   ));
 
   if (!bratonien_tools_nc_wizard_apply_known_database_profile($state))
   {
     $state['technical_stage'] = 'database_details';
+    $state['database_prompted'] = true;
     $state['technical_source'] = 'Keine bekannte Reader-Verbindung gefunden';
     $state['technical_error'] = 'Für diese Nextcloud ist noch keine bekannte Datenbank-Reader-Verbindung gespeichert.';
     bratonien_tools_nc_wizard_store($state);
@@ -153,24 +155,33 @@ function bratonien_tools_nc_wizard_scan_user_scoped()
   try
   {
     bratonien_tools_nc_wizard_finish_data_access_for_selection($state, $known_storages);
-    if (!empty($state['directory_selection_ready'])) bratonien_tools_nc_wizard_refresh_directory_state($state, '');
+    if (!empty($state['directory_selection_ready']))
+    {
+      bratonien_tools_nc_wizard_refresh_directory_state($state, '');
+    }
+    else
+    {
+      $state['mount_prompted'] = true;
+    }
   }
   catch (Throwable $e)
   {
     $state['technical_complete'] = false;
     $state['technical_stage'] = 'database_details';
+    $state['database_prompted'] = true;
     $state['technical_error'] = $e->getMessage();
   }
   bratonien_tools_nc_wizard_store($state);
 
   if ($state['technical_stage'] === 'database_details') return array('message'=>'Nextcloud wurde gefunden. Die bekannte Reader-Verbindung konnte noch nicht vollständig bestätigt werden.');
+  if (empty($state['directory_selection_ready'])) return array('message'=>'Nextcloud und Datenzugriff wurden bestätigt. Der technische Speicherort muss einmal bestätigt werden.');
   return array('message'=>'Nextcloud und Datenzugriff wurden bestätigt. Jetzt können die Verzeichnisse des angemeldeten Benutzers gewählt werden.');
 }
 
 function bratonien_tools_nc_wizard_directory_browse()
 {
   $state = bratonien_tools_nc_wizard_state();
-  if ((int)$state['step'] !== 2 || (string)$state['technical_stage'] !== 'mounts') throw new RuntimeException('Die Verzeichnisauswahl ist in diesem Schritt nicht verfügbar.');
+  if ((int)$state['step'] !== 2 || (string)$state['technical_stage'] !== 'mounts' || empty($state['directory_selection_ready'])) throw new RuntimeException('Die Verzeichnisauswahl ist in diesem Fenster nicht verfügbar.');
   $path = trim((string)($_POST['nc_wizard_directory_path'] ?? ''), '/');
   bratonien_tools_nc_wizard_refresh_directory_state($state, $path);
   bratonien_tools_nc_wizard_store($state);
@@ -180,7 +191,7 @@ function bratonien_tools_nc_wizard_directory_browse()
 function bratonien_tools_nc_wizard_directory_add()
 {
   $state = bratonien_tools_nc_wizard_state();
-  if ((int)$state['step'] !== 2 || (string)$state['technical_stage'] !== 'mounts') throw new RuntimeException('Die Verzeichnisauswahl ist in diesem Schritt nicht verfügbar.');
+  if ((int)$state['step'] !== 2 || (string)$state['technical_stage'] !== 'mounts' || empty($state['directory_selection_ready'])) throw new RuntimeException('Die Verzeichnisauswahl ist in diesem Fenster nicht verfügbar.');
   $path = trim((string)($state['directory_path'] ?? ''), '/');
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected']) ? $state['directory_selected'] : array();
   if (!in_array($path, $selected, true)) $selected[] = $path;
@@ -192,6 +203,7 @@ function bratonien_tools_nc_wizard_directory_add()
 function bratonien_tools_nc_wizard_directory_remove()
 {
   $state = bratonien_tools_nc_wizard_state();
+  if ((int)$state['step'] !== 2 || empty($state['directory_selection_ready'])) throw new RuntimeException('Die Verzeichnisauswahl ist in diesem Fenster nicht verfügbar.');
   $path = trim((string)($_POST['nc_wizard_directory_remove'] ?? ''), '/');
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected']) ? $state['directory_selected'] : array();
   $state['directory_selected'] = array_values(array_filter($selected, function($value) use ($path) { return (string)$value !== $path; }));
@@ -202,18 +214,48 @@ function bratonien_tools_nc_wizard_directory_remove()
 function bratonien_tools_nc_wizard_save_mounts_server_side()
 {
   $state = bratonien_tools_nc_wizard_state();
+  if ((int)$state['step'] !== 2 || (string)$state['technical_stage'] !== 'mounts') throw new RuntimeException('Die Speicher-/Verzeichnisauswahl ist in diesem Fenster nicht verfügbar.');
+
   $candidates = isset($state['storage_candidates']) && is_array($state['storage_candidates']) ? $state['storage_candidates'] : array();
   if (!$candidates) throw new RuntimeException('Es wurden noch keine Speicherorte erkannt.');
 
   $mounts = isset($_POST['nc_wizard_storage_mount']) && is_array($_POST['nc_wizard_storage_mount']) ? $_POST['nc_wizard_storage_mount'] : array();
+
+  // Erstes sichtbares Fenster: technische Mount-Zuordnung bestätigen.
+  if (empty($state['directory_selection_ready']))
+  {
+    foreach ($candidates as $index=>&$candidate)
+    {
+      $mount = rtrim(trim((string)($candidate['local_mount'] ?? '')), '/');
+      if ($mount === '') $mount = rtrim(trim((string)($mounts[$index] ?? '')), '/');
+      if ($mount === '' || $mount[0] !== '/') throw new RuntimeException('Für einen Speicherort fehlt ein gültiger lokaler Pfad.');
+      if (!is_dir($mount) || !is_readable($mount)) throw new RuntimeException('Der angegebene Speicherort ist nicht vorhanden oder nicht lesbar: '.$mount);
+      $candidate['local_mount'] = $mount;
+    }
+    unset($candidate);
+
+    $state['storage_candidates'] = array_values($candidates);
+    $state['mount_prompted'] = true;
+    $state['directory_selection_ready'] = true;
+    $state['technical_complete'] = false;
+    $state['technical_stage'] = 'mounts';
+    $state['directory_path'] = '';
+    $state['directory_parent'] = '';
+    $state['directory_children'] = array();
+    $state['directory_selected'] = array();
+    bratonien_tools_nc_wizard_refresh_directory_state($state, '');
+    bratonien_tools_nc_wizard_store($state);
+    return array('message'=>'Speicherzuordnung wurde bestätigt. Jetzt können die Verzeichnisse ausgewählt werden.');
+  }
+
+  // Zweites sichtbares Fenster: Verzeichnisauswahl übernehmen.
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected']) ? $state['directory_selected'] : array();
   if (!$selected) $selected = array('');
   $storages = array();
 
-  foreach ($candidates as $index=>$candidate)
+  foreach ($candidates as $candidate)
   {
     $mount = rtrim(trim((string)($candidate['local_mount'] ?? '')), '/');
-    if ($mount === '') $mount = rtrim(trim((string)($mounts[$index] ?? '')), '/');
     if ($mount === '' || $mount[0] !== '/') throw new RuntimeException('Für einen Speicherort fehlt ein gültiger lokaler Pfad.');
     if (!is_dir($mount) || !is_readable($mount)) throw new RuntimeException('Der angegebene Speicherort ist nicht vorhanden oder nicht lesbar: '.$mount);
 
@@ -260,22 +302,66 @@ function bratonien_tools_nc_wizard_back()
   $step = (int)($state['step'] ?? 1);
   if ($step <= 1) return array('message'=>'Bereits am Anfang des Assistenten.');
 
-  if ($step === 2)
+  if ($step === 4)
   {
-    $state['step'] = 1;
+    // Abschluss -> API
+    $state['step'] = 3;
   }
   elseif ($step === 3)
   {
+    // API -> Verbindungsname
     $state['step'] = 2;
+    $state['technical_complete'] = true;
+    $state['technical_stage'] = 'ready';
+    $state['directory_selection_ready'] = false;
+  }
+  elseif (!empty($state['technical_complete']))
+  {
+    // Verbindungsname -> Verzeichnisauswahl
     $state['technical_complete'] = false;
     $state['technical_stage'] = 'mounts';
     $state['directory_selection_ready'] = true;
     bratonien_tools_nc_wizard_refresh_directory_state($state);
   }
+  elseif ((string)($state['technical_stage'] ?? '') === 'mounts' && !empty($state['directory_selection_ready']))
+  {
+    // Verzeichnisauswahl -> vorher tatsächlich sichtbares Fenster.
+    if (!empty($state['mount_prompted']))
+    {
+      $state['directory_selection_ready'] = false;
+    }
+    elseif (!empty($state['database_prompted']))
+    {
+      $state['technical_stage'] = 'database_details';
+      $state['directory_selection_ready'] = false;
+    }
+    else
+    {
+      $state['step'] = 1;
+    }
+  }
+  elseif ((string)($state['technical_stage'] ?? '') === 'mounts')
+  {
+    // Mount-Zuordnung -> Datenbankfenster, falls es sichtbar war, sonst Anmeldung.
+    if (!empty($state['database_prompted']))
+    {
+      $state['technical_stage'] = 'database_details';
+    }
+    else
+    {
+      $state['step'] = 1;
+    }
+  }
+  elseif ((string)($state['technical_stage'] ?? '') === 'database_details')
+  {
+    // Datenbankfenster -> Anmeldung.
+    $state['step'] = 1;
+  }
   else
   {
-    $state['step'] = 3;
+    $state['step'] = 1;
   }
+
   bratonien_tools_nc_wizard_store($state);
-  return array('message'=>'Ein Schritt zurück.');
+  return array('message'=>'Ein Fenster zurück.');
 }
