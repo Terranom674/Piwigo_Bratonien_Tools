@@ -27,14 +27,20 @@ if (!function_exists('is_admin') || !is_admin())
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_wizard.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_wizard_db_bridge.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_wizard_user_scope.inc.php');
 
 try
 {
   $state = bratonien_tools_nc_wizard_state();
+  $path = trim((string)($_GET['path'] ?? ''), '/');
+  $listing = bratonien_tools_nc_wizard_webdav_list($state, $path);
   echo json_encode(array(
     'state'=>'ok',
     'ready'=>!empty($state['directory_selection_ready']),
-    'storages'=>bratonien_tools_nc_wizard_directory_options($state),
+    'username'=>(string)$state['username'],
+    'current'=>$listing['current'],
+    'parent'=>$listing['parent'],
+    'children'=>$listing['children'],
   ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 catch (Throwable $e)
