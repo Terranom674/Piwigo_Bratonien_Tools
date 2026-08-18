@@ -189,6 +189,18 @@ function bratonien_tools_nc_wizard_finish_dispatch()
     throw new RuntimeException('Da die Piwigo-API übersprungen wurde, ist für diese Verbindung ein Fallback-Zugang erforderlich.');
   }
 
+  if ($fallback_user !== '')
+  {
+    try
+    {
+      bratonien_tools_nc_connector_validate_fallback_credentials($fallback_user, $fallback_password);
+    }
+    catch (Throwable $e)
+    {
+      throw new RuntimeException('Der Piwigo-Fallback wurde nicht gespeichert: '.$e->getMessage());
+    }
+  }
+
   $result = bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard();
   unset($_SESSION['bratonien_nc_wizard']);
   return $result;
