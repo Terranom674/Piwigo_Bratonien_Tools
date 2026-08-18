@@ -41,9 +41,10 @@
 
     <div class="bratonien-card" style="grid-column:1/-1">
       <h4>Neue Verbindung</h4>
+      <p class="bratonien-base-note"><strong>Assistent · Schritt {$NC_CONNECTOR.wizard.step|escape:html} von 4</strong></p>
 
       {if $NC_CONNECTOR.wizard.step == 1}
-        <p class="bratonien-base-note">Der Assistent braucht zuerst nur die Nextcloud-Adresse und einen Benutzer, mit dem Nextcloud auf den Scan antworten darf.</p>
+        <p class="bratonien-base-note">Wir beginnen nur mit der Adresse der Nextcloud und einem Benutzer, mit dem die Instanz auf den Scan antworten kann.</p>
         <form method="post">
           <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
           <div class="bratonien-form-grid">
@@ -56,43 +57,143 @@
           </div>
           <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_scan">Verbinden und scannen</button></p>
         </form>
+
       {elseif $NC_CONNECTOR.wizard.step == 2}
-        <p class="bratonien-base-note"><strong>Scan erfolgreich.</strong> Erkannte Werte:</p>
+        <p class="bratonien-base-note"><strong>Nextcloud erkannt.</strong> Alles, was zuverlässig ermittelt werden konnte, wurde bereits übernommen.</p>
         <div class="bratonien-form-grid">
           <span class="bratonien-label">Nextcloud</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
           <span class="bratonien-label">Produkt</span><strong>{$NC_CONNECTOR.wizard.product|escape:html}</strong>
           <span class="bratonien-label">Version</span><strong>{if $NC_CONNECTOR.wizard.version}{$NC_CONNECTOR.wizard.version|escape:html}{else}nicht gemeldet{/if}</strong>
           <span class="bratonien-label">Zugriff als</span><strong>{$NC_CONNECTOR.wizard.username|escape:html}{if $NC_CONNECTOR.wizard.display_name} · {$NC_CONNECTOR.wizard.display_name|escape:html}{/if}</strong>
+          <span class="bratonien-label">Technische Erkennung</span><strong>{$NC_CONNECTOR.wizard.technical_source|escape:html}</strong>
+          <span class="bratonien-label">Piwigo-Ziel</span><strong>{$NC_CONNECTOR.wizard.gallery_root|escape:html}</strong>
         </div>
 
-        <hr>
-        <h5>Welcher Benutzer stellt die Bilder bereit?</h5>
-        <p class="bratonien-base-note"><strong>Empfehlung:</strong> ein eigener Benutzer nur für die Showcase-Freigaben. So bleibt die Connector-Quelle klar und unabhängig von persönlichen Konten.</p>
+        {if !$NC_CONNECTOR.wizard.db_password_set || !$NC_CONNECTOR.wizard.db_user}
+          <hr>
+          <h5>Für den Datenabgleich fehlt noch der Datenbankzugang</h5>
+          <p class="bratonien-base-note">Der Assistent konnte diese Angaben nicht sicher aus Nextcloud ableiten. Deshalb werden nur die fehlenden Werte abgefragt.</p>
+          <form method="post">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <div class="bratonien-form-grid">
+              <label class="bratonien-label">Verbindungsname</label><input name="nc_wizard_connection_name" type="text" value="{$NC_CONNECTOR.wizard.connection_name|escape:html}" required>
+              <label class="bratonien-label">Datenbank-Host</label><input name="nc_wizard_db_host" type="text" value="{$NC_CONNECTOR.wizard.db_host|escape:html}" required>
+              <label class="bratonien-label">Port</label><input name="nc_wizard_db_port" type="number" min="1" max="65535" value="{$NC_CONNECTOR.wizard.db_port|escape:html}" required>
+              <label class="bratonien-label">Datenbank</label><input name="nc_wizard_db_database" type="text" value="{$NC_CONNECTOR.wizard.db_database|escape:html}" required>
+              <label class="bratonien-label">Reader-Benutzer</label><input name="nc_wizard_db_user" type="text" value="{$NC_CONNECTOR.wizard.db_user|escape:html}" required>
+              <label class="bratonien-label">Reader-Passwort</label><input name="nc_wizard_db_password" type="password" autocomplete="new-password" required>
+            </div>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_technical">Prüfen und automatisch ergänzen</button></p>
+          </form>
+
+        {elseif !$NC_CONNECTOR.wizard.technical_complete && $NC_CONNECTOR.wizard.storage_candidates|@count > 0}
+          <hr>
+          <h5>Einige Storages konnten nicht automatisch zugeordnet werden</h5>
+          <p class="bratonien-main-cache__warning">Mount-Pfade werden nur hier abgefragt, weil sie nicht sicher erkannt werden konnten. Bereits erkannte Zuordnungen sind gesperrt.</p>
+          <form method="post">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <div class="bratonien-form-grid">
+              {foreach from=$NC_CONNECTOR.wizard.storage_candidates item=storage key=storage_index}
+                <span class="bratonien-label">Storage {$storage.storage_id|escape:html} · {$storage.source_prefix|escape:html}</span>
+                {if $storage.local_mount}
+                  <strong>{$storage.local_mount|escape:html}</strong>
+                  <input type="hidden" name="nc_wizard_storage_mount[{$storage_index|escape:html}]" value="{$storage.local_mount|escape:html}">
+                {else}
+                  <input name="nc_wizard_storage_mount[{$storage_index|escape:html}]" type="text" placeholder="/mnt/nextcloud/..." required>
+                {/if}
+              {/foreach}
+            </div>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_save_mounts">Zuordnung prüfen</button></p>
+          </form>
+
+        {elseif $NC_CONNECTOR.wizard.technical_complete}
+          <hr>
+          <h5>Erkannte Verbindung</h5>
+          <div class="bratonien-form-grid">
+            <span class="bratonien-label">Datenbank</span><strong>{$NC_CONNECTOR.wizard.db_host|escape:html}:{$NC_CONNECTOR.wizard.db_port|escape:html} / {$NC_CONNECTOR.wizard.db_database|escape:html}</strong>
+            <span class="bratonien-label">Reader</span><strong>{$NC_CONNECTOR.wizard.db_user|escape:html}</strong>
+            <span class="bratonien-label">Source-View</span><strong>{$NC_CONNECTOR.wizard.source_view|escape:html}</strong>
+            <span class="bratonien-label">Activity-View</span><strong>{$NC_CONNECTOR.wizard.activity_view|escape:html}</strong>
+            <span class="bratonien-label">Storages</span><strong>{$NC_CONNECTOR.wizard.storages|@count}</strong>
+          </div>
+
+          <hr>
+          <h5>Welcher Benutzer stellt die Bilder bereit?</h5>
+          <p class="bratonien-base-note"><strong>Empfehlung:</strong> ein eigener Showcase-Benutzer. So bleibt die Connector-Quelle unabhängig von persönlichen Konten.</p>
+          <form method="post">
+            <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+            <div class="bratonien-form-grid">
+              <label class="bratonien-label" for="nc_wizard_connection_name">Verbindungsname</label>
+              <input id="nc_wizard_connection_name" name="nc_wizard_connection_name" type="text" value="{$NC_CONNECTOR.wizard.connection_name|escape:html}" required>
+              <label class="bratonien-label" for="nc_wizard_showcase_user">Showcase-Benutzer</label>
+              {if $NC_CONNECTOR.wizard.can_list_users && $NC_CONNECTOR.wizard.users|@count > 0}
+                <select id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" required>
+                  {foreach from=$NC_CONNECTOR.wizard.users item=nc_user}
+                    <option value="{$nc_user|escape:html}"{if $nc_user == 'showcase'} selected{/if}>{$nc_user|escape:html}{if $nc_user == 'showcase'} · empfohlen{/if}</option>
+                  {/foreach}
+                </select>
+              {else}
+                <input id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" type="text" value="showcase" required>
+              {/if}
+            </div>
+            <p><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_select_user">Weiter zur Piwigo-API</button></p>
+          </form>
+        {/if}
+
+        <form method="post" style="margin-top:1rem">
+          <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+          <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset">Neu beginnen</button>
+        </form>
+
+      {elseif $NC_CONNECTOR.wizard.step == 3}
+        <p class="bratonien-base-note"><strong>Nextcloud verbunden.</strong> Showcase-Benutzer: <strong>{$NC_CONNECTOR.wizard.showcase_user|escape:html}</strong></p>
+        <h5>Piwigo-API</h5>
+        <p class="bratonien-base-note">Die API ist der bevorzugte Weg. Du kannst neue Zugangsdaten eingeben, einen bereits gespeicherten API-Zugang testen oder diesen Schritt überspringen.</p>
+        {if $NC_CONNECTOR.wizard.api_error}
+          <p class="bratonien-main-cache__warning"><strong>Letzter API-Test:</strong> {$NC_CONNECTOR.wizard.api_error|escape:html}</p>
+        {/if}
         <form method="post">
           <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
           <div class="bratonien-form-grid">
-            <label class="bratonien-label" for="nc_wizard_showcase_user">Showcase-Benutzer</label>
-            {if $NC_CONNECTOR.wizard.can_list_users && $NC_CONNECTOR.wizard.users|@count > 0}
-              <select id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" required>
-                {foreach from=$NC_CONNECTOR.wizard.users item=nc_user}
-                  <option value="{$nc_user|escape:html}"{if $nc_user == 'showcase'} selected{/if}>{$nc_user|escape:html}{if $nc_user == 'showcase'} · empfohlen{/if}</option>
-                {/foreach}
-              </select>
-            {else}
-              <input id="nc_wizard_showcase_user" name="nc_wizard_showcase_user" type="text" value="showcase" required>
-            {/if}
+            <label class="bratonien-label" for="nc_wizard_api_key_id">API-Schlüssel-ID</label>
+            <input id="nc_wizard_api_key_id" name="nc_wizard_api_key_id" type="text" autocomplete="off" placeholder="leer = gespeicherten Zugang verwenden">
+            <label class="bratonien-label" for="nc_wizard_api_key_secret">API-Geheimnis</label>
+            <input id="nc_wizard_api_key_secret" name="nc_wizard_api_key_secret" type="password" autocomplete="off" placeholder="leer = gespeicherten Zugang verwenden">
           </div>
           <div class="bratonien-actions">
-            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_select_user">Weiter</button>
-            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset" formnovalidate>Neu beginnen</button>
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_api_test">API testen</button>
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_api_skip" formnovalidate>API überspringen</button>
           </div>
         </form>
-      {else}
-        <p class="bratonien-base-note"><strong>Nextcloud verbunden.</strong> Showcase-Benutzer: <strong>{$NC_CONNECTOR.wizard.showcase_user|escape:html}</strong></p>
-        <p class="bratonien-base-note">Der nächste Assistentenschritt ist die Piwigo-API-Prüfung. Die technische Verbindungserkennung bleibt davon getrennt und wird nicht als frei editierbare Pfadmaske in den Assistenten gezogen.</p>
+
+      {elseif $NC_CONNECTOR.wizard.step == 4}
+        <p class="bratonien-base-note"><strong>Abschluss.</strong> Nextcloud und technische Verbindung sind vorbereitet.</p>
+        <div class="bratonien-form-grid">
+          <span class="bratonien-label">Verbindung</span><strong>{$NC_CONNECTOR.wizard.connection_name|escape:html}</strong>
+          <span class="bratonien-label">Nextcloud</span><strong>{$NC_CONNECTOR.wizard.base_url|escape:html}</strong>
+          <span class="bratonien-label">Showcase-Benutzer</span><strong>{$NC_CONNECTOR.wizard.showcase_user|escape:html}</strong>
+          <span class="bratonien-label">Piwigo-API</span><strong>{if $NC_CONNECTOR.wizard.api_status == 'ok'}Erfolgreich getestet{if $NC_CONNECTOR.wizard.api_username} · {$NC_CONNECTOR.wizard.api_username|escape:html}{/if}{else}Übersprungen{/if}</strong>
+        </div>
+
+        <hr>
+        <h5>Fallback</h5>
+        {if $NC_CONNECTOR.wizard.api_status == 'ok'}
+          <p class="bratonien-base-note">Optional. Der Fallback wird nur benötigt, wenn die API später nicht nutzbar ist.</p>
+        {else}
+          <p class="bratonien-main-cache__warning">Die API wurde übersprungen. Deshalb ist ein Fallback-Zugang erforderlich.</p>
+        {/if}
         <form method="post">
           <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
-          <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset">Assistent neu beginnen</button>
+          <div class="bratonien-form-grid">
+            <label class="bratonien-label" for="nc_wizard_fallback_user">Piwigo-Benutzer</label>
+            <input id="nc_wizard_fallback_user" name="nc_wizard_fallback_user" type="text" autocomplete="username"{if $NC_CONNECTOR.wizard.api_status != 'ok'} required{/if}>
+            <label class="bratonien-label" for="nc_wizard_fallback_password">Piwigo-Passwort</label>
+            <input id="nc_wizard_fallback_password" name="nc_wizard_fallback_password" type="password" autocomplete="current-password"{if $NC_CONNECTOR.wizard.api_status != 'ok'} required{/if}>
+          </div>
+          <div class="bratonien-actions">
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_finish">Verbindung anlegen</button>
+            <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_wizard_reset" formnovalidate>Abbrechen</button>
+          </div>
         </form>
       {/if}
 
@@ -215,7 +316,7 @@
 
     <div class="bratonien-card" style="grid-column:1/-1">
       <h4>Piwigo API – bevorzugter Sync-Zugang</h4>
-      <p class="bratonien-base-note">Die API-Verwaltung bleibt für bestehende Verbindungen verfügbar. Im fertigen Assistenten wird sie als eigener Prüfschritt eingebunden.</p>
+      <p class="bratonien-base-note">Hier kann der globale API-Zugang unabhängig vom Assistenten geprüft, ersetzt oder gelöscht werden.</p>
       <form method="post">
         <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
         <div class="bratonien-form-grid">
