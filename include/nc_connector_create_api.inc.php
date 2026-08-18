@@ -45,6 +45,15 @@ function bratonien_tools_nc_connector_create_local_api_first()
   }
 
   $gallery_root = rtrim(trim((string)$_POST['nc_gallery_root']), '/');
+  if (strpos($gallery_root, './') === 0)
+  {
+    $piwigo_root = realpath(PHPWG_ROOT_PATH);
+    if ($piwigo_root === false)
+    {
+      throw new RuntimeException('Piwigo-Stammverzeichnis konnte nicht aufgelöst werden.');
+    }
+    $gallery_root = rtrim($piwigo_root, '/').'/'.ltrim(substr($gallery_root, 2), '/');
+  }
   if ($gallery_root === '' || $gallery_root[0] !== '/')
   {
     throw new RuntimeException('Der Galerie-Pfad muss ein absoluter Pfad sein.');
