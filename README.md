@@ -1,303 +1,228 @@
 # Piwigo Bratonien Tools
 
-Modular aufgebautes Piwigo-Plugin mit erweiterten Werkzeugen fuer Administration, Bildverarbeitung, Nextcloud-Anbindung und Frontend-Funktionen.
+Modulares Piwigo-Plugin für Administration, Bildverarbeitung, geschützte Freigaben, Fotoauswahl und die Anbindung von Nextcloud an Piwigo.
 
-Das Projekt ist aus der Bratonien-Piwigo-Installation entstanden, wird aber bewusst so entwickelt, dass die einzelnen Funktionen moeglichst neutral und auch ausserhalb dieser Installation nutzbar bleiben.
+Aktuelle Plugin-Version: **0.9.4.2**
 
-Aktuelle Plugin-Version: **0.9.3.16**
+## Grundprinzip
 
-## Funktionsumfang
+Bratonien Tools erweitert Piwigo um Funktionen, die in der Bratonien-Installation benötigt werden, hält die einzelnen Module aber möglichst unabhängig voneinander.
 
-### NC Connector
+Für die Administration gilt: Der normale Nutzer sieht Aufgaben, Entscheidungen und Ergebnisse. Technische Interna werden automatisch ermittelt oder bleiben hinter ausdrücklich technischen Einstellungen verborgen.
 
-Der NC Connector verwaltet Nextcloud-Quellen fuer Piwigo und fuehrt den regelmaessigen Abgleich mit einer Plugin-eigenen Sync-Runtime aus.
+## NC Connector
 
-Aktuell vorhanden:
+Der NC Connector synchronisiert ausdrücklich freigegebene Nextcloud-Inhalte mit Piwigo.
 
-- mehrere Connector-Verbindungen im eigenen Datenmodell
-- lokale Verbindungen direkt in Bratonien Tools anlegen
-- verschluesselte Speicherung von PostgreSQL- und Piwigo-Sync-Zugangsdaten
-- lokaler Nextcloud-Adapter ueber PostgreSQL-Reader und explizite Storage-Mounts
-- Verifikation von PostgreSQL-Verbindung, Source-View, Activity-View und Storage-Mounts
-- native Aktivierung einer verifizierten Verbindung ohne vorherige Legacy-Installation
-- eigener State pro Verbindung unter `/var/lib/bratonien-tools/nc-connector/connection-ID`
-- gemeinsame Runtime-Konfiguration unter `/etc/bratonien-tools/nc-connector/`
-- Multi-Connection-Runner unter `runtime/run-all.sh`
-- gemeinsame Zeitsteuerung ueber `bratonien-nc-connector.timer`
-- Verbindungen koennen kontrolliert deaktiviert und danach geloescht werden
-- Anzeige von Timer-Status, letztem Lauf, letztem Ergebnis und naechstem geplanten Lauf
-- Plugin-eigene Sync-Runtime unter `runtime/`
-- Activity-Gate mit Quiet-Time, Max-Wartezeit, Share-Fingerprint und periodischem Full-Sync
-- Shadow Tree fuer Piwigo ohne Kopie der Originaldateien
-- Unterstuetzung von Nextcloud-Freigaben fuer komplette Ordner und einzelne Dateien
-- Ordnerfreigaben werden als physische Piwigo-Alben synchronisiert
-- neu importierte Connector-Alben werden direkt als privat angelegt
-- einzelne Dateifreigaben werden direkt im Galerie-Root verlinkt und als echte Piwigo-Orphans registriert
-- entfernte Einzeldateifreigaben werden beim naechsten Lauf wieder aus Piwigo entfernt, ohne das Original zu loeschen
-- Originalbilder bleiben an ihrer Nextcloud-/Storage-Quelle
-- lokale Piwigo-Derivate und Caches bleiben davon getrennt und koennen jederzeit neu erzeugt werden
+### Datenmodell
 
-Die Runtime baut aus den freigegebenen Nextcloud-Quellen einen Piwigo-kompatiblen Shadow Tree. Dateien werden dabei nicht in eine zweite permanente Originalbibliothek kopiert, sondern ueber Symlinks auf die vorhandenen Storage-Mounts referenziert.
+- Nextcloud bleibt die Quelle der Originaldateien.
+- Originalbilder werden nicht in eine zweite dauerhafte Bibliothek kopiert.
+- Ein Shadow Tree erzeugt die für Piwigo benötigte Verzeichnisstruktur mit Symlinks.
+- Ordnerfreigaben werden als physische Piwigo-Alben synchronisiert.
+- Einzeldateifreigaben werden im Galerie-Root verlinkt und als echte Piwigo-Orphans ohne Albumzuordnung registriert.
+- Entfernte Freigaben werden aus Shadow Tree und Piwigo entfernt, das Nextcloud-Original bleibt erhalten.
+- Neu importierte physische Connector-Alben werden privat angelegt.
 
-#### Freigabemodell
+### Verbindungsassistent
 
-Der Connector unterscheidet zwei Quelltypen:
+Neue Verbindungen werden bevorzugt mit einem Endnutzer-Assistenten angelegt.
 
-- `folder` - komplette Ordnerfreigabe; der Verzeichnisbaum wird gespiegelt und ueber Piwigos normale Dateisynchronisierung als Albumstruktur eingelesen
-- `file` - einzelne Dateifreigabe; die Datei wird direkt als Symlink im Galerie-Root angelegt und separat als Piwigo-Orphan ohne Albumzuordnung registriert
+Ablauf:
 
-Fuer Einzeldateien wird kein kuenstlicher Unterordner erzeugt. Entfernt Nextcloud eine solche Freigabe, entfernt der Connector den Root-Symlink und anschliessend nur den zugehoerigen Piwigo-Datenbankeintrag. Das Original bleibt unangetastet.
+1. Nextcloud-Adresse, Benutzer und Passwort eingeben.
+2. Der Assistent prüft HTTP/HTTPS, Nextcloud-Status und Anmeldung.
+3. Vorhandene passende Connector-Daten werden automatisch wiederverwendet, wenn sie sicher zugeordnet werden können.
+4. Für den Nextcloud-Datenzugriff wird zunächst nur der eingerichtete Lese-Benutzer mit Passwort abgefragt. Der übliche PostgreSQL-Weg wird automatisch geprüft.
+5. Nur wenn diese Prüfung scheitert, werden abweichende Datenbank-Adresse, Port und Datenbankname gezielt abgefragt.
+6. Nicht automatisch zuordenbare Storage-Mounts werden einzeln bestätigt.
+7. Danach wird der Nextcloud-Benutzer gewählt, dessen Freigaben verwendet werden sollen. Empfohlen wird ein eigener `showcase`-Benutzer.
+8. Piwigo-API-Zugang testen oder bewusst überspringen.
+9. Optionaler bzw. bei übersprungener API verpflichtender Login-Fallback.
+10. Erst der Abschluss legt die Verbindung dauerhaft an.
 
-#### Neuinstallation
+Wizard-Geheimnisse werden während der Einrichtung serverseitig in der Sitzung gehalten. Ein fehlgeschlagener Test leert die Eingaben nicht. Ein API-Test verändert die dauerhafte API-Konfiguration erst beim erfolgreichen Abschluss des Assistenten.
 
-Eine frische Piwigo-Installation benoetigt keinen vorher vorhandenen `piwigo-sync` mehr.
+Die vollständige technische Maske bleibt weiterhin über **Ohne Assistent anlegen** sowie bei bestehenden Verbindungen unter **Technische Einstellungen** erreichbar.
 
-Der vorgesehene Ablauf ist:
+### Lokaler Adapter
 
-1. lokale Nextcloud-Verbindung in Bratonien Tools anlegen
-2. PostgreSQL, Views und Storage-Mounts pruefen
-3. die angezeigte Root-Aktivierung ausfuehren
-4. der Installer legt Runtime-Konfiguration, Secrets, State-Verzeichnis sowie systemd-Service und -Timer an
-5. vor der Aktivierung wird ein echter Lauf mit der Plugin-Runtime getestet
+Der derzeit produktive Adapter verwendet:
 
-Der gemeinsame Service verarbeitet alle aktivierten `connection-*.conf`-Dateien nacheinander. Dadurch koennen mehrere Verbindungen mit einer gemeinsamen Zeitsteuerung betrieben werden.
+- PostgreSQL-Reader mit minimalen Leserechten;
+- Source-View `piwigo_showcase_sources`;
+- Activity-View `piwigo_showcase_activity`;
+- explizite Storage-Zuordnungen auf bereits vorhandene lokale Mounts;
+- Plugin-eigene Runtime und getrennten State pro Verbindung.
 
-#### Migration bestehender Installationen
+Ein Storage-Mapping besteht aus `storage_id`, einem optionalen `source_prefix` und dem lokalen Mount. Ein leerer Prefix ist zulässig und bedeutet, dass der Mount direkt dem Storage-Root entspricht.
 
-Fuer bestehende Installationen, die zuvor den separaten `piwigo-sync` aus `Proxmox_Scripts` verwendet haben, existiert weiterhin ein kontrollierter Migrationsweg:
+### Activity Gate
 
-- bestehende Verbindung einmalig importieren
-- Connector-Kopie unabhaengig verifizieren
-- kontrollierten Cutover vorbereiten
-- Connector-Timer aktivieren und Legacy-Timer deaktivieren
-- Runtime vom bisherigen `/opt/piwigo-sync` auf die Plugin-eigene Runtime umstellen
-- Legacy-Bestand entfernen
-- den verbliebenen Laufzeit-State anschliessend mit `nc-connector-normalize.php` in die native Struktur unter `/var/lib/bratonien-tools/nc-connector/` ueberfuehren
+Der regelmäßige Lauf berücksichtigt:
 
-Nach abgeschlossener Migration werden `/opt/piwigo-sync`, `/etc/piwigo-sync`, `piwigo-sync.service` und `piwigo-sync.timer` nicht mehr benoetigt.
+- Nextcloud-Aktivität;
+- Signatur der sichtbaren Freigaben;
+- Quiet-Time;
+- maximale Wartezeit;
+- periodischen Full-Sync;
+- notwendigen Reparaturlauf bei beschädigtem Shadow Tree oder fehlenden Piwigo-Alben.
 
-### Bildcache
+### Piwigo-Synchronisierung
 
-- Piwigo-Bildcache gezielt leeren
-- vorhandene Bildderivate neu erzeugen
-- Cache-Aufbau als Worker-Prozess starten und abbrechen
-- Worker-Einstellungen verwalten
-- Originalbilder bleiben unangetastet
+Der produktive Lauf ist API-first:
 
-### Wasserzeichenverwaltung
+1. `bratonien.nc.syncProductive` für physische Alben und Bilder;
+2. `bratonien.nc.syncOrphans` für Root-Dateien;
+3. Benutzername/Passwort nur als optionaler Fallback.
 
-Erweiterte Wasserzeichenverwaltung als Alternative zur einfachen Piwigo-Standardkonfiguration.
+Die produktive direkte API-Synchronisierung ist aktuell ausdrücklich für **Piwigo 16.4.0** freigegeben. Bei einer anderen Piwigo-Version wird sie nicht stillschweigend als kompatibel angenommen.
 
-Unter anderem vorhanden:
+Der direkte produktive Sync führt außerdem die für den normalen Piwigo-Import relevanten Nacharbeiten aus, darunter Albuminformationen, globale Ränge, Bildinformationen, Pfade und Cache-Invalidierung. Er ruft dafür keine Admin-Seite fernsteuernd auf.
 
-- eigene Wasserzeichendateien
-- Wasserzeichenprofile
-- Standardprofil
-- albumbezogene Regeln
-- getrennte Einstellungen fuer Positionierung und Verarbeitung
-- eigener Runtime-Filter fuer Piwigo-Bildderivate
-- Aktivierung und Deaktivierung der erweiterten Wasserzeichen-Engine
+### Runtime
 
-Beim Aktivieren wird die bisherige Piwigo-Wasserzeichenkonfiguration gesichert und nicht dauerhaft ueberschrieben. Beim Deaktivieren kann sie wiederhergestellt werden.
+Aktive Verbindungen werden über einen gemeinsamen systemd-Timer verarbeitet:
 
-### Bilddateien & Pfade
+- `bratonien-nc-connector.timer`
+- `bratonien-nc-connector.service`
+- `runtime/run-all.sh`
+- `runtime/sync.sh`
 
-Verwaltung eigener Bilddateien fuer die Piwigo-Installation.
+Verbindungsspezifische Konfigurationen liegen unter `/etc/bratonien-tools/nc-connector/`, State-Daten unter `/var/lib/bratonien-tools/nc-connector/connection-ID`.
 
-- Upload nach `local/bratonien/assets/`
-- Vorschau vorhandener Dateien
-- Anzeige von Dateiname, Pfad, Abmessungen und Dateigroesse
-- Dateien loeschen
-- konfigurierbare PHP-Uploadgrenzen ueber `.user.ini`
-- Validierung von `upload_max_filesize` und `post_max_size`
+Der Shadow-Tree-Austausch besitzt einen Rollback: Scheitert der Wechsel auf den neuen Baum, wird der vorherige Galeriebaum wiederhergestellt.
 
-### Oeffentliche Bildauswahl fuer Batch Downloader
+### Statusanzeige
 
-Erweitert Albumseiten um die Moeglichkeit, einzelne Bilder fuer einen Download auszuwaehlen.
+Die Administration zeigt letzten und nächsten Lauf. Der Status wird regelmäßig im Hintergrund abgefragt. Dafür wird die Admin-Seite **nicht** neu geladen; offene Dialoge, Assistenten und aufgeklappte Bereiche bleiben erhalten.
 
-- Auswahlmodus direkt in der Albumansicht
-- einzelne Bilder markieren
-- alle Bilder auswaehlen oder Auswahl aufheben
-- nur die ausgewaehlten Bilder an Batch Downloader uebergeben
-- vorhandene Piwigo- und Batch-Downloader-Berechtigungen bleiben wirksam
-- getrennte Freigabe fuer Gaeste, registrierte Benutzer und Gruppen
+### Bestehende Verbindungen
 
-**Abhaengigkeit:** Das Piwigo-Plugin Batch Downloader muss installiert und aktiv sein.
+Bestehende Verbindungen können:
 
-Die ZIP-Erstellung wird nicht dupliziert. Bratonien Tools uebergibt lediglich die berechtigten Bild-IDs an Batch Downloader.
+- umbenannt;
+- geprüft;
+- technisch bearbeitet, solange sie nicht aktiv sind;
+- deaktiviert und anschließend gelöscht werden.
 
-### Fortlaufende Bildtitel in der Stapelverarbeitung
+Das Löschen einer Connector-Verbindung entfernt keine Nextcloud-Originale und keine Piwigo-Bilder. Erreichbare Connector-eigene Status-/State-Daten der Verbindung werden bereinigt.
 
-Erweitert Piwigos globale Stapelverarbeitung um die Aktion **Fortlaufende Bildtitel**.
+### Legacy-Migration
 
-- arbeitet ausschliesslich mit der aktuellen Piwigo-Auswahl
-- frei waehlbares Titelpraefix
-- frei waehlbare Startnummer
-- einstellbare Stellenzahl mit fuehrenden Nullen
-- direkte Vorschau des resultierenden Titelformats
-- wahlweise alle ausgewaehlten Titel ueberschreiben oder nur leere beziehungsweise typische Kamera-/Importtitel ersetzen
-- Reihenfolge nach Dateiname, Aufnahmedatum oder aktueller Albumreihenfolge
-- vorhandene individuelle Titel koennen gezielt geschuetzt werden
-- physische Dateinamen werden nicht veraendert
+Für ältere Installationen mit dem früheren separaten `piwigo-sync` existieren weiterhin Migrations-/Cutover-Helfer. Neue Installationen sollen den nativen Connector-Weg verwenden.
 
-Beispiel: `Samt 2026 - 001`, `Samt 2026 - 002`, `Samt 2026 - 003`.
+## Bildcache
 
-Die Albumreihenfolge steht nur zur Verfuegung, wenn die Stapelverarbeitung auf genau ein Album ohne rekursive Unteralben gefiltert ist.
+- Piwigo-Bildderivate gezielt leeren;
+- vorhandene Bildgrößen neu erzeugen;
+- Cache-Aufbau als Worker-Prozess starten und abbrechen;
+- Worker-Zahl automatisch oder manuell konfigurieren;
+- Originalbilder bleiben unangetastet.
 
-### Albumzugriff verwalten
+## Wasserzeichenverwaltung
 
-In der Administrationsoberflaeche koennen Alben direkt zwischen **oeffentlich** und **privat** umgeschaltet werden.
+- eigene Wasserzeichendateien;
+- Wasserzeichenprofile;
+- globale Regeln für öffentliche/private Alben;
+- Album-Ausnahmen und Vererbung;
+- Position, Transparenz und Skalierung;
+- eigener Runtime-Filter für Piwigo-Derivate;
+- bisherige Piwigo-Wasserzeichenkonfiguration wird beim Aktivieren gesichert.
 
-- Albumliste mit Suchfeld
-- paginierte Darstellung
-- Umschalten des Zugriffs direkt aus Bratonien Tools
-- Verwendung nativer Piwigo-Icons fuer den Zugriffsstatus
-- beim Sperren eines Albums behaelt der aktuell handelnde Benutzer automatisch direkten Zugriff
+## Bilddateien und Pfade
 
-Der Schutz vor versehentlichem Selbstaussperren greift auch dann, wenn ein Album ueber Piwigos eigene Album-Zugriffsverwaltung von oeffentlich auf privat gesetzt wird.
+- Upload nach `local/bratonien/assets/`;
+- Vorschau, Abmessungen und Dateigröße;
+- Löschen verwalteter Assets;
+- konfigurierbare PHP-Uploadgrenzen über `.user.ini`, sofern die Serverkonfiguration dies zulässt.
 
-### Geschuetzte Albumfreigaben
+## Fotoauswahl und Batch Downloader
 
-Private Alben koennen direkt mit Bratonien Tools geteilt werden. ShareAlbum oder ein anderes Freigabe-Plugin ist dafuer nicht erforderlich.
+Bratonien Tools erweitert Albumseiten um eine öffentliche bzw. berechtigungsabhängige Bildauswahl und übergibt nur die ausgewählten Bild-IDs an das Piwigo-Plugin Batch Downloader.
 
-- eigener individueller Freigabelink pro Freigabe
-- Passwort **optional**; ohne Passwort reicht der nicht erratbare Link
-- Passwoerter werden nur als Hash gespeichert
-- integrierter Generator fuer sichere Passwoerter
-- erzeugte Passwoerter koennen angezeigt und kopiert werden
-- optionales Ablaufdatum
-- optionaler Freigabe-Tag, um mehrere Freigaben desselben Albums auseinanderzuhalten
-- eigener technischer Piwigo-Benutzer pro Freigabe
-- der technische Benutzer erhaelt nur Zugriff auf das freigegebene private Album
-- aktive Freigabelinks werden in der Administration angezeigt und koennen direkt kopiert werden
-- bei aelteren, nicht rekonstruierbaren Links kann ein neuer Link erzeugt werden; der bisherige Link wird dabei ungueltig
-- Freigaben koennen einzeln widerrufen werden
-- beim Widerruf wird der technische Benutzer samt Sitzungen und Albumrecht entfernt
-- wird das Album geloescht, werden zugehoerige Freigaben automatisch bereinigt
+**Abhängigkeit:** Batch Downloader muss installiert und aktiv sein.
 
-Freigabe-Tokens werden nicht im Klartext gespeichert. Fuer aktuelle Freigaben kann der Link deterministisch aus dem technischen Freigabebenutzer, dem Album und einem lokal gespeicherten Secret rekonstruiert werden; in der Datenbank liegt nur der Hash des Tokens.
+## Fortlaufende Bildtitel
 
-### Erweiterte Bildnavigation
+Die globale Piwigo-Stapelverarbeitung erhält die Aktion **Fortlaufende Bildtitel** mit Präfix, Startnummer, Stellenzahl, Sortierung und Schutz vorhandener individueller Titel. Physische Dateinamen werden nicht verändert.
 
-Auf der Bilddetailseite werden die vorhandenen Piwigo-Image-Maps weiterverwendet und responsiv neu aufgeteilt.
+## Albumzugriff
 
-Die Bildflaeche besteht aus vier Navigationszonen:
+Alben können in Bratonien Tools zwischen öffentlich und privat umgeschaltet werden. Beim Sperren wird verhindert, dass sich der handelnde Benutzer versehentlich selbst aussperrt.
 
-- links: vorheriges Bild
-- rechts: naechstes Bild
-- oben mittig: zurueck zur Vorschau beziehungsweise Albumansicht
-- Mitte: PhotoSwipe / Vollbildansicht
+## Geschützte Albumfreigaben
 
-Die Zonen werden anhand der aktuell dargestellten Bildgroesse berechnet und bei Groessenaenderungen neu gesetzt.
+Private Alben können über eigene Freigabelinks geteilt werden:
 
-Fuer die sichtbaren Hover-Elemente werden neutrale CSS-Klassen bereitgestellt. Das Plugin enthaelt bewusst kein Bratonien-spezifisches Farbschema. Individuelles Branding kann ueber Theme- oder Custom-CSS erfolgen.
+- optionales Passwort;
+- optionales Ablaufdatum;
+- eigener technischer Piwigo-Benutzer pro Freigabe;
+- minimaler Albumzugriff;
+- Hash-Speicherung von Passwörtern und Tokens;
+- Widerruf und automatische Bereinigung beim Löschen eines Albums.
 
-### Selbstaktualisierung
+## Erweiterte Bildnavigation
 
-Bratonien Tools kann den aktuellen Stand des GitHub-Repositories pruefen und sich aus der Administration heraus aktualisieren.
+Die Piwigo-Bilddetailseite erhält responsive Navigationszonen für vorheriges Bild, nächstes Bild, Rückkehr zur Übersicht und PhotoSwipe/Vollbild.
 
-- Versionspruefung gegen `main.inc.php` im GitHub-Repository
-- Update-Pruefung wird kurzzeitig zwischengespeichert
-- Updates duerfen nur vom Piwigo-Webmaster ausgefuehrt werden
-- Download des aktuellen `main`-Branches als ZIP
-- Pruefung auf `ZipArchive` und Schreibrechte des Plugin-Verzeichnisses
-- detailliertere Downloadfehler
-- Status wird nach Update-Pruefungen und Aktionen neu eingelesen
+## Selbstaktualisierung
+
+Der integrierte Updater:
+
+- liest den Zielstand aus GitHub;
+- bindet ein Update an einen konkreten Commit statt an einen während des Updates beweglichen Branch-Stand;
+- prüft Version und SHA-256 des Zielstands;
+- erstellt vor dem Austausch ein Backup;
+- nutzt Post/Redirect/Get, damit ein Browser-Reload keine schreibende Aktion erneut ausführt;
+- verlangt Webmaster-Rechte, `ZipArchive` und ausreichende Schreibrechte.
 
 ## Architektur
 
-Das Plugin ist modular aufgebaut. Administrative Werkzeuge werden getrennt implementiert und ueber eine zentrale Registry eingebunden. Frontend-, Runtime- und Piwigo-Integrationen liegen ebenfalls in eigenen Modulen.
+Wichtige Dateien und Verzeichnisse:
 
-Wichtige Bestandteile:
-
-- `main.inc.php` - Plugin-Einstieg, Runtime-Module und Admin-Menue
-- `admin.php` - zentraler Admin-Controller
-- `include/tool_registry.inc.php` - Registry der administrativen Aktionen
-- `include/nc_connector.inc.php` - Connector-Datenmodell, Legacy-Import und gemeinsame Low-Level-Funktionen
-- `include/nc_connector_manage.inc.php` - native Connection-Verwaltung und Verifikation
-- `include/nc_connector_takeover.inc.php` - kontrollierte Legacy-Uebergabe
-- `include/nc_connector_system.inc.php` - Timer- und Laufzeitstatus ueber alle aktiven Verbindungen
-- `include/nc_connector_ws.inc.php` - read-only Paritaets-/Synchronisationspruefung ueber den Piwigo-Webservice
-- `include/nc_orphan_ws.inc.php` - produktive Synchronisation einzelner Root-Dateien als Piwigo-Orphans
-- `runtime/sync.sh` - Plugin-eigene Sync-Runtime einer Verbindung
-- `runtime/run-all.sh` - gemeinsamer Runner fuer alle installierten Verbindungen
-- `runtime/lib/activity_gate.py` - Activity-Gate, Share-Fingerprint und zeitgesteuerte Reconciliation
-- `runtime/lib/build_manifest.py` - Aufloesung von Ordner- und Dateifreigaben auf konfigurierte Storage-Mounts
-- `runtime/lib/shadow_tree.py` - Aufbau des Piwigo-kompatiblen Shadow Trees ohne Kopieren der Originale
-- `runtime/lib/piwigo-db-check.php` - Konsistenzpruefung vorhandener Piwigo-Alben
-- `runtime/lib/piwigo-db-sync.pl` - Ausloesen der Piwigo-Dateisynchronisierung und anschliessender Orphan-Abgleich
-- `nc-connector-install.php` - native Aktivierung einer verifizierten Verbindung
-- `nc-connector-disable.php` - kontrollierte Deaktivierung einer aktiven Verbindung
-- `nc-connector-normalize.php` - Ueberfuehrung einer migrierten aktiven Verbindung in den nativen State- und Multi-Connection-Aufbau
-- `nc-connector-migrate.php` - einmaliger Migrationshelfer fuer bestehende Legacy-Installationen
-- `nc-connector-cutover-v2.php` - kontrollierter Legacy-Cutover
-- `nc-connector-runtime-switch.php` - Umstellung einer aktiven Legacy-Verbindung auf die Plugin-eigene Runtime
-- `nc-connector-legacy-cleanup.php` - kontrollierte Entfernung alter Sync-Scripts und systemd-Units
-- `include/public_selection.inc.php` - oeffentliche Fotoauswahl und Batch-Downloader-Anbindung
-- `include/picture_navigation.inc.php` - Einbindung der erweiterten Bildnavigation
-- `include/batch_titles.inc.php` - fortlaufende Titelvergabe in Piwigos Stapelverarbeitung
-- `include/album_lock.inc.php` - Laden und Umschalten des Album-Zugriffsstatus
-- `include/album_shares.inc.php` - Albumfreigaben, Freigabetokens und Schutz vor Selbstaussperren bei privaten Alben
-- `include/cache_worker_settings.inc.php` - Einstellungen fuer den Cache-Worker
-- `include/dependencies.inc.php` - Abhaengigkeitspruefungen
-- `include/watermark_*.inc.php` - Wasserzeichen-Engine und Runtime
-- `include/self_update.inc.php` - Versionspruefung und Selbstaktualisierung
-- `tools/album_rules.inc.php` - albumbezogene Regeln
-- `tools/asset_manager.inc.php` - Verwaltung eigener Bilddateien
-- `tools/image_cache.inc.php` - Cache-Verwaltung
-- `tools/watermark*.inc.php` - administrative Wasserzeichenmodule
-- `main-cache-build.php` - Cache-Aufbau im Worker-Prozess
-- `main-cache-status.php` - Statusschnittstelle fuer den Cache-Worker
-- `js/` - Frontend- und Admin-JavaScript
-- `css/` - strukturelles Plugin-CSS
-- `template/` - Admin- und Frontend-Templates
-- `maintain.class.php` - Piwigo-Lifecycle
-
-## Neues administratives Tool hinzufuegen
-
-1. Neue Implementierung unter `tools/` anlegen.
-2. Datei in `include/tool_registry.inc.php` laden.
-3. Handler in `bratonien_tools_get_tools()` registrieren.
-4. Benoetigte Darstellung in der gemeinsamen Administrationsoberflaeche ergaenzen.
-
-Funktionen sollten moeglichst eigenstaendig bleiben und keine Bratonien-spezifische Gestaltung voraussetzen.
+- `main.inc.php` – Plugin-Einstieg und Runtime-Hooks
+- `admin.php` – zentraler Admin-Controller mit Post/Redirect/Get
+- `include/tool_registry.inc.php` – Registry administrativer Aktionen
+- `include/nc_connector.inc.php` – Datenmodell und gemeinsame Connector-Funktionen
+- `include/nc_connector_wizard.inc.php` – Endnutzer-Assistent und Connection-Bearbeitung
+- `include/nc_connector_manage.inc.php` – Credential-Format, Storage-Mappings, Verifikation und Löschen
+- `include/nc_connector_create_api.inc.php` – API-first-Verbindungserstellung
+- `include/nc_connector_piwigo_api.inc.php` – API-Zugang und Fallback-Verwaltung
+- `include/nc_connector_system.inc.php` – Timer- und Laufzeitstatus
+- `include/nc_productive_ws.inc.php` – produktiver Piwigo-Dateisync
+- `include/nc_orphan_ws.inc.php` – Orphan-Synchronisierung
+- `runtime/lib/activity_gate.py` – Activity Gate
+- `runtime/lib/build_manifest.py` – Auflösung der Nextcloud-Freigaben auf Storage-Mounts
+- `runtime/lib/shadow_tree.py` – atomarer Shadow Tree mit Rollback
+- `runtime/lib/piwigo-sync.php` – API-first-Piwigo-Sync mit Fallback
+- `runtime/run-all.sh` – Multi-Connection-Runner
+- `runtime/sync.sh` – Ablauf einer Verbindung
+- `nc-connector-install.php` – native Root-Aktivierung
+- `nc-connector-disable.php` – Deaktivierung
+- `nc-connector-normalize.php` – Normalisierung älterer aktiver Verbindungen
+- `nc-connector-*-cleanup/switch/cutover` – Legacy-Migrationshelfer
+- `include/self_update.inc.php` – Self-Updater
+- `include/album_shares.inc.php` – geschützte Albumfreigaben
+- `include/public_selection.inc.php` – Fotoauswahl
+- `include/batch_titles.inc.php` – fortlaufende Titel
+- `include/watermark_*.inc.php` – Wasserzeichen-Engine
+- `tools/` – administrative Einzelwerkzeuge
+- `template/`, `js/`, `css/` – Oberfläche
 
 ## Sicherheit
 
-Administrative Aktionen pruefen Piwigo-Berechtigungen und verwenden fuer schreibende Aktionen Piwigos CSRF-Schutz.
-
-Weitere Schutzmechanismen sind funktionsabhaengig, unter anderem:
-
-- verschluesselte Speicherung der Connector-Zugangsdaten mit einem lokalen Connector-Secret
-- PostgreSQL-Reader mit minimalen Leserechten fuer lokale Nextcloud-Verbindungen
-- explizite Storage-Zuordnungen statt automatischer Freigabe beliebiger Dateipfade
-- Verifikation von Datenbank, Views und Mounts vor einer Aktivierung
-- Runtime-Test vor der nativen Aktivierung
-- Root-only-Hilfsprogramme fuer systemd-, Secret- und State-Aenderungen
-- getrennte State-Verzeichnisse pro Connector-Verbindung
-- Originalbilder werden vom NC Connector nicht in eine zweite permanente Bibliothek kopiert
-- Validierung von Cache- und Dateipfaden
-- Filterung ausgewaehlter Bild-IDs gegen die aktuell berechtigte Bildmenge
-- Nutzung der von Piwigos Stapelverarbeitung validierten Auswahl fuer die fortlaufende Titelvergabe
-- gehashte Passwoerter und gehashte Freigabetokens fuer Albumfreigaben
-- nicht erratbare Freigabelinks auf Basis eines lokal erzeugten Secrets
-- eigene technische Benutzer mit minimalem Albumzugriff fuer Freigaben
-- automatische Bereinigung widerrufener und geloeschter Albumfreigaben
-- automatischer Erhalt des eigenen Zugriffs beim Umschalten eines Albums auf privat
-- Connector-importierte physische Alben werden standardmaessig privat angelegt
-- Beibehaltung bestehender Piwigo- und Plugin-Berechtigungen
-- kontrollierte Uploadziele und Uploadgrenzen
-- kein Zugriff auf Originalbilder beim Leeren des Bildcaches
-- Webmaster-Pruefung, Schreibbarkeitspruefung und kontrolliertes temporaeres Arbeitsverzeichnis bei Selbstupdates
-
-## Styling und Anpassung
-
-Bratonien Tools soll Funktion und Gestaltung voneinander trennen. Plugin-eigene Styles dienen daher nur der technischen Darstellung und Positionierung.
-
-Farben, Schatten, Hover-Effekte und individuelles Branding sollten ueber das aktive Piwigo-Theme oder Custom CSS umgesetzt werden.
+- administrative Schreibaktionen verwenden Piwigos CSRF-Schutz;
+- Connector-Zugangsdaten werden verschlüsselt gespeichert;
+- Wizard-Geheimnisse werden nicht in Browser-Web-Storage persistiert;
+- Storage-Mounts werden explizit zugeordnet und validiert;
+- SQL-View-Namen werden vor Verwendung validiert;
+- gefährliche technische Pfade sind nicht Teil des normalen Wizard-Happy-Paths;
+- produktive Piwigo-API ist versionsgebunden;
+- Originalbilder werden vom Connector nicht gelöscht;
+- Update-Pakete werden an Commit und Hash gebunden;
+- Root-Helfer prüfen CLI-/Root-Ausführung, bevor sie Systemdienste oder `/etc`-/`/var/lib`-Daten verändern.
 
 ## Entwicklungsstand
 
-Das Plugin befindet sich weiterhin in aktiver Entwicklung. Mit Version **0.9.3.16** ist der lokale NC-Connector fuer den aktuellen Bratonien-Einsatz End-to-End funktionsfaehig: Ordner- und Einzeldateifreigaben werden erkannt, der Shadow Tree wird automatisch gepflegt, Piwigo wird synchronisiert, Einzeldateien werden als Orphans verwaltet und der regelmaessige Lauf erfolgt ueber den gemeinsamen systemd-Timer.
-
-Als naechster groesserer Connector-Ausbauschritt bleibt der Remote-Nextcloud-Adapter offen.
+`0.9.4.x` ist der aktuelle Entwicklungsblock. Der lokale NC Connector ist End-to-End produktiv im Einsatz. Der Verbindungsassistent und die Verwaltung werden weiter aus Endnutzersicht konsolidiert. Ein vollständig entfernter Nextcloud-Adapter ohne direkten PostgreSQL-/Storage-Zugriff ist noch nicht umgesetzt.
