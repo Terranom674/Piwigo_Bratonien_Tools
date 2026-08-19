@@ -1,6 +1,94 @@
 (function () {
   'use strict';
 
+  function initNcRouteStatus() {
+    var section = document.getElementById('nc-connector');
+    if (!section) return;
+
+    var statusCard = section.querySelector('.bratonien-grid .bratonien-card');
+    if (!statusCard) return;
+
+    var grid = statusCard.querySelector('.bratonien-form-grid');
+    if (!grid) return;
+
+    var routeLabel = document.createElement('span');
+    routeLabel.className = 'bratonien-label';
+    routeLabel.textContent = 'Aktiver Datenweg';
+
+    var routeValue = document.createElement('strong');
+    routeValue.setAttribute('data-nc-route-status', '');
+    routeValue.textContent = 'Noch kein Lauf erfasst';
+
+    var routeTimeLabel = document.createElement('span');
+    routeTimeLabel.className = 'bratonien-label';
+    routeTimeLabel.textContent = 'Datenweg zuletzt';
+
+    var routeTimeValue = document.createElement('strong');
+    routeTimeValue.setAttribute('data-nc-route-time', '');
+    routeTimeValue.textContent = 'Nicht verfügbar';
+
+    grid.appendChild(routeLabel);
+    grid.appendChild(routeValue);
+    grid.appendChild(routeTimeLabel);
+    grid.appendChild(routeTimeValue);
+
+    var detail = document.createElement('p');
+    detail.className = 'bratonien-base-note';
+    detail.setAttribute('data-nc-route-detail', '');
+    detail.textContent = 'Der Datenweg wird nach dem nächsten Connector-Lauf angezeigt.';
+    statusCard.appendChild(detail);
+
+    var basePath = window.location.pathname.replace(/admin\.php.*$/, '');
+    var statusUrl = basePath + '_data/bratonien-tools/nc-connector-status/route-status.json';
+
+    function formatTime(timestamp) {
+      if (!timestamp) return 'Nicht verfügbar';
+      var date = new Date(Number(timestamp) * 1000);
+      if (Number.isNaN(date.getTime())) return 'Nicht verfügbar';
+      return date.toLocaleString('de-DE');
+    }
+
+    function render(data) {
+      var label = data && data.label ? String(data.label) : 'Unbekannt';
+      var route = data && data.route ? String(data.route) : '';
+      routeValue.textContent = label;
+      routeTimeValue.textContent = formatTime(data && data.timestamp);
+
+      if (route === 'webdav') {
+        routeValue.textContent = 'WEBDAV PRIMÄR';
+        detail.textContent = 'Portierung läuft über WebDAV. Legacy wurde in diesem Lauf nicht benutzt.';
+      } else if (route === 'legacy_fallback') {
+        routeValue.textContent = 'LEGACY-FALLBACK AKTIV';
+        detail.textContent = 'WebDAV war nicht erfolgreich. Dieser Lauf wurde über die alte Struktur abgefangen.';
+      } else if (route === 'failed') {
+        routeValue.textContent = 'FEHLER - KEIN ERFOLGREICHER DATENWEG';
+        detail.textContent = data && data.detail ? String(data.detail) : 'WebDAV und Fallback sind fehlgeschlagen.';
+      } else {
+        detail.textContent = data && data.detail ? String(data.detail) : 'Unbekannter Datenweg.';
+      }
+    }
+
+    function refresh() {
+      fetch(statusUrl + '?t=' + Date.now(), {
+        cache: 'no-store',
+        credentials: 'same-origin'
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error('status unavailable');
+          return response.json();
+        })
+        .then(render)
+        .catch(function () {
+          routeValue.textContent = 'Noch kein Lauf erfasst';
+          routeTimeValue.textContent = 'Nicht verfügbar';
+          detail.textContent = 'Nach dem nächsten Connector-Lauf wird hier WebDAV oder Legacy-Fallback angezeigt.';
+        });
+    }
+
+    refresh();
+    window.setInterval(refresh, 10000);
+  }
+
   function initBratonienTabs() {
     var admin = document.querySelector('.bratonien-admin');
     if (!admin) return;
@@ -113,9 +201,14 @@
     activate(initial, false);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBratonienTabs);
-  } else {
+  function init() {
     initBratonienTabs();
+    initNcRouteStatus();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();
