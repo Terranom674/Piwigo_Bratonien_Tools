@@ -28,18 +28,34 @@ function bratonien_tools_nc_connector_webdav_site_id(array $connection)
   return (int)$row['id'];
 }
 
+function bratonien_tools_nc_connector_gallery_db_prefix(array $connection)
+{
+  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+  $gallery_root = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
+  $piwigo_root = rtrim(PHPWG_ROOT_PATH, '/');
+  if ($gallery_root === '' || strpos($gallery_root, $piwigo_root.'/') !== 0) return '';
+
+  $relative = ltrim(substr($gallery_root, strlen($piwigo_root)), '/');
+  return $relative === '' ? '' : './'.rtrim($relative, '/').'/';
+}
+
 function bratonien_tools_nc_connector_remove_webdav_piwigo_content(array $connection)
 {
-  $site_id = bratonien_tools_nc_connector_webdav_site_id($connection);
-  if ($site_id < 1) return array('site_id'=>0, 'images'=>0);
-
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
 
+  $site_id = bratonien_tools_nc_connector_webdav_site_id($connection);
+  $db_prefix = bratonien_tools_nc_connector_gallery_db_prefix($connection);
+  if ($db_prefix === '') return array('site_id'=>$site_id, 'images'=>0);
+
+  $escaped = pwg_db_real_escape_string(addcslashes($db_prefix, '_%\\'));
   $image_rows = array();
-  $query = '\nSELECT DISTINCT i.id, i.path, i.representative_ext\n  FROM '.IMAGES_TABLE.' AS i\n  LEFT JOIN '.CATEGORIES_TABLE.' AS sc ON sc.id = i.storage_category_id\n  LEFT JOIN '.IMAGE_CATEGORY_TABLE.' AS ic ON ic.image_id = i.id\n  LEFT JOIN '.CATEGORIES_TABLE.' AS vc ON vc.id = ic.category_id\n  WHERE sc.site_id = '.$site_id.' OR vc.site_id = '.$site_id.'\n;';
-  $result = pwg_query($query);
+  $result = pwg_query(
+    "SELECT id, path, representative_ext FROM ".IMAGES_TABLE.
+    " WHERE path LIKE '".$escaped."%' ESCAPE '\\\\'"
+  );
   while ($row = pwg_db_fetch_assoc($result))
   {
+    if (strpos((string)$row['path'], $db_prefix) !== 0) continue;
     $row['id'] = (int)$row['id'];
     $image_rows[$row['id']] = $row;
   }
@@ -56,20 +72,14 @@ function bratonien_tools_nc_connector_remove_webdav_piwigo_content(array $connec
     }
   }
 
-  delete_site($site_id);
-
   if ($image_rows)
   {
-    $ids = array_keys($image_rows);
-    $remaining = query2array(
-      'SELECT id FROM '.IMAGES_TABLE.' WHERE id IN ('.implode(',', array_map('intval', $ids)).')',
-      null,
-      'id'
-    );
-    if ($remaining)
-    {
-      delete_elements(array_map('intval', $remaining), false);
-    }
+    delete_elements(array_map('intval', array_keys($image_rows)), false);
+  }
+
+  if ($site_id > 0)
+  {
+    delete_site($site_id);
   }
 
   invalidate_user_cache(true);
@@ -110,14 +120,7 @@ function bratonien_tools_nc_connector_delete_safe()
     @file_put_contents($status_dir.'/deleted-'.$id, date('c')."\n", LOCK_EX);
   }
 
-  if ((int)$cleanup['site_id'] > 0)
-  {
-    return array(
-      'message'=>'Verbindung wurde gelöscht. Die zugehörigen Piwigo-Alben und '.(int)$cleanup['images'].' Bilder wurden aus Piwigo entfernt. Nextcloud-Dateien blieben unverändert.',
-    );
-  }
-
   return array(
-    'message'=>'Verbindung wurde gelöscht. Verbliebene Laufzeitdaten werden automatisch bereinigt. Quelldateien blieben unverändert.',
+    'message'=>'Verbindung wurde gelöscht. '.(int)$cleanup['images'].' eindeutig zu dieser Verbindung gehörende Bilder wurden aus Piwigo entfernt. Nextcloud-Dateien blieben unverändert.',
   );
 }

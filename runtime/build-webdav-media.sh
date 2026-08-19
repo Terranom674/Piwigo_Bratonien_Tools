@@ -56,6 +56,15 @@ normalize_connector_cache_permissions() {
 # werden zumindest alle eigenen Dateien gruppenschreibbar gehalten.
 normalize_connector_cache_permissions
 
+# Dieser Medienlauf wird erst nach einem erfolgreichen WebDAV-Aufbau und einer
+# erfolgreichen Piwigo-Synchronisierung gestartet. Deshalb darf erst hier aus
+# "lokale Connector-Datei fehlt" auf eine in Nextcloud entfernte Freigabe/Datei
+# geschlossen werden. Bei einer nicht erreichbaren Verbindung wird dieser Block
+# niemals ausgeführt und der vorhandene Piwigo-Bestand bleibt unverändert.
+php "$SCRIPT_DIR/cleanup-missing-webdav-images.php" \
+    --piwigo-root="$PIWIGO_ROOT" \
+    --connection-id="$CONNECTION_ID"
+
 php "$SCRIPT_DIR/lib/precache-webdav-previews.php" \
     --mapping="$WEBDAV_MAPPING_FILE" \
     --base-url="$WEBDAV_BASE_URL" \
