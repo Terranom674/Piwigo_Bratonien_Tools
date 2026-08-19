@@ -112,7 +112,7 @@ function bratonien_tools_nc_connector_prepare_webdav_wizard_from_connection(arra
   {
     $path = trim((string)($root['webdav_path'] ?? ''), '/');
     $fileid = (int)($root['fileid'] ?? 0);
-    if ($path === '' || $fileid < 1) continue;
+    if ($fileid < 1) continue;
     $selected[] = $path;
     $selected_ids[$path] = $fileid;
   }
