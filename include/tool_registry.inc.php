@@ -47,8 +47,17 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_system.inc.php');
 
 function bratonien_tools_nc_connector_run_now()
 {
-  $result = bratonien_tools_nc_scheduler_spawn(true);
-  return array('message'=>(string)($result['message'] ?? 'NC-Abgleich wurde gestartet.'));
+  $connection_id = isset($_POST['connection_id']) ? max(0, (int)$_POST['connection_id']) : 0;
+  if ($connection_id > 0)
+  {
+    $connection = bratonien_tools_nc_connector_connection($connection_id, false);
+    if (!$connection)
+    {
+      throw new RuntimeException('Die ausgewählte Verbindung existiert nicht.');
+    }
+  }
+  $result = bratonien_tools_nc_scheduler_spawn(true, $connection_id);
+  return array('message'=>(string)($result['message'] ?? ($connection_id > 0 ? 'Abgleich wurde gestartet.' : 'Abgleich für alle Verbindungen wurde gestartet.')));
 }
 
 function bratonien_tools_get_tools()

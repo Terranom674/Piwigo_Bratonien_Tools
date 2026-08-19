@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PIWIGO_ROOT_DEFAULT="${BRATONIEN_NC_PIWIGO_ROOT:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
 CONFIG_DIR="${BRATONIEN_NC_CONFIG_DIR:-/etc/bratonien-tools/nc-connector}"
 NATIVE_MODE="${BRATONIEN_NC_NATIVE:-0}"
+TARGET_CONNECTION_ID="${BRATONIEN_NC_CONNECTION_ID:-0}"
 GLOBAL_LOCK_DIR="${PIWIGO_ROOT_DEFAULT%/}/_data/bratonien-tools/nc-connector-scheduler"
 GLOBAL_LOCK_FILE="$GLOBAL_LOCK_DIR/worker.lock"
 mkdir -p -- "$GLOBAL_LOCK_DIR"
@@ -14,6 +15,11 @@ if ! flock -n 8; then
     exit 0
 fi
 shopt -s nullglob
+
+if [[ ! "$TARGET_CONNECTION_ID" =~ ^[0-9]+$ ]]; then
+    echo "NC Connector: ungültige Ziel-Verbindungs-ID: $TARGET_CONNECTION_ID" >&2
+    exit 1
+fi
 
 read_config_value() {
     local key="$1"
@@ -69,6 +75,10 @@ fi
 route_piwigo_root=""
 for candidate in "${webdav_configs[@]}" "${configs[@]}"; do
     [[ -f "$candidate" ]] || continue
+    candidate_id="$(read_config_value CONNECTION_ID "$candidate")"
+    if [[ "$TARGET_CONNECTION_ID" -gt 0 && "$candidate_id" != "$TARGET_CONNECTION_ID" ]]; then
+        continue
+    fi
     route_piwigo_root="$(read_config_value PIWIGO_ROOT "$candidate")"
     [[ -n "$route_piwigo_root" ]] && break
 done
@@ -79,6 +89,7 @@ failure_count=0
 webdav_count=0
 local_count=0
 summary_parts=()
+matched_count=0
 
 for config in "${webdav_configs[@]}"; do
     [[ -f "$config" ]] || continue
@@ -90,7 +101,11 @@ for config in "${webdav_configs[@]}"; do
         summary_parts+=("$name: ungueltige Verbindungs-ID")
         continue
     fi
+    if [[ "$TARGET_CONNECTION_ID" -gt 0 && "$connection_id" != "$TARGET_CONNECTION_ID" ]]; then
+        continue
+    fi
 
+    matched_count=$((matched_count + 1))
     webdav_count=$((webdav_count + 1))
     echo "NC Connector WebDAV #$connection_id: $name"
     output=""
@@ -119,7 +134,11 @@ if [[ "$NATIVE_MODE" != "1" ]]; then
             summary_parts+=("$name: ungueltige Verbindungs-ID")
             continue
         fi
+        if [[ "$TARGET_CONNECTION_ID" -gt 0 && "$connection_id" != "$TARGET_CONNECTION_ID" ]]; then
+            continue
+        fi
 
+        matched_count=$((matched_count + 1))
         piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
         [[ -n "$piwigo_root" ]] || piwigo_root="$PIWIGO_ROOT_DEFAULT"
         tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
@@ -145,6 +164,12 @@ if [[ "$NATIVE_MODE" != "1" ]]; then
     done
 fi
 
+if [[ "$TARGET_CONNECTION_ID" -gt 0 && "$matched_count" -eq 0 ]]; then
+    write_route_status "failed" "FEHLER - Verbindung #$TARGET_CONNECTION_ID" "Keine Laufzeitkonfiguration für Verbindung #$TARGET_CONNECTION_ID gefunden." "0"
+    echo "NC Connector: keine Laufzeitkonfiguration für Verbindung #$TARGET_CONNECTION_ID gefunden." >&2
+    exit 1
+fi
+
 summary_detail="$(IFS='; '; printf '%s' "${summary_parts[*]}")"
 [[ -n "$summary_detail" ]] || summary_detail="Keine Verbindung wurde ausgefuehrt."
 
@@ -160,10 +185,10 @@ if [[ "$failure_count" -eq 0 ]]; then
         label="Local"
     fi
     write_route_status "$route" "$label" "$summary_detail" "1"
-    echo "NC Connector: alle Verbindungen wurden erfolgreich verarbeitet."
+    echo "NC Connector: angeforderte Verbindung wurde erfolgreich verarbeitet."
     exit 0
 fi
 
-write_route_status "failed" "FEHLER - mindestens eine Verbindung" "$summary_detail" "0"
-echo "NC Connector: mindestens eine Verbindung ist fehlgeschlagen." >&2
+write_route_status "failed" "FEHLER - angeforderte Verbindung" "$summary_detail" "0"
+echo "NC Connector: die angeforderte Verbindung ist fehlgeschlagen." >&2
 exit 1

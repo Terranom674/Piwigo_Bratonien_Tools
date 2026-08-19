@@ -6,6 +6,9 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
+$options = getopt('', array('connection-id::'));
+$connectionId = isset($options['connection-id']) ? (int)$options['connection-id'] : 0;
+
 $pluginRoot = dirname(__DIR__);
 $piwigoRoot = dirname($pluginRoot, 2);
 $base = rtrim($piwigoRoot, '/').'/_data/bratonien-tools';
@@ -44,9 +47,10 @@ $state = native_scheduler_state($stateFile);
 $state['enabled'] = true;
 $state['mode'] = 'piwigo-native';
 $state['state'] = 'running';
-$state['message'] = 'NC-Abgleich läuft.';
+$state['message'] = $connectionId > 0 ? 'NC-Abgleich für Verbindung #'.$connectionId.' läuft.' : 'NC-Abgleich läuft.';
 $state['started_at'] = time();
 $state['timestamp'] = time();
+$state['connection_id'] = $connectionId;
 native_scheduler_write($stateFile, $state);
 
 $env = $_ENV;
@@ -55,6 +59,7 @@ $env['BRATONIEN_NC_NATIVE'] = '1';
 $env['BRATONIEN_NC_PIWIGO_ROOT'] = $piwigoRoot;
 $env['BRATONIEN_NC_CONFIG_DIR'] = $runtimeDir;
 $env['BRATONIEN_NC_STATE_ROOT'] = $stateRoot;
+$env['BRATONIEN_NC_CONNECTION_ID'] = (string)$connectionId;
 $env['LC_ALL'] = 'C';
 $env['LANG'] = 'C';
 
@@ -86,10 +91,13 @@ $state = native_scheduler_state($stateFile);
 $state['enabled'] = true;
 $state['mode'] = 'piwigo-native';
 $state['state'] = $exit === 0 ? 'success' : 'error';
-$state['message'] = $exit === 0 ? 'NC-Abgleich erfolgreich abgeschlossen.' : 'NC-Abgleich fehlgeschlagen.';
+$state['message'] = $exit === 0
+  ? ($connectionId > 0 ? 'NC-Abgleich für Verbindung #'.$connectionId.' erfolgreich abgeschlossen.' : 'NC-Abgleich erfolgreich abgeschlossen.')
+  : ($connectionId > 0 ? 'NC-Abgleich für Verbindung #'.$connectionId.' fehlgeschlagen.' : 'NC-Abgleich fehlgeschlagen.');
 $state['timestamp'] = time();
 $state['finished_at'] = time();
 $state['exit_code'] = $exit;
+$state['connection_id'] = $connectionId;
 $state['stdout'] = trim($stdout);
 $state['stderr'] = trim($stderr);
 if (empty($state['next_due']) || (int)$state['next_due'] < time())
