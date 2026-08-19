@@ -160,7 +160,35 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
   $state['directory_selection_ready'] = false;
   bratonien_tools_nc_wizard_store($state);
 
-  return array('message'=>'WebDAV-Verzeichnisse wurden übernommen. Die Verbindung ist für den parallelen Testweg vorbereitet.');
+  if ((string)($state['editing_mode'] ?? '') === 'migrate')
+  {
+    $editing_id = (int)($state['editing_connection_id'] ?? 0);
+    $connection = $editing_id > 0 ? bratonien_tools_nc_connector_connection($editing_id, true) : null;
+    if (!$connection || (string)$connection['adapter'] !== 'local')
+    {
+      throw new RuntimeException('Die zu migrierende Legacy-Verbindung ist nicht mehr verfügbar.');
+    }
+
+    $migration = bratonien_tools_nc_connector_migration_state($connection);
+    if (empty($migration['ready']))
+    {
+      throw new RuntimeException('Die WebDAV-Migration kann noch nicht abgeschlossen werden. Es fehlen: '.implode(', ', $migration['missing']).'.');
+    }
+
+    $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
+    $state['_api_key_id'] = (string)($credentials['api_key_id'] ?? '');
+    $state['_api_key_secret'] = (string)($credentials['api_key_secret'] ?? '');
+    $state['api_status'] = 'ok';
+    bratonien_tools_nc_wizard_store($state);
+
+    $result = bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard();
+    unset($_SESSION['bratonien_nc_wizard']);
+    return array(
+      'message'=>(string)($result['message'] ?? 'WebDAV-Nachfolger wurde angelegt. Die Legacy-Verbindung bleibt als Fallback erhalten.'),
+    );
+  }
+
+  return array('message'=>'WebDAV-Verzeichnisse wurden übernommen. Die Verbindung ist für den nächsten Einrichtungsschritt vorbereitet.');
 }
 
 function bratonien_tools_nc_wizard_finish_dispatch()
