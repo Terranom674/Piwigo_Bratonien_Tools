@@ -5,6 +5,10 @@ CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
 
+declare -A webdav_success_for_legacy=()
+declare -A webdav_failure_for_legacy=()
+declare -A legacy_seen=()
+
 read_config_value() {
     local key="$1"
     local file="$2"
@@ -15,6 +19,15 @@ read_config_value() {
     value="${value%\'}"
     value="${value#\'}"
     printf '%s' "$value"
+}
+
+numeric_connection_id() {
+    local value="${1:-}"
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+        printf '%s' "$value"
+    else
+        printf '0'
+    fi
 }
 
 compact_text() {
@@ -133,72 +146,76 @@ done
 [[ -n "$route_piwigo_root" ]] || route_piwigo_root="/var/www/piwigo"
 ROUTE_STATUS_FILE="${route_piwigo_root%/}/_data/bratonien-tools/nc-connector-status/route-status.json"
 
-webdav_success=0
-webdav_failed=0
-webdav_failure_detail=""
+webdav_success_count=0
+webdav_failure_count=0
+legacy_run_count=0
+legacy_failure_count=0
+fallback_used=0
+unpaired_webdav_failure=0
+summary_parts=()
 
-if [[ ${#webdav_configs[@]} -eq 0 ]]; then
-    webdav_failed=1
-    webdav_failure_detail="Keine WebDAV-Runtime-Verbindung ist konfiguriert. Es existiert aktuell nur die Legacy-Verbindung; deshalb kann WebDAV nicht primaer laufen."
-    echo "NC Connector: $webdav_failure_detail" >&2
-else
-    for config in "${webdav_configs[@]}"; do
-        name="$(basename "$config")"
-        echo "NC Connector WebDAV primaer: $name"
-        webdav_output=""
-        if webdav_output="$(env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh" 2>&1)"; then
-            webdav_success=1
-            [[ -z "$webdav_output" ]] || printf '%s\n' "$webdav_output"
+for config in "${webdav_configs[@]}"; do
+    name="$(basename "$config")"
+    connection_id="$(numeric_connection_id "$(read_config_value CONNECTION_ID "$config")")"
+    legacy_id="$(numeric_connection_id "$(read_config_value MIGRATION_LEGACY_CONNECTION_ID "$config")")"
+
+    if [[ "$connection_id" -lt 1 ]]; then
+        echo "NC Connector: $name besitzt keine gueltige WebDAV-Verbindungs-ID." >&2
+        webdav_failure_count=$((webdav_failure_count + 1))
+        unpaired_webdav_failure=1
+        summary_parts+=("$name: ungueltige Verbindungs-ID")
+        continue
+    fi
+
+    echo "NC Connector WebDAV #$connection_id: $name"
+    webdav_output=""
+    if webdav_output="$(env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh" 2>&1)"; then
+        webdav_success_count=$((webdav_success_count + 1))
+        [[ -z "$webdav_output" ]] || printf '%s\n' "$webdav_output"
+        if [[ "$legacy_id" -gt 0 ]]; then
+            webdav_success_for_legacy["$legacy_id"]="$connection_id"
+            summary_parts+=("WebDAV #$connection_id erfolgreich; Legacy #$legacy_id uebersprungen")
         else
-            webdav_exit=$?
-            webdav_failed=1
-            [[ -z "$webdav_output" ]] || printf '%s\n' "$webdav_output" >&2
-            webdav_failure_detail="$(read_webdav_failure_detail "$config" "$webdav_output")"
-            webdav_failure_detail="Exit-Code ${webdav_exit}: ${webdav_failure_detail}"
-            echo "NC Connector: WebDAV-Lauf fehlgeschlagen: $webdav_failure_detail" >&2
-            echo "NC Connector: Legacy-Fallback bleibt verfuegbar." >&2
+            summary_parts+=("WebDAV #$connection_id erfolgreich")
         fi
-    done
-fi
+    else
+        webdav_exit=$?
+        webdav_failure_count=$((webdav_failure_count + 1))
+        [[ -z "$webdav_output" ]] || printf '%s\n' "$webdav_output" >&2
+        webdav_failure_detail="$(read_webdav_failure_detail "$config" "$webdav_output")"
+        webdav_failure_detail="Exit-Code ${webdav_exit}: ${webdav_failure_detail}"
+        echo "NC Connector: WebDAV #$connection_id fehlgeschlagen: $webdav_failure_detail" >&2
 
-if [[ "$webdav_success" -eq 1 ]]; then
-    write_route_status \
-        "webdav" \
-        "WebDAV (primaer)" \
-        "WebDAV erfolgreich. Legacy-Fallback wurde in diesem Lauf nicht ausgefuehrt." \
-        "0" \
-        "1"
-    echo "NC Connector: WebDAV erfolgreich; Legacy-Verbindung wird in diesem Lauf nicht ausgefuehrt."
-    exit 0
-fi
-
-if [[ ${#configs[@]} -eq 0 ]]; then
-    [[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV ist fehlgeschlagen; Ursache konnte nicht ermittelt werden."
-    write_route_status \
-        "failed" \
-        "FEHLER - kein Datenweg" \
-        "WebDAV-Fehler: $webdav_failure_detail Keine Legacy-Fallback-Verbindung vorhanden." \
-        "0" \
-        "0"
-    echo "NC Connector: WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." >&2
-    exit 1
-fi
-
-echo "NC Connector: kein erfolgreicher WebDAV-Lauf; Legacy-Fallback wird ausgefuehrt."
-legacy_result=0
+        if [[ "$legacy_id" -gt 0 ]]; then
+            webdav_failure_for_legacy["$legacy_id"]="$webdav_failure_detail"
+            echo "NC Connector: Nur Legacy-Verbindung #$legacy_id ist fuer diesen WebDAV-Lauf als Fallback vorgesehen." >&2
+        else
+            unpaired_webdav_failure=1
+            summary_parts+=("WebDAV #$connection_id fehlgeschlagen ohne Legacy-Fallback")
+        fi
+    fi
+done
 
 for config in "${configs[@]}"; do
     name="$(basename "$config")"
-    connection_id=""
+    connection_id="0"
     if [[ "$name" =~ ^connection-([0-9]+)\.conf$ ]]; then
         connection_id="${BASH_REMATCH[1]}"
     fi
+
+    if [[ "$connection_id" -lt 1 ]]; then
+        echo "NC Connector: $name besitzt keine gueltige Legacy-Verbindungs-ID." >&2
+        legacy_failure_count=$((legacy_failure_count + 1))
+        summary_parts+=("$name: ungueltige Legacy-Verbindungs-ID")
+        continue
+    fi
+    legacy_seen["$connection_id"]=1
 
     piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
     [[ -n "$piwigo_root" ]] || piwigo_root="/var/www/piwigo"
     tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
 
-    if [[ -n "$connection_id" && -f "$tombstone_dir/deleted-$connection_id" ]]; then
+    if [[ -f "$tombstone_dir/deleted-$connection_id" ]]; then
         echo "NC Connector: Verbindung $connection_id wurde geloescht; Laufzeitdateien werden entfernt."
         rm -f -- "$CONFIG_DIR/connection-$connection_id.conf" \
             "$CONFIG_DIR/connection-$connection_id.db-password" \
@@ -209,33 +226,68 @@ for config in "${configs[@]}"; do
         continue
     fi
 
-    echo "NC Connector Legacy-Fallback: $name"
-    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
-        legacy_result=1
+    if [[ -n "${webdav_success_for_legacy[$connection_id]:-}" ]]; then
+        echo "NC Connector: Legacy #$connection_id wird nicht ausgefuehrt, weil der zugeordnete WebDAV-Nachfolger #${webdav_success_for_legacy[$connection_id]} erfolgreich war."
+        continue
+    fi
+
+    legacy_run_count=$((legacy_run_count + 1))
+    if [[ -n "${webdav_failure_for_legacy[$connection_id]:-}" ]]; then
+        echo "NC Connector Legacy-Fallback #$connection_id nach WebDAV-Fehler: $name"
+        fallback_used=1
+    else
+        echo "NC Connector Legacy #$connection_id: $name"
+    fi
+
+    if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
+        if [[ -n "${webdav_failure_for_legacy[$connection_id]:-}" ]]; then
+            summary_parts+=("WebDAV fuer Legacy #$connection_id fehlgeschlagen; Legacy-Fallback erfolgreich")
+        else
+            summary_parts+=("Legacy #$connection_id erfolgreich")
+        fi
+    else
+        legacy_failure_count=$((legacy_failure_count + 1))
+        summary_parts+=("Legacy #$connection_id fehlgeschlagen")
     fi
 done
 
-if [[ "$legacy_result" -eq 0 ]]; then
-    [[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV war nicht erfolgreich; Ursache konnte nicht ermittelt werden."
-    write_route_status \
-        "legacy_fallback" \
-        "LEGACY-FALLBACK AKTIV" \
-        "WebDAV-Fehler: $webdav_failure_detail Legacy-Fallback wurde erfolgreich ausgefuehrt." \
-        "1" \
-        "1"
-    echo "NC Connector: Legacy-Fallback erfolgreich."
+for legacy_id in "${!webdav_failure_for_legacy[@]}"; do
+    if [[ -z "${legacy_seen[$legacy_id]:-}" ]]; then
+        echo "NC Connector: WebDAV fuer Legacy #$legacy_id ist fehlgeschlagen, aber die zugeordnete Legacy-Runtime fehlt." >&2
+        legacy_failure_count=$((legacy_failure_count + 1))
+        summary_parts+=("Fallback #$legacy_id fehlt")
+    fi
+done
+
+summary_detail="$(IFS='; '; printf '%s' "${summary_parts[*]}")"
+[[ -n "$summary_detail" ]] || summary_detail="Keine Connector-Route wurde ausgefuehrt."
+
+if [[ "$unpaired_webdav_failure" -eq 0 && "$legacy_failure_count" -eq 0 ]]; then
+    if [[ "$fallback_used" -eq 1 ]]; then
+        route="mixed_fallback"
+        label="MIGRATION - FALLBACK AKTIV"
+    elif [[ "$webdav_success_count" -gt 0 && "$legacy_run_count" -gt 0 ]]; then
+        route="mixed"
+        label="WebDAV + Legacy"
+    elif [[ "$webdav_success_count" -gt 0 ]]; then
+        route="webdav"
+        label="WebDAV"
+    else
+        route="legacy"
+        label="Legacy"
+    fi
+
+    write_route_status "$route" "$label" "$summary_detail" "$fallback_used" "1"
+    echo "NC Connector: alle erforderlichen Verbindungen wurden erfolgreich verarbeitet."
     exit 0
 fi
 
-[[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV war nicht erfolgreich; Ursache konnte nicht ermittelt werden."
 write_route_status \
     "failed" \
-    "FEHLER - WebDAV und Fallback" \
-    "WebDAV-Fehler: $webdav_failure_detail Legacy-Fallback ist ebenfalls fehlgeschlagen." \
-    "1" \
+    "FEHLER - mindestens eine Verbindung" \
+    "$summary_detail" \
+    "$fallback_used" \
     "0"
 
-if [[ "$webdav_failed" -eq 1 ]]; then
-    echo "NC Connector: WebDAV und Legacy-Fallback sind fehlgeschlagen." >&2
-fi
+echo "NC Connector: mindestens eine erforderliche Verbindung ist fehlgeschlagen." >&2
 exit 1

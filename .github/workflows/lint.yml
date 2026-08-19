@@ -5,8 +5,12 @@ on:
   pull_request:
 
 jobs:
-  syntax:
+  php-syntax:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.2', '8.3', '8.4', '8.5']
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
@@ -14,7 +18,7 @@ jobs:
       - name: PHP installieren
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: ${{ matrix.php-version }}
           coverage: none
 
       - name: PHP Syntax pruefen
@@ -36,6 +40,12 @@ jobs:
             exit 1
           fi
 
+  script-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
       - name: Admin JavaScript Syntax pruefen
         shell: bash
         run: |
@@ -43,6 +53,7 @@ jobs:
           sed -n '/<script>/,/<\/script>/p' template/admin_tabs.tpl | sed '1d;$d' > /tmp/bratonien-admin-tabs.js
           node --check /tmp/bratonien-admin-tabs.js
           node --check js/nc_connector_edit_v2.js
+          node --check js/nc_connector_source_ui.js
 
       - name: Python Syntax pruefen
         shell: bash

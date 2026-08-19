@@ -134,6 +134,17 @@ try
       if ($baseUrl === '') fail_webdav_reconcile('Nextcloud-Adresse fehlt.');
       if (!$roots) fail_webdav_reconcile('Keine WebDAV-Wurzeln gespeichert.');
 
+      $migration = isset($config['migration']) && is_array($config['migration']) ? $config['migration'] : array();
+      $legacyFallbackId = 0;
+      if ((string)($migration['role'] ?? '') === 'webdav-primary-candidate')
+      {
+        $legacyFallbackId = (int)($migration['legacy_fallback_connection_id'] ?? 0);
+        if ($legacyFallbackId < 1 || $legacyFallbackId === $id)
+        {
+          fail_webdav_reconcile('Die gespeicherte Migrationszuordnung zur Legacy-Verbindung ist ungueltig.');
+        }
+      }
+
       $credentials = decrypt_webdav_credentials((string)$row['secret_blob'], $hexKey);
       $user = trim($credentials['nextcloud_user']);
       $password = $credentials['nextcloud_password'];
@@ -198,6 +209,7 @@ try
       $lines = array(
         'PIWIGO_ROOT='.webdav_shell_value($piwigoRoot),
         'CONNECTION_ID='.$id,
+        'MIGRATION_LEGACY_CONNECTION_ID='.$legacyFallbackId,
         'SOURCE_MODE=webdav-placeholder',
         'WEBDAV_BASE_URL='.webdav_shell_value($baseUrl),
         'WEBDAV_USER='.webdav_shell_value($user),
@@ -223,13 +235,15 @@ try
         'mode'=>'parallel-webdav',
         'config'=>$configPath,
         'piwigo_sync_enabled'=>true,
+        'legacy_fallback_connection_id'=>$legacyFallbackId,
         'reconciled_at'=>date('Y-m-d H:i:s'),
       );
       $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-      if (is_string($json))
+      if (!is_string($json)) fail_webdav_reconcile('WebDAV-Runtime-Konfiguration konnte nicht serialisiert werden.');
+      $escaped = $db->real_escape_string($json);
+      if (!$db->query("UPDATE `{$table}` SET config_json='{$escaped}' WHERE id={$id} AND adapter='remote' LIMIT 1"))
       {
-        $escaped = $db->real_escape_string($json);
-        $db->query("UPDATE `{$table}` SET config_json='{$escaped}' WHERE id={$id} LIMIT 1");
+        fail_webdav_reconcile('WebDAV-Runtime-Status konnte nicht gespeichert werden: '.$db->error);
       }
     }
     catch (Throwable $e)
