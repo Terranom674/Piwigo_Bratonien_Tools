@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.7.5';
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.7.8';
 
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
@@ -46,25 +46,75 @@ if (!function_exists('bratonien_tools_webdav_image_source_info') || !function_ex
   exit(1);
 }
 
-try
+function bratonien_tools_webdav_modus_config()
 {
-  $standard_gallery = ImageStdParams::get_by_type(IMG_THUMB);
-  if (!$standard_gallery || !isset($standard_gallery->sizing->ideal_size))
+  global $conf;
+
+  $modus = $conf['modus_theme'] ?? array();
+  if (is_string($modus) && $modus !== '')
+  {
+    $decoded = @unserialize($modus);
+    if (is_array($decoded)) $modus = $decoded;
+  }
+  if (!is_array($modus)) $modus = array();
+
+  return array_merge(
+    array(
+      'index_photo_deriv'=>'2small',
+      'index_photo_deriv_hdpi'=>'xsmall',
+    ),
+    $modus
+  );
+}
+
+function bratonien_tools_webdav_gallery_base_params()
+{
+  $modus = bratonien_tools_webdav_modus_config();
+  $type = trim((string)($modus['index_photo_deriv'] ?? '2small'));
+  $params = $type !== '' ? @ImageStdParams::get_by_type($type) : null;
+  if ($params) return $params;
+
+  $params = ImageStdParams::get_by_type(IMG_THUMB);
+  if (!$params)
   {
     throw new RuntimeException('Piwigo-Galeriederivat ist nicht konfiguriert.');
   }
+  return $params;
+}
 
-  $gallery_params = clone $standard_gallery;
-  $gallery_params->sizing = new SizingParams(
-    array(
-      (int)$standard_gallery->sizing->ideal_size[0],
-      (int)$standard_gallery->sizing->ideal_size[1],
-    ),
-    0,
-    null
-  );
-  $gallery_params->type = IMG_THUMB;
-  $gallery_params->use_watermark = false;
+function bratonien_tools_webdav_modus_gallery_params(SrcImage $src, $base_params)
+{
+  $row_height = (int)$base_params->max_height();
+  $candidates = array($base_params);
+
+  foreach (ImageStdParams::get_defined_type_map() as $params)
+  {
+    if (
+      $params->max_height() > $row_height
+      && $params->sizing->max_crop == $base_params->sizing->max_crop
+    )
+    {
+      $candidates[] = $params;
+      if (count($candidates) === 3) break;
+    }
+  }
+
+  $selected = $base_params;
+  foreach ($candidates as $params)
+  {
+    $selected = $params;
+    $probe = new DerivativeImage($params, $src);
+    $size = $probe->get_size();
+    if ((int)$size[1] >= $row_height - 2) break;
+  }
+
+  return $selected;
+}
+
+try
+{
+  $gallery_base_params = bratonien_tools_webdav_gallery_base_params();
+  $gallery_base_type = (string)$gallery_base_params->type;
 
   $images = 0;
   $generated_or_ready = 0;
@@ -73,6 +123,7 @@ try
   $legacy_derivatives_rebuilt = 0;
   $errors = 0;
   $error_lines = array();
+  $variant_counts = array();
 
   $result = pwg_query('SELECT * FROM '.IMAGES_TABLE.' ORDER BY id');
   while ($row = pwg_db_fetch_assoc($result))
@@ -124,6 +175,11 @@ try
     $src = new SrcImage($row);
     try
     {
+      $gallery_params = bratonien_tools_webdav_modus_gallery_params($src, $gallery_base_params);
+      $variant = (string)$gallery_params->type;
+      if ($variant === '') $variant = 'custom';
+      $variant_counts[$variant] = ($variant_counts[$variant] ?? 0) + 1;
+
       $probe = new DerivativeImage($gallery_params, $src);
       if ($probe->same_as_source())
       {
@@ -190,9 +246,18 @@ try
     }
   }
 
+  ksort($variant_counts);
+  $variant_parts = array();
+  foreach ($variant_counts as $type=>$count)
+  {
+    $variant_parts[] = $type.':'.$count;
+  }
+
   echo 'WebDAV-Derivative-Builder: version='.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION.
     ' bilder='.$images.
-    ' varianten=1'.
+    ' varianten_pro_bild=1'.
+    ' modus_basis='.$gallery_base_type.
+    ' modus_varianten='.implode(',', $variant_parts).
     ' bereit='.$generated_or_ready.
     ' identisch='.$identity.
     ' metadaten_repariert='.$metadata_repaired.
