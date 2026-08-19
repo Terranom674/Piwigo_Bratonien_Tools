@@ -78,8 +78,11 @@ function webdav_source_fingerprint($baseUrl, $user, array $roots)
 $pluginRoot = dirname(__DIR__);
 $piwigoRoot = dirname($pluginRoot, 2);
 $dbConfig = $piwigoRoot.'/local/config/database.inc.php';
-$configDir = '/etc/bratonien-tools/nc-connector';
-$stateRoot = '/var/lib/bratonien-tools/nc-connector';
+$nativeMode = getenv('BRATONIEN_NC_NATIVE') === '1';
+$configDir = trim((string)getenv('BRATONIEN_NC_CONFIG_DIR'));
+if ($configDir === '') $configDir = $nativeMode ? rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-connector-runtime' : '/etc/bratonien-tools/nc-connector';
+$stateRoot = trim((string)getenv('BRATONIEN_NC_STATE_ROOT'));
+if ($stateRoot === '') $stateRoot = $nativeMode ? rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-connector-state' : '/var/lib/bratonien-tools/nc-connector';
 $publicSourceRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-source';
 $publicGalleryRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-gallery';
 $legacyGalleryRoot = rtrim($piwigoRoot, '/').'/galleries';
@@ -107,11 +110,12 @@ try
   $rows = $db->query("SELECT id,name,adapter,config_json,secret_blob FROM `{$table}` ORDER BY id DESC");
   if (!$rows) fail_webdav_reconcile('Connector-Verbindungen konnten nicht gelesen werden: '.$db->error);
 
-  foreach (array($configDir, $publicSourceRoot, $publicGalleryRoot) as $dir)
+  foreach (array($configDir, $stateRoot, $publicSourceRoot, $publicGalleryRoot) as $dir)
   {
-    if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0755, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
+    if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0750, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
   }
   @chmod($configDir, 0700);
+  @chmod($stateRoot, 0750);
   @chmod($publicSourceRoot, 0755);
   @chmod($publicGalleryRoot, 0755);
 
@@ -150,7 +154,7 @@ try
       $seenFingerprints[$fingerprint] = $id;
       $known[$id] = true;
 
-      $stateDir = rtrim((string)($config['state_dir'] ?? ''), '/');
+      $stateDir = $nativeMode ? $stateRoot.'/connection-'.$id : rtrim((string)($config['state_dir'] ?? ''), '/');
       if ($stateDir === '') $stateDir = $stateRoot.'/connection-'.$id;
       if (!is_dir($stateDir) && !mkdir($stateDir, 0750, true)) fail_webdav_reconcile('State-Verzeichnis konnte nicht angelegt werden.');
       @chmod($stateDir, 0750);
@@ -219,7 +223,7 @@ try
       $config['parallel_gallery_root'] = $galleryRoot;
       $config['source_fingerprint'] = $fingerprint;
       $config['runtime'] = array(
-        'mode'=>'webdav',
+        'mode'=>$nativeMode ? 'piwigo-native-webdav' : 'webdav',
         'config'=>$configPath,
         'piwigo_sync_enabled'=>true,
         'reconciled_at'=>date('Y-m-d H:i:s'),
