@@ -252,8 +252,6 @@ try
       );
       decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id), $headers));
       $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), $headers));
-      // Entfernt alte technische bratonien-webdav-N Wrapper aus Site 1,
-      // nachdem deren generierte Verzeichnisse beim Reconcile entfernt wurden.
       if ($site_id !== 1)
       {
         decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), $headers));
@@ -284,16 +282,31 @@ try
   try
   {
     decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'pwg.session.login', 'username'=>$fallback_user, 'password'=>$fallback_password), array(), $cookie_file));
-    http_request(
-      $base_url.'/admin.php?page=site_update&site='.$site_id,
-      array('sync'=>'files','display_info'=>1,'privacy_level'=>0,'sync_meta'=>1,'simulate'=>0,'subcats-included'=>1,'bratonien_connector'=>1,'submit'=>1),
+
+    // Der Fallback darf keinen zweiten Strukturpfad benutzen. Auch mit
+    // Benutzer/Passwort wird exakt derselbe Bratonien-Sync wie mit API-Key
+    // ausgefuehrt. Dadurch werden alte technische WebDAV-Kategorien entfernt
+    // und vorhandene Piwigo-Alben wiederverwendet.
+    decode_ws(http_request(
+      $base_url.'/ws.php?format=json',
+      array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id),
       array(),
       $cookie_file
-    );
-    $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), array(), $cookie_file));
+    ));
+    $orphan = decode_ws(http_request(
+      $base_url.'/ws.php?format=json',
+      array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0),
+      array(),
+      $cookie_file
+    ));
     if ($site_id !== 1)
     {
-      decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), array(), $cookie_file));
+      decode_ws(http_request(
+        $base_url.'/ws.php?format=json',
+        array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0),
+        array(),
+        $cookie_file
+      ));
     }
     $added = (int)($orphan['added_orphans'] ?? 0);
     $deleted = (int)($orphan['deleted_orphans'] ?? 0);
