@@ -69,6 +69,22 @@
       resetServer().catch(function(){}).finally(function(){resetBusy=false;if(dialog){if(typeof dialog.close==='function'&&dialog.open)dialog.close();else dialog.removeAttribute('open');}});
     }
 
+    // Every stored connection gets the same user-facing edit action. The edit
+    // action opens the normal WebDAV wizard; users never have to edit raw JSON,
+    // runtime paths or database rows.
+    [].slice.call(section.querySelectorAll('form')).forEach(function(deleteForm){
+      var tool=deleteForm.querySelector('button[name="bratonien_tool"][value="nc_connector_delete"]');
+      var idInput=deleteForm.querySelector('input[name="connection_id"]');
+      if(!tool||!idInput)return;
+      var actionRow=deleteForm.parentElement;if(!actionRow||actionRow.querySelector('[data-nc-edit-connection="'+idInput.value+'"]'))return;
+      var editForm=document.createElement('form');editForm.method='post';editForm.setAttribute('data-nc-edit-connection',idInput.value);
+      var tokenInput=document.createElement('input');tokenInput.type='hidden';tokenInput.name='pwg_token';tokenInput.value=token();editForm.appendChild(tokenInput);
+      var connectionInput=document.createElement('input');connectionInput.type='hidden';connectionInput.name='connection_id';connectionInput.value=idInput.value;editForm.appendChild(connectionInput);
+      var editButton=document.createElement('button');editButton.className='buttonLike';editButton.type='submit';editButton.name='bratonien_tool';editButton.value='nc_connector_edit_start';editButton.textContent='Bearbeiten';editForm.appendChild(editButton);
+      editForm.addEventListener('submit',function(){setOpen(true);},true);
+      actionRow.insertBefore(editForm,deleteForm);
+    });
+
     if(openButton){
       openButton.addEventListener('click',function(event){
         event.preventDefault();event.stopImmediatePropagation();showWizard();
@@ -80,14 +96,9 @@
     if(dialog){
       dialog.addEventListener('cancel',function(event){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();},true);
       dialog.addEventListener('click',function(event){if(event.target===dialog){event.preventDefault();event.stopImmediatePropagation();closeAfterReset();}},true);
-
-      // Every wizard POST explicitly preserves the open state before the
-      // browser leaves the page. Validation errors therefore return to the
-      // same wizard step instead of closing/resetting the dialog.
       [].slice.call(dialog.querySelectorAll('form[data-bratonien-wizard-form]')).forEach(function(form){
         form.addEventListener('submit',function(){setOpen(true);},true);
       });
-
       try{if(sessionStorage.getItem(storageKey)==='1')showWizard();}catch(e){}
     }
   }
