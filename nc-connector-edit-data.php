@@ -92,6 +92,8 @@ $payload = array(
     'has_nextcloud_password'=>(string)($credentials['nextcloud_password'] ?? '') !== '',
     'api_key_id'=>(string)($credentials['api_key_id'] ?? ''),
     'has_api_key_secret'=>trim((string)($credentials['api_key_secret'] ?? '')) !== '',
+    'fallback_user'=>(string)($credentials['piwigo_user'] ?? ''),
+    'has_fallback_password'=>(string)($credentials['piwigo_password'] ?? '') !== '',
     'migration_ready'=>!empty($migration['ready']),
     'migration_missing'=>array_values((array)($migration['missing'] ?? array())),
   ),
