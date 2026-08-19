@@ -16,6 +16,7 @@ function bratonien_tools_nc_scheduler_paths()
     'trigger_lock'=>$base.'/nc-connector-scheduler/trigger.lock',
     'worker_lock'=>$base.'/nc-connector-scheduler/worker.lock',
     'log'=>$base.'/nc-connector-scheduler/last-worker.log',
+    'status_root'=>$base.'/nc-connector-status',
   );
 }
 
@@ -59,6 +60,31 @@ function bratonien_tools_nc_scheduler_write_state(array $state)
   return @rename($tmp, $paths['state']);
 }
 
+function bratonien_tools_nc_scheduler_write_connection_status($connection_id, $state, $message)
+{
+  $connection_id = (int)$connection_id;
+  if ($connection_id < 1) return false;
+  $paths = bratonien_tools_nc_scheduler_paths();
+  if (!bratonien_tools_nc_scheduler_ensure_dirs()) return false;
+  $target = $paths['status_root'].'/connection-'.$connection_id.'.json';
+  $existing = array();
+  if (is_readable($target))
+  {
+    $decoded = json_decode((string)@file_get_contents($target), true);
+    if (is_array($decoded)) $existing = $decoded;
+  }
+  $existing['state'] = (string)$state;
+  $existing['message'] = (string)$message;
+  $existing['timestamp'] = time();
+  $existing['connection_id'] = $connection_id;
+  $json = json_encode($existing, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+  if (!is_string($json)) return false;
+  $tmp = $target.'.tmp';
+  if (@file_put_contents($tmp, $json."\n", LOCK_EX) === false) return false;
+  @chmod($tmp, 0644);
+  return @rename($tmp, $target);
+}
+
 function bratonien_tools_nc_scheduler_install()
 {
   if (!bratonien_tools_nc_scheduler_ensure_dirs()) return false;
@@ -82,8 +108,14 @@ function bratonien_tools_nc_scheduler_php_binary()
   return '';
 }
 
-function bratonien_tools_nc_scheduler_spawn($force = false)
+function bratonien_tools_nc_scheduler_spawn($force = false, $connection_id = 0)
 {
+  $connection_id = (int)$connection_id;
+  if ($force && $connection_id < 1)
+  {
+    throw new RuntimeException('Für den manuellen Abgleich fehlt die Verbindungs-ID.');
+  }
+
   $paths = bratonien_tools_nc_scheduler_paths();
   if (!bratonien_tools_nc_scheduler_ensure_dirs())
   {
@@ -118,14 +150,20 @@ function bratonien_tools_nc_scheduler_spawn($force = false)
   $state['enabled'] = true;
   $state['mode'] = 'piwigo-native';
   $state['state'] = 'queued';
-  $state['message'] = 'NC-Abgleich wurde angefordert.';
+  $state['message'] = $connection_id > 0 ? 'NC-Abgleich für Verbindung #'.$connection_id.' wurde angefordert.' : 'NC-Abgleich wurde angefordert.';
   $state['queued_at'] = $now;
   $state['timestamp'] = $now;
+  $state['connection_id'] = $connection_id;
   $state['next_due'] = $now + bratonien_tools_nc_scheduler_interval();
   bratonien_tools_nc_scheduler_write_state($state);
+  if ($connection_id > 0)
+  {
+    bratonien_tools_nc_scheduler_write_connection_status($connection_id, 'queued', 'Abgleich wurde angefordert.');
+  }
 
   $runner = BRATONIEN_TOOLS_PATH.'runtime/native-runner.php';
-  $command = escapeshellarg($php).' '.escapeshellarg($runner).' >> '.escapeshellarg($paths['log']).' 2>&1 &';
+  $runner_args = $connection_id > 0 ? ' --connection-id='.escapeshellarg((string)$connection_id) : '';
+  $command = escapeshellarg($php).' '.escapeshellarg($runner).$runner_args.' >> '.escapeshellarg($paths['log']).' 2>&1 &';
   $spec = array(
     0=>array('file','/dev/null','r'),
     1=>array('file','/dev/null','a'),
@@ -144,10 +182,14 @@ function bratonien_tools_nc_scheduler_spawn($force = false)
     $state['message'] = 'Der native NC-Abgleich konnte nicht gestartet werden.';
     $state['timestamp'] = time();
     bratonien_tools_nc_scheduler_write_state($state);
+    if ($connection_id > 0)
+    {
+      bratonien_tools_nc_scheduler_write_connection_status($connection_id, 'error', 'Abgleich konnte nicht gestartet werden.');
+    }
     throw new RuntimeException('Der native NC-Abgleich konnte nicht gestartet werden.');
   }
 
-  return array('started'=>true, 'message'=>'NC-Abgleich wurde angefordert.');
+  return array('started'=>true, 'message'=>'Abgleich für Verbindung #'.$connection_id.' wurde angefordert.');
 }
 
 function bratonien_tools_nc_scheduler_tick()
@@ -159,7 +201,7 @@ function bratonien_tools_nc_scheduler_tick()
 
   try
   {
-    bratonien_tools_nc_scheduler_spawn(false);
+    bratonien_tools_nc_scheduler_spawn(false, 0);
   }
   catch (Throwable $e)
   {
