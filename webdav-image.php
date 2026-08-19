@@ -19,6 +19,18 @@ function bratonien_tools_webdav_image_abort($status, $message)
   exit;
 }
 
+function bratonien_tools_webdav_image_ajax_response($image_id, $preview)
+{
+  $url = get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-image.php?id='.(int)$image_id;
+  if ($preview) $url .= '&preview=1';
+
+  http_response_code(200);
+  header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
+  echo json_encode(array('url'=>$url), JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 function bratonien_tools_webdav_image_decrypt_secret($blob, $hex_key)
 {
   $hex_key = trim((string)$hex_key);
@@ -52,7 +64,17 @@ if (!pwg_db_num_rows($access_result)) bratonien_tools_webdav_image_abort(403, 'K
 $source = bratonien_tools_webdav_image_source_info($image_id);
 if (!$source) bratonien_tools_webdav_image_abort(404, 'Keine WebDAV-Quelle für dieses Bild gefunden.');
 
-if (!empty($_GET['preview']))
+$preview_requested = !empty($_GET['preview']);
+
+// Piwigos Standard-Lader erwartet bei ?ajaxload=true JSON und lädt erst die
+// darin enthaltene URL als Bild. Binärdaten in diesem Request werden als
+// Ladefehler behandelt und durch errors_small.png ersetzt.
+if (isset($_GET['ajaxload']) && (string)$_GET['ajaxload'] === 'true')
+{
+  bratonien_tools_webdav_image_ajax_response($image_id, $preview_requested);
+}
+
+if ($preview_requested)
 {
   $preview = bratonien_tools_webdav_preview_path($source);
   if ($preview)
@@ -121,7 +143,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.7.1',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.7.15',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
