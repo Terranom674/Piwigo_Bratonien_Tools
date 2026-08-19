@@ -27,72 +27,6 @@ function bratonien_tools_runtime_category_id()
   return 0;
 }
 
-function bratonien_tools_watermark_album_cover_category($src_image, $category_id=null)
-{
-  static $map = null;
-
-  if ($map === null)
-  {
-    $map = new SplObjectStorage();
-  }
-
-  if (!is_object($src_image))
-  {
-    return 0;
-  }
-
-  if ($category_id !== null)
-  {
-    $category_id = (int)$category_id;
-    if ($category_id > 0)
-    {
-      $map[$src_image] = $category_id;
-    }
-    return $category_id;
-  }
-
-  return $map->contains($src_image) ? (int)$map[$src_image] : 0;
-}
-
-function bratonien_tools_watermark_prepare_album_overview($thumbnails)
-{
-  if (!is_array($thumbnails))
-  {
-    return $thumbnails;
-  }
-
-  foreach ($thumbnails as &$thumbnail)
-  {
-    $category_id = (int)($thumbnail['id'] ?? $thumbnail['ID'] ?? 0);
-    if ($category_id < 1 || empty($thumbnail['representative']['src_image']) || !is_object($thumbnail['representative']['src_image']))
-    {
-      continue;
-    }
-
-    // Ein Repraesentantenbild kann fuer mehrere Alben verwendet werden. Piwigo
-    // reicht in der Albumuebersicht aber nur das SrcImage an get_derivative_url
-    // weiter. Deshalb bekommt jedes Album-Cover eine eigene SrcImage-Instanz,
-    // damit seine konkrete Albumregel erhalten bleibt.
-    $src_image = clone $thumbnail['representative']['src_image'];
-    $thumbnail['representative']['src_image'] = $src_image;
-    bratonien_tools_watermark_album_cover_category($src_image, $category_id);
-  }
-  unset($thumbnail);
-
-  return $thumbnails;
-}
-
-function bratonien_tools_runtime_derivative_category_id($src_image)
-{
-  $category_id = bratonien_tools_runtime_category_id();
-  if ($category_id > 0)
-  {
-    return $category_id;
-  }
-
-  return bratonien_tools_watermark_album_cover_category($src_image);
-}
-
 function bratonien_tools_runtime_effective_rule($category_id)
 {
   static $categories = null;
@@ -296,7 +230,7 @@ function bratonien_tools_filter_derivative_url($url, $params, $src_image, $rel_u
     return $url;
   }
 
-  $rule = bratonien_tools_runtime_effective_rule(bratonien_tools_runtime_derivative_category_id($src_image));
+  $rule = bratonien_tools_runtime_effective_rule(bratonien_tools_runtime_category_id());
   if ($rule['mode'] !== 'profile' || empty($rule['profile_id']))
   {
     return $url;
