@@ -27,6 +27,7 @@ if (!function_exists('is_admin') || !is_admin())
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_manage.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_connection_scope.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_edit.inc.php');
 
 $id = (int)($_GET['connection_id'] ?? 0);
 $connection = bratonien_tools_nc_connector_connection($id, true);
@@ -39,13 +40,19 @@ if (!$connection)
 
 $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
 $credentials = array();
+$migration = array('ready'=>false, 'missing'=>array());
 try
 {
   $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
+  if ((string)$connection['adapter'] === 'local')
+  {
+    $migration = bratonien_tools_nc_connector_migration_state($connection);
+  }
 }
 catch (Throwable $e)
 {
   $credentials = array();
+  $migration = array('ready'=>false, 'missing'=>array('gespeicherte Zugangsdaten konnten nicht gelesen werden'));
 }
 
 $storages = array();
@@ -78,6 +85,15 @@ $payload = array(
     'max_wait_seconds'=>(int)($config['max_wait_seconds'] ?? 900),
     'full_sync_seconds'=>(int)($config['full_sync_seconds'] ?? 86400),
     'storages'=>$storages,
+  ),
+  'webdav'=>array(
+    'nextcloud_url'=>(string)($config['nextcloud_url'] ?? ''),
+    'nextcloud_user'=>(string)($credentials['nextcloud_user'] ?? $config['nextcloud_access_user'] ?? $config['access_user'] ?? ''),
+    'has_nextcloud_password'=>(string)($credentials['nextcloud_password'] ?? '') !== '',
+    'api_key_id'=>(string)($credentials['api_key_id'] ?? ''),
+    'has_api_key_secret'=>trim((string)($credentials['api_key_secret'] ?? '')) !== '',
+    'migration_ready'=>!empty($migration['ready']),
+    'migration_missing'=>array_values((array)($migration['missing'] ?? array())),
   ),
 );
 

@@ -4,6 +4,16 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exists($GLOBALS['template'], 'func_combine_script'))
+{
+  $GLOBALS['template']->func_combine_script(array(
+    'id'=>'bratonien_nc_connector_edit_v2',
+    'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_edit_v2.js',
+    'load'=>'footer',
+    'version'=>function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.10',
+  ));
+}
+
 require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
