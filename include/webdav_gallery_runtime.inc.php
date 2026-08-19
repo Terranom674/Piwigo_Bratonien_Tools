@@ -40,6 +40,17 @@ function bratonien_tools_webdav_derivative_matches_preview($derivative_path, $pa
   return true;
 }
 
+function bratonien_tools_webdav_ondemand_derivative_url($image_id, $params)
+{
+  $image_id = (int)$image_id;
+  if ($image_id < 1 || !is_object($params)) return null;
+
+  $type = trim((string)($params->type ?? ''));
+  if ($type === '') return null;
+
+  return get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-derivative.php?id='.$image_id.'&type='.rawurlencode($type);
+}
+
 function bratonien_tools_filter_webdav_gallery_derivative_url($url, $params, $src_image, $rel_url)
 {
   if (!is_object($src_image) || empty($src_image->id) || empty($src_image->rel_path)) return $url;
@@ -51,7 +62,6 @@ function bratonien_tools_filter_webdav_gallery_derivative_url($url, $params, $sr
   }
 
   $image_id = (int)$src_image->id;
-  $derivative_path = '';
   try
   {
     $derivative = new DerivativeImage($params, $src_image);
@@ -69,45 +79,20 @@ function bratonien_tools_filter_webdav_gallery_derivative_url($url, $params, $sr
     error_log('Bratonien WebDAV derivative lookup #'.$image_id.': '.$e->getMessage());
   }
 
+  // Auf der Picture-/Fotorama-Seite wird nicht mehr waehrend des HTML-Aufbaus
+  // synchron erzeugt. Fotorama arbeitet lazy: Erst wenn das konkrete Bild in
+  // den Fokus kommt und seine URL abruft, erzeugt dieser Endpoint genau dieses
+  // angeforderte Standard-Derivat aus dem bereits gecachten NC-Preview.
   $script_name = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
-  if ($script_name === 'picture.php' && function_exists('bratonien_tools_webdav_generate_derivative'))
+  if ($script_name === 'picture.php')
   {
-    if ($derivative_path !== '' && is_file($derivative_path) && !bratonien_tools_webdav_derivative_matches_preview($derivative_path, $params, $image_id))
-    {
-      @unlink($derivative_path);
-      clearstatcache(true, $derivative_path);
-    }
-
-    $detail = '';
-    try
-    {
-      if (bratonien_tools_webdav_generate_derivative($params, $src_image, $detail))
-      {
-        if ($derivative_path === '')
-        {
-          $probe = new DerivativeImage($params, $src_image);
-          if (!$probe->same_as_source()) $derivative_path = $probe->get_path();
-        }
-        if (bratonien_tools_webdav_derivative_matches_preview($derivative_path, $params, $image_id))
-        {
-          return $url;
-        }
-      }
-    }
-    catch (Throwable $e)
-    {
-      $detail = get_class($e).': '.$e->getMessage();
-    }
-
-    if ($detail !== '')
-    {
-      error_log('Bratonien WebDAV picture derivative #'.$image_id.': '.$detail);
-    }
+    $ondemand_url = bratonien_tools_webdav_ondemand_derivative_url($image_id, $params);
+    if ($ondemand_url) return $ondemand_url;
   }
 
-  // Connector-Platzhalter oder daraus entstandene Derivate werden nie ausgeliefert.
-  // Wenn noch kein echtes lokales Derivat bereitsteht, geht der Request immer auf
-  // die echte WebDAV-Bildquelle bzw. deren vorbereitetes Preview.
+  // Galerie-Fallback: niemals Connector-Platzhalter ausliefern. Solange kein
+  // lokales korrektes Derivat vorliegt, wird das echte vorbereitete NC-Preview
+  // verwendet. Der eigentliche Galerie-Derivattyp wird beim Sync vorgebaut.
   $preview_url = bratonien_tools_webdav_image_url($image_id, true);
   return $preview_url ?: $url;
 }
