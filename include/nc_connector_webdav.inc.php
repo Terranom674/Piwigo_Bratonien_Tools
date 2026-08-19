@@ -104,7 +104,6 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $selected_ids = isset($state['directory_selected_fileids']) && is_array($state['directory_selected_fileids'])
     ? $state['directory_selected_fileids']
     : array();
-  $selected = array_values(array_filter($selected, function($path) { return $path !== ''; }));
   if (!$selected) throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis auswählen.');
 
   $roots = array();
@@ -112,9 +111,12 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   {
     $fileid = isset($selected_ids[$path]) ? (int)$selected_ids[$path] : 0;
     if ($fileid < 1) throw new RuntimeException('Für ein ausgewähltes Nextcloud-Verzeichnis fehlt die eindeutige Datei-ID.');
+    $display_name = $path === ''
+      ? (trim((string)($state['display_name'] ?? '')) !== '' ? trim((string)$state['display_name']) : $username)
+      : basename($path);
     $roots[] = array(
       'fileid'=>$fileid,
-      'display_name'=>basename($path),
+      'display_name'=>$display_name,
       'webdav_path'=>$path,
     );
   }
