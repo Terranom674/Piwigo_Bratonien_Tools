@@ -90,14 +90,24 @@ if (is_dir($dir))
         $route_label = 'UNBEKANNTER DATENWEG';
       }
 
+      $route_detail = trim((string)($route['detail'] ?? ''));
       $latest['route'] = $route_name;
       $latest['route_label'] = $route_label;
       $latest['route_timestamp'] = $route_timestamp;
       $latest['route_time_label'] = $route_timestamp > 0 ? date('d.m.Y H:i:s', $route_timestamp) : 'Nicht verfügbar';
-      $latest['route_detail'] = (string)($route['detail'] ?? '');
+      $latest['route_detail'] = $route_detail;
 
       $base_message = trim((string)($latest['message'] ?? ''));
-      $latest['message'] = $route_label.($base_message !== '' ? ' · '.$base_message : '');
+      $message_parts = array($route_label);
+      if ($route_name !== 'webdav' && $route_detail !== '')
+      {
+        $message_parts[] = $route_detail;
+      }
+      if ($base_message !== '')
+      {
+        $message_parts[] = $base_message;
+      }
+      $latest['message'] = implode(' · ', $message_parts);
     }
   }
 }
