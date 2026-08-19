@@ -110,12 +110,7 @@ function bratonien_tools_nc_scheduler_php_binary()
 
 function bratonien_tools_nc_scheduler_spawn($force = false, $connection_id = 0)
 {
-  $connection_id = (int)$connection_id;
-  if ($force && $connection_id < 1)
-  {
-    throw new RuntimeException('Für den manuellen Abgleich fehlt die Verbindungs-ID.');
-  }
-
+  $connection_id = max(0, (int)$connection_id);
   $paths = bratonien_tools_nc_scheduler_paths();
   if (!bratonien_tools_nc_scheduler_ensure_dirs())
   {
@@ -150,7 +145,7 @@ function bratonien_tools_nc_scheduler_spawn($force = false, $connection_id = 0)
   $state['enabled'] = true;
   $state['mode'] = 'piwigo-native';
   $state['state'] = 'queued';
-  $state['message'] = $connection_id > 0 ? 'NC-Abgleich für Verbindung #'.$connection_id.' wurde angefordert.' : 'NC-Abgleich wurde angefordert.';
+  $state['message'] = $connection_id > 0 ? 'NC-Abgleich für Verbindung #'.$connection_id.' wurde angefordert.' : 'NC-Abgleich für alle Verbindungen wurde angefordert.';
   $state['queued_at'] = $now;
   $state['timestamp'] = $now;
   $state['connection_id'] = $connection_id;
@@ -189,7 +184,7 @@ function bratonien_tools_nc_scheduler_spawn($force = false, $connection_id = 0)
     throw new RuntimeException('Der native NC-Abgleich konnte nicht gestartet werden.');
   }
 
-  return array('started'=>true, 'message'=>'Abgleich für Verbindung #'.$connection_id.' wurde angefordert.');
+  return array('started'=>true, 'message'=>$connection_id > 0 ? 'Abgleich für Verbindung #'.$connection_id.' wurde angefordert.' : 'Abgleich für alle Verbindungen wurde angefordert.');
 }
 
 function bratonien_tools_nc_scheduler_tick()
