@@ -36,14 +36,7 @@ function bratonien_tools_nc_connector_remove_webdav_piwigo_content(array $connec
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
 
   $image_rows = array();
-  $query = '
-SELECT DISTINCT i.id, i.path, i.representative_ext
-  FROM '.IMAGES_TABLE.' AS i
-  LEFT JOIN '.CATEGORIES_TABLE.' AS sc ON sc.id = i.storage_category_id
-  LEFT JOIN '.IMAGE_CATEGORY_TABLE.' AS ic ON ic.image_id = i.id
-  LEFT JOIN '.CATEGORIES_TABLE.' AS vc ON vc.id = ic.category_id
-  WHERE sc.site_id = '.$site_id.' OR vc.site_id = '.$site_id.'
-;';
+  $query = '\nSELECT DISTINCT i.id, i.path, i.representative_ext\n  FROM '.IMAGES_TABLE.' AS i\n  LEFT JOIN '.CATEGORIES_TABLE.' AS sc ON sc.id = i.storage_category_id\n  LEFT JOIN '.IMAGE_CATEGORY_TABLE.' AS ic ON ic.image_id = i.id\n  LEFT JOIN '.CATEGORIES_TABLE.' AS vc ON vc.id = ic.category_id\n  WHERE sc.site_id = '.$site_id.' OR vc.site_id = '.$site_id.'\n;';
   $result = pwg_query($query);
   while ($row = pwg_db_fetch_assoc($result))
   {
@@ -83,39 +76,9 @@ SELECT DISTINCT i.id, i.path, i.representative_ext
   return array('site_id'=>$site_id, 'images'=>count($image_rows));
 }
 
-function bratonien_tools_nc_connector_logical_delete_members(array $connection)
-{
-  $members = array((int)$connection['id'] => $connection);
-  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
-  $migration = isset($config['migration']) && is_array($config['migration']) ? $config['migration'] : array();
-  $role = (string)($migration['role'] ?? '');
-
-  if ($role === 'webdav-primary-candidate')
-  {
-    $legacy_id = (int)($migration['legacy_fallback_connection_id'] ?? 0);
-    if ($legacy_id > 0)
-    {
-      $legacy = bratonien_tools_nc_connector_connection($legacy_id, false);
-      if ($legacy && (string)$legacy['adapter'] === 'local') $members[$legacy_id] = $legacy;
-    }
-  }
-  elseif ($role === 'legacy-fallback')
-  {
-    $remote_id = (int)($migration['webdav_successor_connection_id'] ?? 0);
-    if ($remote_id > 0)
-    {
-      $remote = bratonien_tools_nc_connector_connection($remote_id, false);
-      if ($remote && (string)$remote['adapter'] === 'remote') $members[$remote_id] = $remote;
-    }
-  }
-
-  return $members;
-}
-
 /**
- * Delete one user-facing connector connection. A migration pair is one logical
- * connection for the user, so its internal WebDAV and Legacy records are
- * removed together.
+ * Delete exactly the connection selected by the user.
+ * No other connector record is implicitly removed.
  */
 function bratonien_tools_nc_connector_delete_safe()
 {
@@ -126,34 +89,25 @@ function bratonien_tools_nc_connector_delete_safe()
     throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
   }
 
-  $members = bratonien_tools_nc_connector_logical_delete_members($connection);
   $cleanup = array('site_id'=>0, 'images'=>0);
-  foreach ($members as $member)
+  if (
+    (string)($connection['adapter'] ?? '') === 'remote'
+    && (string)($connection['config']['source_mode'] ?? '') === 'webdav-placeholder'
+  )
   {
-    if (
-      (string)($member['adapter'] ?? '') === 'remote'
-      && (string)($member['config']['source_mode'] ?? '') === 'webdav-placeholder'
-    )
-    {
-      $cleanup = bratonien_tools_nc_connector_remove_webdav_piwigo_content($member);
-      break;
-    }
+    $cleanup = bratonien_tools_nc_connector_remove_webdav_piwigo_content($connection);
   }
 
   $table = bratonien_tools_nc_connector_table();
+  pwg_query("DELETE FROM `$table` WHERE id=".$id." LIMIT 1");
+
   $status_dir = rtrim(PHPWG_ROOT_PATH, '/').'/_data/bratonien-tools/nc-connector-status';
-  foreach ($members as $member_id=>$member)
+  $public_status = $status_dir.'/connection-'.$id.'.json';
+  if (is_file($public_status)) @unlink($public_status);
+
+  if (is_dir($status_dir) || @mkdir($status_dir, 0755, true))
   {
-    $member_id = (int)$member_id;
-    pwg_query("DELETE FROM `$table` WHERE id=".$member_id." LIMIT 1");
-
-    $public_status = $status_dir.'/connection-'.$member_id.'.json';
-    if (is_file($public_status)) @unlink($public_status);
-
-    if (is_dir($status_dir) || @mkdir($status_dir, 0755, true))
-    {
-      @file_put_contents($status_dir.'/deleted-'.$member_id, date('c')."\n", LOCK_EX);
-    }
+    @file_put_contents($status_dir.'/deleted-'.$id, date('c')."\n", LOCK_EX);
   }
 
   if ((int)$cleanup['site_id'] > 0)
