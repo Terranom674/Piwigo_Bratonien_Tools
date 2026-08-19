@@ -14,6 +14,7 @@ import getpass
 import json
 import os
 import shutil
+import socket
 import ssl
 import sys
 import tempfile
@@ -21,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 DAV = "DAV:"
@@ -52,9 +54,37 @@ def safe_local_name(name: str) -> str:
     return name
 
 
+@contextmanager
+def pinned_resolution(host: str, ip: str):
+    host = host.strip("[]").lower()
+    ip = ip.strip("[]")
+    if not host or not ip or host == ip:
+        yield
+        return
+
+    original = socket.getaddrinfo
+
+    def resolve(name, port, family=0, type=0, proto=0, flags=0):
+        normalized = str(name).strip("[]").lower()
+        if normalized == host:
+            return original(ip, port, family, type, proto, flags)
+        return original(name, port, family, type, proto, flags)
+
+    socket.getaddrinfo = resolve
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = original
+
+
 class WebDavClient:
-    def __init__(self, base_url: str, user: str, password: str, timeout: int = 30) -> None:
+    def __init__(self, base_url: str, user: str, password: str, timeout: int = 30, connect_ip: str = "") -> None:
         self.base_url = base_url.rstrip("/")
+        parsed = urllib.parse.urlparse(self.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            fail("Nextcloud base URL must use HTTP or HTTPS and contain a host")
+        self.host = parsed.hostname.strip("[]")
+        self.connect_ip = connect_ip.strip("[]") or self.host
         self.user = user
         self.password = password
         self.timeout = timeout
@@ -84,9 +114,10 @@ class WebDavClient:
         request.add_header("Depth", "1")
         request.add_header("Content-Type", "application/xml; charset=utf-8")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout, context=self.context) as response:
-                status = response.status
-                payload = response.read()
+            with pinned_resolution(self.host, self.connect_ip):
+                with urllib.request.urlopen(request, timeout=self.timeout, context=self.context) as response:
+                    status = response.status
+                    payload = response.read()
         except urllib.error.HTTPError as error:
             if error.code in {401, 403}:
                 fail("Nextcloud rejected the WebDAV credentials or directory access")
@@ -96,14 +127,14 @@ class WebDavClient:
         if status != 207:
             fail(f"Nextcloud PROPFIND returned HTTP {status}")
 
+        base_path = urllib.parse.unquote(urllib.parse.urlparse(url).path).rstrip("/")
+        current: dict[str, object] | None = None
+        children: list[dict[str, object]] = []
         try:
             root = ET.fromstring(payload)
         except ET.ParseError as error:
             raise RuntimeError("Nextcloud returned invalid WebDAV XML") from error
 
-        base_path = urllib.parse.unquote(urllib.parse.urlparse(url).path).rstrip("/")
-        current: dict[str, object] | None = None
-        children: list[dict[str, object]] = []
         for response in root.findall(f"{{{DAV}}}response"):
             href = response.findtext(f"{{{DAV}}}href", default="")
             href_path = urllib.parse.unquote(urllib.parse.urlparse(href).path).rstrip("/")
@@ -213,6 +244,7 @@ def atomic_text(path: Path, text: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
+    parser.add_argument("--connect-ip", default="", help="IP address used for the TCP connection while preserving the URL host for HTTP Host and TLS SNI")
     parser.add_argument("--user", required=True)
     parser.add_argument("--password-file", type=Path)
     parser.add_argument("--root", action="append", required=True, help="WebDAV path relative to the authenticated user's files root")
@@ -241,7 +273,7 @@ def main() -> int:
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
 
-        client = WebDavClient(args.base_url, args.user, password, max(1, args.timeout))
+        client = WebDavClient(args.base_url, args.user, password, max(1, args.timeout), args.connect_ip)
         mapping: dict[str, dict[str, object]] = {}
         manifest: list[str] = []
         total_files = total_folders = total_skipped = 0
@@ -303,6 +335,7 @@ def main() -> int:
         atomic_json(args.mapping, {
             "version": 1,
             "base_url": args.base_url.rstrip("/"),
+            "connect_ip": client.connect_ip,
             "user": args.user,
             "files": final_mapping,
         })
@@ -311,6 +344,7 @@ def main() -> int:
             "files": total_files,
             "folders": total_folders,
             "skipped": total_skipped,
+            "connect_ip": client.connect_ip,
             "source_dir": str(source_dir),
             "manifest": str(args.manifest),
             "mapping": str(args.mapping),

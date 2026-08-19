@@ -6,7 +6,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exists($GLOBALS['template'], 'func_combine_script'))
 {
-  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.30';
+  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.7.1';
   $GLOBALS['template']->func_combine_script(array(
     'id'=>'bratonien_nc_connector_edit_v2',
     'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_edit_v2.js',
@@ -41,6 +41,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_delete_safe.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_webdav.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_webdav_flow.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_edit.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_transport.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_scheduler.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_system.inc.php');
 
@@ -74,7 +75,7 @@ function bratonien_tools_get_tools()
     'album_share_regenerate_link' => array('handler' => 'bratonien_tools_regenerate_album_share_link'),
     'album_share_revoke' => array('handler' => 'bratonien_tools_revoke_album_share'),
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
-    'nc_connector_edit_start' => array('handler' => 'bratonien_tools_nc_connector_edit_start'),
+    'nc_connector_edit_start' => array('handler' => 'bratonien_tools_nc_transport_edit_start'),
     'nc_connector_update_local' => array('handler' => 'bratonien_tools_nc_connector_update_local_friendly'),
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_safe'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
@@ -82,7 +83,7 @@ function bratonien_tools_get_tools()
     'nc_connector_run_now' => array('handler' => 'bratonien_tools_nc_connector_run_now'),
     'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan_webdav_first'),
     'nc_connector_wizard_save_technical' => array('handler' => 'bratonien_tools_nc_wizard_save_technical_flow'),
-    'nc_connector_wizard_directory_browse' => array('handler' => 'bratonien_tools_nc_wizard_directory_browse'),
+    'nc_connector_wizard_directory_browse' => array('handler' => 'bratonien_tools_nc_transport_wizard_directory_browse'),
     'nc_connector_wizard_directory_add' => array('handler' => 'bratonien_tools_nc_wizard_directory_add'),
     'nc_connector_wizard_directory_remove' => array('handler' => 'bratonien_tools_nc_wizard_directory_remove'),
     'nc_connector_wizard_save_mounts' => array('handler' => 'bratonien_tools_nc_wizard_save_sources_dispatch'),

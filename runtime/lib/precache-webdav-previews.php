@@ -6,6 +6,8 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
+require_once(dirname(__DIR__, 2).'/include/nc_transport.inc.php');
+
 const BRATONIEN_WEBDAV_PREVIEW_VERSION = 2;
 const BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE = 4096;
 const BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY = 88;
@@ -24,7 +26,7 @@ function quote_webdav_path($path)
 function fetch_remote_blob($url, $user, $password)
 {
   $ch = curl_init($url);
-  curl_setopt_array($ch, array(
+  $options = array(
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FOLLOWLOCATION => false,
     CURLOPT_CONNECTTIMEOUT => 10,
@@ -32,8 +34,10 @@ function fetch_remote_blob($url, $user, $password)
     CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
     CURLOPT_USERPWD => $user.':'.$password,
     CURLOPT_FAILONERROR => false,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.6.1',
-  ));
+    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.7.1',
+  );
+  bratonien_tools_nc_transport_apply_curl($options, $url);
+  curl_setopt_array($ch, $options);
   $body = curl_exec($ch);
   $errno = curl_errno($ch);
   $error = curl_error($ch);
