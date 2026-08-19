@@ -128,7 +128,6 @@ function bratonien_tools_save_watermark_profile()
     mass_inserts($table, array_keys($data), array($data));
   }
 
-  bratonien_tools_clear_watermark_cache();
   return array('message'=>'Wasserzeichenprofil gespeichert.');
 }
 
@@ -159,7 +158,6 @@ function bratonien_tools_delete_watermark_profile()
   }
 
   pwg_query('DELETE FROM '.bratonien_tools_table('watermark_profiles').' WHERE id='.$id);
-  bratonien_tools_clear_watermark_cache();
   return array('message'=>'Wasserzeichenprofil geloescht.');
 }
 
@@ -176,7 +174,6 @@ function bratonien_tools_duplicate_watermark_profile()
   $profile['name'] .= ' (Kopie)';
   $profile['created'] = date('Y-m-d H:i:s');
   mass_inserts(bratonien_tools_table('watermark_profiles'), array_keys($profile), array($profile));
-  bratonien_tools_clear_watermark_cache();
 
   return array('message'=>'Wasserzeichenprofil dupliziert.');
 }
