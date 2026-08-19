@@ -107,7 +107,7 @@ try
   $rows = $db->query("SELECT id,name,adapter,config_json,secret_blob FROM `{$table}` ORDER BY id DESC");
   if (!$rows) fail_webdav_reconcile('Connector-Verbindungen konnten nicht gelesen werden: '.$db->error);
 
-  foreach (array($configDir=>$configDir, $publicSourceRoot=>$publicSourceRoot, $publicGalleryRoot=>$publicGalleryRoot) as $dir=>$unused)
+  foreach (array($configDir, $publicSourceRoot, $publicGalleryRoot) as $dir)
   {
     if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0755, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
   }
@@ -125,7 +125,6 @@ try
     if (!is_array($config)) $config = array();
     if ((string)$row['adapter'] !== 'remote') continue;
     if ((string)($config['source_mode'] ?? '') !== 'webdav-placeholder') continue;
-    if (empty($config['parallel_test'])) continue;
 
     try
     {
@@ -133,17 +132,6 @@ try
       $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
       if ($baseUrl === '') fail_webdav_reconcile('Nextcloud-Adresse fehlt.');
       if (!$roots) fail_webdav_reconcile('Keine WebDAV-Wurzeln gespeichert.');
-
-      $migration = isset($config['migration']) && is_array($config['migration']) ? $config['migration'] : array();
-      $legacyFallbackId = 0;
-      if ((string)($migration['role'] ?? '') === 'webdav-primary-candidate')
-      {
-        $legacyFallbackId = (int)($migration['legacy_fallback_connection_id'] ?? 0);
-        if ($legacyFallbackId < 1 || $legacyFallbackId === $id)
-        {
-          fail_webdav_reconcile('Die gespeicherte Migrationszuordnung zur Legacy-Verbindung ist ungueltig.');
-        }
-      }
 
       $credentials = decrypt_webdav_credentials((string)$row['secret_blob'], $hexKey);
       $user = trim($credentials['nextcloud_user']);
@@ -175,7 +163,6 @@ try
       }
       if (!is_dir($galleryRoot) && !mkdir($galleryRoot, 0755, true)) fail_webdav_reconcile('WebDAV-Galeriebereich konnte nicht angelegt werden.');
       @chmod($galleryRoot, 0755);
-
       webdav_remove_generated_tree($legacyDefault, $legacyGalleryRoot);
 
       $sourceDir = $publicSourceRoot.'/connection-'.$id;
@@ -209,7 +196,6 @@ try
       $lines = array(
         'PIWIGO_ROOT='.webdav_shell_value($piwigoRoot),
         'CONNECTION_ID='.$id,
-        'MIGRATION_LEGACY_CONNECTION_ID='.$legacyFallbackId,
         'SOURCE_MODE=webdav-placeholder',
         'WEBDAV_BASE_URL='.webdav_shell_value($baseUrl),
         'WEBDAV_USER='.webdav_shell_value($user),
@@ -227,15 +213,15 @@ try
       file_put_contents($configPath, implode("\n", $lines)."\n", LOCK_EX);
       @chmod($configPath, 0600);
 
+      unset($config['migration'], $config['parallel_test']);
       $config['state_dir'] = $stateDir;
       $config['status_file'] = $statusFile;
       $config['parallel_gallery_root'] = $galleryRoot;
       $config['source_fingerprint'] = $fingerprint;
       $config['runtime'] = array(
-        'mode'=>'parallel-webdav',
+        'mode'=>'webdav',
         'config'=>$configPath,
         'piwigo_sync_enabled'=>true,
-        'legacy_fallback_connection_id'=>$legacyFallbackId,
         'reconciled_at'=>date('Y-m-d H:i:s'),
       );
       $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
