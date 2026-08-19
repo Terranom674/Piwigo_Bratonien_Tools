@@ -165,7 +165,6 @@ try
       if (!is_dir($galleryRoot) && !mkdir($galleryRoot, 0755, true)) fail_webdav_reconcile('WebDAV-Galeriebereich konnte nicht angelegt werden.');
       @chmod($galleryRoot, 0755);
 
-      // Alte technische Wrapper unter ./galleries duerfen nicht als Piwigo-Alben auftauchen.
       webdav_remove_generated_tree($legacyDefault, $legacyGalleryRoot);
 
       $sourceDir = $publicSourceRoot.'/connection-'.$id;
@@ -189,8 +188,9 @@ try
       {
         $path = trim((string)($root['webdav_path'] ?? ''), '/');
         $display = trim((string)($root['display_name'] ?? ''));
-        if ($path === '' || $display === '' || preg_match('/[\t\r\n]/', $path.$display)) fail_webdav_reconcile('Eine gespeicherte WebDAV-Wurzel ist ungueltig.');
-        $rootLines[] = $path."\t".$display;
+        $runtimePath = $path === '' ? '/' : $path;
+        if ($display === '' || preg_match('/[\t\r\n]/', $runtimePath.$display)) fail_webdav_reconcile('Eine gespeicherte WebDAV-Wurzel ist ungueltig.');
+        $rootLines[] = $runtimePath."\t".$display;
       }
       file_put_contents($rootsPath, implode("\n", $rootLines)."\n", LOCK_EX);
       @chmod($rootsPath, 0600);
