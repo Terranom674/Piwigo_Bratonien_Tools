@@ -68,8 +68,6 @@ function bratonien_tools_nc_connector_edit_start()
     'transport'=>'webdav',
   ));
 
-  // If WebDAV credentials are already present, open directly in the friendly
-  // folder browser. Otherwise start at the login step so the user can add them.
   if ($base_url !== '' && $username !== '' && $password !== '')
   {
     $state['step'] = 2;
@@ -90,8 +88,6 @@ function bratonien_tools_nc_connector_edit_start()
     }
     catch (Throwable $e)
     {
-      // Do not make the editor unusable because an old credential no longer
-      // works. Return to the login page and let the user replace it.
       $state['step'] = 1;
       $state['scan_ok'] = false;
       $state['technical_error'] = $e->getMessage();
@@ -110,74 +106,4 @@ function bratonien_tools_nc_connector_edit_start()
       ? 'Verbindung #'.$id.' wurde zum Bearbeiten geöffnet.'
       : 'Verbindung #'.$id.' wird im Assistenten auf WebDAV vorbereitet. Die bestehende Legacy-Verbindung bleibt dabei als Fallback erhalten.',
   );
-}
-
-function bratonien_tools_nc_connector_update_name()
-{
-  $id = (int)($_POST['connection_id'] ?? 0);
-  $name = trim((string)($_POST['connection_name'] ?? ''));
-  if ($name === '') throw new RuntimeException('Der Verbindungsname darf nicht leer sein.');
-
-  $connection = bratonien_tools_nc_connector_connection($id, false);
-  if (!$connection) throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
-
-  $table = bratonien_tools_nc_connector_table();
-  $now = date('Y-m-d H:i:s');
-  pwg_query("UPDATE `$table` SET name='".pwg_db_real_escape_string($name)."', updated='".pwg_db_real_escape_string($now)."' WHERE id=".$id." LIMIT 1");
-
-  return array('message'=>'Verbindungsname wurde gespeichert.');
-}
-
-/**
- * Legacy-only advanced editor kept for installations that still need the old
- * path during migration. It is deliberately separate from the normal editor.
- */
-function bratonien_tools_nc_connector_update_technical()
-{
-  $id = (int)($_POST['connection_id'] ?? 0);
-  $connection = bratonien_tools_nc_connector_connection($id, true);
-  if (!$connection) throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
-  if ((string)$connection['adapter'] !== 'local') throw new RuntimeException('Technische Legacy-Einstellungen sind nur für lokale Altverbindungen verfügbar.');
-
-  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
-  $port = (int)($_POST['nc_port'] ?? 5432);
-  if ($port < 1 || $port > 65535) throw new RuntimeException('Ungültiger PostgreSQL-Port.');
-
-  $gallery_root = rtrim(trim((string)($_POST['nc_gallery_root'] ?? '')), '/');
-  if ($gallery_root === '' || $gallery_root[0] !== '/') throw new RuntimeException('Der Galerie-Pfad muss ein absoluter Pfad sein.');
-
-  $config['host'] = trim((string)($_POST['nc_host'] ?? ''));
-  $config['port'] = (string)$port;
-  $config['database'] = trim((string)($_POST['nc_database'] ?? ''));
-  $config['user'] = trim((string)($_POST['nc_user'] ?? ''));
-  $config['source_view'] = trim((string)($_POST['nc_source_view'] ?? ''));
-  $config['activity_view'] = trim((string)($_POST['nc_activity_view'] ?? ''));
-  $config['gallery_root'] = $gallery_root;
-  $config['quiet_seconds'] = max(0, (int)($_POST['nc_quiet_seconds'] ?? 120));
-  $config['max_wait_seconds'] = max(60, (int)($_POST['nc_max_wait_seconds'] ?? 900));
-  $config['full_sync_seconds'] = max(300, (int)($_POST['nc_full_sync_seconds'] ?? 86400));
-  $config['storages'] = bratonien_tools_nc_connector_parse_storages($_POST['nc_storages'] ?? '');
-
-  foreach (array('host','database','user','source_view','activity_view') as $key)
-  {
-    if (trim((string)$config[$key]) === '') throw new RuntimeException('Die technische Einstellung '.$key.' darf nicht leer sein.');
-  }
-  bratonien_tools_nc_connector_view_name($config['source_view']);
-  bratonien_tools_nc_connector_view_name($config['activity_view']);
-
-  $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
-  $new_db_password = (string)($_POST['nc_db_password'] ?? '');
-  if ($new_db_password !== '') $credentials['db_password'] = $new_db_password;
-  if (trim((string)($credentials['db_password'] ?? '')) === '') throw new RuntimeException('Für die Legacy-Verbindung ist kein Datenbankpasswort gespeichert.');
-
-  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($config_json)) throw new RuntimeException('Connector-Konfiguration konnte nicht serialisiert werden.');
-  $payload = json_encode($credentials, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($payload)) throw new RuntimeException('Connector-Zugangsdaten konnten nicht serialisiert werden.');
-
-  $table = bratonien_tools_nc_connector_table();
-  $now = date('Y-m-d H:i:s');
-  pwg_query("UPDATE `$table` SET config_json='".pwg_db_real_escape_string($config_json)."', secret_blob='".pwg_db_real_escape_string(bratonien_tools_nc_connector_encrypt_secret($payload))."', updated='".pwg_db_real_escape_string($now)."' WHERE id=".$id." LIMIT 1");
-
-  return array('message'=>'Technische Legacy-Einstellungen wurden gespeichert. Der nächste Lauf verwendet die neuen Werte.');
 }
