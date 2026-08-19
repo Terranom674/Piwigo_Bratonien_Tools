@@ -58,6 +58,8 @@ function bratonien_tools_get_tools()
     'nc_connector_create_local' => array('handler' => 'bratonien_tools_nc_connector_create_local_api_first'),
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
     'nc_connector_edit_start' => array('handler' => 'bratonien_tools_nc_connector_edit_start'),
+    'nc_connector_migrate_start' => array('handler' => 'bratonien_tools_nc_connector_migrate_start'),
+    'nc_connector_update_local' => array('handler' => 'bratonien_tools_nc_connector_update_local_friendly'),
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_safe'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
     'nc_connector_update_technical' => array('handler' => 'bratonien_tools_nc_connector_update_technical'),
