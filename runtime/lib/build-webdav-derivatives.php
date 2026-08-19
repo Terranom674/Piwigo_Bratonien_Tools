@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.7.4';
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.7.5';
 
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
@@ -54,9 +54,6 @@ try
     throw new RuntimeException('Piwigo-Galeriederivat ist nicht konfiguriert.');
   }
 
-  // Only the gallery thumbnail is prebuilt. Keep the Piwigo target type/path,
-  // but never crop to the 1x1 placeholder geometry. The real Nextcloud
-  // preview dimensions determine the aspect ratio.
   $gallery_params = clone $standard_gallery;
   $gallery_params->sizing = new SizingParams(
     array(
@@ -73,6 +70,7 @@ try
   $generated_or_ready = 0;
   $identity = 0;
   $metadata_repaired = 0;
+  $legacy_derivatives_rebuilt = 0;
   $errors = 0;
   $error_lines = array();
 
@@ -133,6 +131,29 @@ try
         continue;
       }
 
+      $target = $probe->get_path();
+      if ($target !== '' && is_file($target) && is_readable($target))
+      {
+        $expected_size = $gallery_params->compute_final_size(array($preview_width, $preview_height));
+        $existing_size = @getimagesize($target);
+        if (
+          is_array($expected_size)
+          && isset($expected_size[0], $expected_size[1])
+          && is_array($existing_size)
+          && isset($existing_size[0], $existing_size[1])
+          && ((int)$existing_size[0] !== (int)$expected_size[0] || (int)$existing_size[1] !== (int)$expected_size[1])
+        )
+        {
+          if (!@unlink($target))
+          {
+            $errors++;
+            $error_lines[] = 'Bild #'.$image_id.' Galerie: falsches Alt-Derivat konnte nicht entfernt werden: '.$target;
+            continue;
+          }
+          $legacy_derivatives_rebuilt++;
+        }
+      }
+
       $detail = '';
       if (bratonien_tools_webdav_generate_derivative($gallery_params, $src, $detail))
       {
@@ -175,6 +196,7 @@ try
     ' bereit='.$generated_or_ready.
     ' identisch='.$identity.
     ' metadaten_repariert='.$metadata_repaired.
+    ' alt_derivate_neu='.$legacy_derivatives_rebuilt.
     ' fehler='.$errors."\n";
 
   exit($errors > 0 ? 1 : 0);
