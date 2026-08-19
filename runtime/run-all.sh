@@ -5,6 +5,46 @@ CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
 
+read_config_value() {
+    local key="$1"
+    local file="$2"
+    local value
+    value="$(sed -n "s/^${key}=//p" "$file" | tail -n 1)"
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    printf '%s' "$value"
+}
+
+write_route_status() {
+    local route="$1"
+    local label="$2"
+    local detail="$3"
+    local fallback_used="$4"
+    local success="$5"
+
+    [[ -n "${ROUTE_STATUS_FILE:-}" ]] || return 0
+    mkdir -p -- "$(dirname -- "$ROUTE_STATUS_FILE")"
+
+    php -r '
+      $payload = array(
+        "timestamp" => time(),
+        "route" => (string)$argv[2],
+        "label" => (string)$argv[3],
+        "detail" => (string)$argv[4],
+        "fallback_used" => $argv[5] === "1",
+        "success" => $argv[6] === "1"
+      );
+      $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+      if (!is_string($json) || file_put_contents($argv[1], $json.PHP_EOL, LOCK_EX) === false) {
+        fwrite(STDERR, "Route-Status konnte nicht geschrieben werden.\n");
+        exit(1);
+      }
+      @chmod($argv[1], 0644);
+    ' "$ROUTE_STATUS_FILE" "$route" "$label" "$detail" "$fallback_used" "$success"
+}
+
 if ! php "$SCRIPT_DIR/reconcile.php"; then
     echo "NC Connector: gespeicherte lokale Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
     exit 1
@@ -15,10 +55,6 @@ if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
     exit 1
 fi
 
-# Nach dem Reconcile kennt Piwigo alle noch aktiven WebDAV-Verbindungen. Jetzt
-# werden Sites, Alben, Bilddatensaetze und Derivate geloeschter Verbindungen
-# entfernt. Das erfasst auch Verbindungen, die bereits vor diesem Update
-# geloescht wurden.
 if ! php "$SCRIPT_DIR/cleanup-webdav-piwigo.php"; then
     echo "NC Connector: Piwigo-Inhalte geloeschter WebDAV-Verbindungen konnten nicht bereinigt werden." >&2
     exit 1
@@ -37,11 +73,15 @@ if [[ ${#configs[@]} -eq 0 && ${#webdav_configs[@]} -eq 0 ]]; then
     exit 0
 fi
 
-# WebDAV ist ab 0.9.6.2 der primaere Produktionsweg.
-# Die alte lokale Verbindung bleibt unveraendert vorhanden, wird aber nur noch
-# ausgefuehrt, wenn kein WebDAV-Lauf erfolgreich abgeschlossen wurde. Dadurch
-# gibt es keinen doppelten regulaeren Import mehr, waehrend der alte Weg als
-# echter Rueckfall erhalten bleibt.
+route_piwigo_root=""
+for candidate in "${webdav_configs[@]}" "${configs[@]}"; do
+    [[ -f "$candidate" ]] || continue
+    route_piwigo_root="$(read_config_value PIWIGO_ROOT "$candidate")"
+    [[ -n "$route_piwigo_root" ]] && break
+done
+[[ -n "$route_piwigo_root" ]] || route_piwigo_root="/var/www/piwigo"
+ROUTE_STATUS_FILE="${route_piwigo_root%/}/_data/bratonien-tools/nc-connector-status/route-status.json"
+
 webdav_success=0
 webdav_failed=0
 
@@ -57,11 +97,23 @@ for config in "${webdav_configs[@]}"; do
 done
 
 if [[ "$webdav_success" -eq 1 ]]; then
+    write_route_status \
+        "webdav" \
+        "WebDAV (primaer)" \
+        "WebDAV erfolgreich. Legacy-Fallback wurde in diesem Lauf nicht ausgefuehrt." \
+        "0" \
+        "1"
     echo "NC Connector: WebDAV erfolgreich; Legacy-Verbindung wird in diesem Lauf nicht ausgefuehrt."
     exit 0
 fi
 
 if [[ ${#configs[@]} -eq 0 ]]; then
+    write_route_status \
+        "failed" \
+        "FEHLER - kein Datenweg" \
+        "WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." \
+        "0" \
+        "0"
     echo "NC Connector: WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." >&2
     exit 1
 fi
@@ -76,11 +128,7 @@ for config in "${configs[@]}"; do
         connection_id="${BASH_REMATCH[1]}"
     fi
 
-    piwigo_root="$(sed -n 's/^PIWIGO_ROOT=//p' "$config" | tail -n 1)"
-    piwigo_root="${piwigo_root%\"}"
-    piwigo_root="${piwigo_root#\"}"
-    piwigo_root="${piwigo_root%\'}"
-    piwigo_root="${piwigo_root#\'}"
+    piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
     [[ -n "$piwigo_root" ]] || piwigo_root="/var/www/piwigo"
     tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
 
@@ -102,9 +150,22 @@ for config in "${configs[@]}"; do
 done
 
 if [[ "$legacy_result" -eq 0 ]]; then
+    write_route_status \
+        "legacy_fallback" \
+        "LEGACY-FALLBACK AKTIV" \
+        "WebDAV war nicht erfolgreich. Der alte lokale Datenweg wurde als Fallback ausgefuehrt." \
+        "1" \
+        "1"
     echo "NC Connector: Legacy-Fallback erfolgreich."
     exit 0
 fi
+
+write_route_status \
+    "failed" \
+    "FEHLER - WebDAV und Fallback" \
+    "WebDAV und Legacy-Fallback sind fehlgeschlagen." \
+    "1" \
+    "0"
 
 if [[ "$webdav_failed" -eq 1 ]]; then
     echo "NC Connector: WebDAV und Legacy-Fallback sind fehlgeschlagen." >&2
