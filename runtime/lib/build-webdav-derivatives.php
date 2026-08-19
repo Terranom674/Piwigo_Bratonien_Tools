@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.6.1';
+const BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION = '0.9.7.4';
 
 $options = getopt('', array('piwigo-root:', 'connection-id:'));
 $piwigo_root = rtrim((string)($options['piwigo-root'] ?? ''), '/');
@@ -48,11 +48,26 @@ if (!function_exists('bratonien_tools_webdav_image_source_info') || !function_ex
 
 try
 {
-  $variants = bratonien_tools_webdav_derivative_variants();
-  if (!$variants)
+  $standard_gallery = ImageStdParams::get_by_type(IMG_THUMB);
+  if (!$standard_gallery || !isset($standard_gallery->sizing->ideal_size))
   {
-    throw new RuntimeException('Keine Piwigo-Derivate konfiguriert.');
+    throw new RuntimeException('Piwigo-Galeriederivat ist nicht konfiguriert.');
   }
+
+  // Only the gallery thumbnail is prebuilt. Keep the Piwigo target type/path,
+  // but never crop to the 1x1 placeholder geometry. The real Nextcloud
+  // preview dimensions determine the aspect ratio.
+  $gallery_params = clone $standard_gallery;
+  $gallery_params->sizing = new SizingParams(
+    array(
+      (int)$standard_gallery->sizing->ideal_size[0],
+      (int)$standard_gallery->sizing->ideal_size[1],
+    ),
+    0,
+    null
+  );
+  $gallery_params->type = IMG_THUMB;
+  $gallery_params->use_watermark = false;
 
   $images = 0;
   $generated_or_ready = 0;
@@ -109,33 +124,30 @@ try
     }
 
     $src = new SrcImage($row);
-    foreach ($variants as $variant_name => $params)
+    try
     {
-      try
+      $probe = new DerivativeImage($gallery_params, $src);
+      if ($probe->same_as_source())
       {
-        $probe = new DerivativeImage($params, $src);
-        if ($probe->same_as_source())
-        {
-          $identity++;
-          continue;
-        }
-
-        $detail = '';
-        if (bratonien_tools_webdav_generate_derivative($params, $src, $detail))
-        {
-          $generated_or_ready++;
-        }
-        else
-        {
-          $errors++;
-          $error_lines[] = 'Bild #'.$image_id.' '.$variant_name.': '.($detail !== '' ? $detail : 'Derivat konnte nicht erzeugt werden.');
-        }
+        $identity++;
+        continue;
       }
-      catch (Throwable $e)
+
+      $detail = '';
+      if (bratonien_tools_webdav_generate_derivative($gallery_params, $src, $detail))
+      {
+        $generated_or_ready++;
+      }
+      else
       {
         $errors++;
-        $error_lines[] = 'Bild #'.$image_id.' '.$variant_name.': '.get_class($e).': '.$e->getMessage();
+        $error_lines[] = 'Bild #'.$image_id.' Galerie: '.($detail !== '' ? $detail : 'Galeriederivat konnte nicht erzeugt werden.');
       }
+    }
+    catch (Throwable $e)
+    {
+      $errors++;
+      $error_lines[] = 'Bild #'.$image_id.' Galerie: '.get_class($e).': '.$e->getMessage();
     }
   }
 
@@ -159,7 +171,7 @@ try
 
   echo 'WebDAV-Derivative-Builder: version='.BRATONIEN_WEBDAV_DERIVATIVE_BUILDER_VERSION.
     ' bilder='.$images.
-    ' varianten='.count($variants).
+    ' varianten=1'.
     ' bereit='.$generated_or_ready.
     ' identisch='.$identity.
     ' metadaten_repariert='.$metadata_repaired.
