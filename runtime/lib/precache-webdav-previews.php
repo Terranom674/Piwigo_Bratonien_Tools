@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli')
 
 require_once(dirname(__DIR__, 2).'/include/nc_transport.inc.php');
 
-const BRATONIEN_WEBDAV_PREVIEW_VERSION = 3;
+const BRATONIEN_WEBDAV_PREVIEW_VERSION = 2;
 const BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE = 4096;
 const BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY = 88;
 
