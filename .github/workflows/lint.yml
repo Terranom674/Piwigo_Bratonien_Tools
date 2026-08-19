@@ -25,6 +25,24 @@ jobs:
             php -l "$file"
           done < <(find . -type f -name '*.php' -print0)
 
+      - name: Doppelte Bratonien-Funktionen pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          duplicates="$(grep -RhoE 'function[[:space:]]+bratonien_tools_[A-Za-z0-9_]+' --include='*.php' . | awk '{print $2}' | sort | uniq -d || true)"
+          if [[ -n "$duplicates" ]]; then
+            echo "Doppelte globale Bratonien-Funktionen gefunden:" >&2
+            printf '%s\n' "$duplicates" >&2
+            exit 1
+          fi
+
+      - name: Admin JavaScript Syntax pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '/<script>/,/<\/script>/p' template/admin_tabs.tpl | sed '1d;$d' > /tmp/bratonien-admin-tabs.js
+          node --check /tmp/bratonien-admin-tabs.js
+
       - name: Python Syntax pruefen
         shell: bash
         run: |
