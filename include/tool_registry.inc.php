@@ -13,6 +13,12 @@ if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exi
     'load'=>'footer',
     'version'=>$script_version,
   ));
+  $GLOBALS['template']->func_combine_script(array(
+    'id'=>'bratonien_nc_connector_run_now',
+    'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_run_now.js',
+    'load'=>'footer',
+    'version'=>$script_version,
+  ));
 }
 
 require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
