@@ -49,18 +49,21 @@ function bratonien_tools_webdav_image_source_info($image_id)
   }
 
   $root_path = '';
+  $root_found = false;
   $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
   foreach ($roots as $root)
   {
     if ((int)($root['fileid'] ?? 0) === $root_fileid)
     {
       $root_path = trim((string)($root['webdav_path'] ?? ''), '/');
+      $root_found = true;
       break;
     }
   }
-  if ($root_path === '') return $cache[$image_id] = null;
+  if (!$root_found) return $cache[$image_id] = null;
 
-  $webdav_path = $root_path.'/'.$relative_path;
+  $root_is_base = $root_path === '';
+  $webdav_path = $root_is_base ? $relative_path : $root_path.'/'.$relative_path;
   $content_type = '';
   $size = 0;
   $etag = '';
@@ -90,6 +93,7 @@ function bratonien_tools_webdav_image_source_info($image_id)
     'image_id'=>$image_id,
     'connection_id'=>$connection_id,
     'webdav_path'=>$webdav_path,
+    'root_is_base'=>$root_is_base,
     'content_type'=>$content_type,
     'size'=>$size,
     'etag'=>$etag,
@@ -415,18 +419,21 @@ function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image,
   $info = bratonien_tools_webdav_image_source_info((int)$src_image->id);
   if (!$info) return $url;
 
-  try
+  if (empty($info['root_is_base']))
   {
-    $derivative = new DerivativeImage($params, $src_image);
-    if (!$derivative->same_as_source())
+    try
     {
-      $path = $derivative->get_path();
-      if ($path !== '' && is_file($path) && is_readable($path)) return $url;
+      $derivative = new DerivativeImage($params, $src_image);
+      if (!$derivative->same_as_source())
+      {
+        $path = $derivative->get_path();
+        if ($path !== '' && is_file($path) && is_readable($path)) return $url;
+      }
     }
-  }
-  catch (Throwable $e)
-  {
-    error_log('Bratonien WebDAV derivative lookup #'.(int)$src_image->id.': '.$e->getMessage());
+    catch (Throwable $e)
+    {
+      error_log('Bratonien WebDAV derivative lookup #'.(int)$src_image->id.': '.$e->getMessage());
+    }
   }
 
   $preview_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
