@@ -53,7 +53,6 @@ jobs:
           sed -n '/<script>/,/<\/script>/p' template/admin_tabs.tpl | sed '1d;$d' > /tmp/bratonien-admin-tabs.js
           node --check /tmp/bratonien-admin-tabs.js
           node --check js/nc_connector_edit_v2.js
-          node --check js/nc_connector_run_now.js
 
       - name: Python Syntax pruefen
         shell: bash
