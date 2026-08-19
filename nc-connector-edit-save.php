@@ -20,9 +20,13 @@ function bratonien_tools_nc_edit_json($status, array $payload)
 
 function bratonien_tools_nc_edit_fail($message, array $fields = array(), $stage = '', $detail = '')
 {
+  $visible = trim((string)$message);
+  if ($stage !== '') $visible = 'Bereich: '.$stage.' — '.$visible;
+  if ($detail !== '') $visible .= ' Technische Ursache: '.$detail;
+
   bratonien_tools_nc_edit_json(422, array(
     'ok'=>false,
-    'message'=>(string)$message,
+    'message'=>$visible,
     'stage'=>(string)$stage,
     'detail'=>(string)$detail,
     'fields'=>array_values(array_unique($fields)),
@@ -278,11 +282,10 @@ catch (Throwable $e)
     $add('nc_connection_api_key_secret');
   }
 
-  bratonien_tools_nc_edit_json(422, array(
-    'ok'=>false,
-    'message'=>$message,
-    'stage'=>$stage,
-    'detail'=>'Interne Prüfung: '.get_class($e),
-    'fields'=>$fields,
-  ));
+  bratonien_tools_nc_edit_fail(
+    $message,
+    $fields,
+    $stage,
+    'Interne Prüfung: '.get_class($e)
+  );
 }
