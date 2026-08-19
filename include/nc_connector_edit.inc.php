@@ -13,12 +13,22 @@ function bratonien_tools_nc_connector_migration_state(array $connection)
   if (trim((string)($config['nextcloud_url'] ?? '')) === '') $missing[] = 'Nextcloud-Adresse';
   if (trim((string)($credentials['nextcloud_user'] ?? '')) === '') $missing[] = 'Nextcloud-Benutzer';
   if ((string)($credentials['nextcloud_password'] ?? '') === '') $missing[] = 'Nextcloud-Passwort';
-  if (trim((string)($credentials['api_key_id'] ?? '')) === '') $missing[] = 'Piwigo-API-Schluessel-ID';
-  if (trim((string)($credentials['api_key_secret'] ?? '')) === '') $missing[] = 'Piwigo-API-Geheimnis';
+
+  $api_id = trim((string)($credentials['api_key_id'] ?? ''));
+  $api_secret = trim((string)($credentials['api_key_secret'] ?? ''));
+  $fallback_user = trim((string)($credentials['piwigo_user'] ?? ''));
+  $fallback_password = (string)($credentials['piwigo_password'] ?? '');
+  $api_complete = $api_id !== '' && $api_secret !== '';
+  $fallback_complete = $fallback_user !== '' && $fallback_password !== '';
+
+  if (($api_id === '') !== ($api_secret === '')) $missing[] = 'vollstaendiger Piwigo-API-Zugang';
+  if (!$api_complete && !$fallback_complete) $missing[] = 'Piwigo-API oder Benutzer/Passwort-Fallback';
 
   return array(
     'ready'=>!$missing,
     'missing'=>$missing,
+    'api_available'=>$api_complete,
+    'fallback_available'=>$fallback_complete,
   );
 }
 
