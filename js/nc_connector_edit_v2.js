@@ -19,7 +19,7 @@
 
     function escapeHtml(value) {
       return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c];
       });
     }
 
@@ -239,13 +239,14 @@
       });
     }
 
-    function rebuildLocalActions(deleteForm, id) {
+    function rebuildLocalActions(deleteForm, id, connectionData) {
       var actions = deleteForm.parentElement;
       if (!actions) return;
 
       [].slice.call(actions.querySelectorAll('form')).forEach(function (form) {
         var migrate = form.querySelector('button[value="nc_connector_migrate_start"]');
-        if (migrate) form.remove();
+        var editStart = form.querySelector('button[value="nc_connector_edit_start"]');
+        if (migrate || editStart) form.remove();
       });
       [].slice.call(actions.children).forEach(function (child) {
         if (child.tagName === 'BUTTON' && (child.textContent || '').trim() === 'Bearbeiten') child.remove();
@@ -265,7 +266,8 @@
       info.textContent = 'WebDAV-Migration wird geprüft …';
       actions.insertBefore(info, deleteForm);
 
-      loadConnection(id).then(function (data) {
+      var dataPromise = connectionData ? Promise.resolve(connectionData) : loadConnection(id);
+      dataPromise.then(function (data) {
         var webdav = data.webdav || {};
         if (webdav.migration_ready) {
           info.remove();
@@ -279,15 +281,44 @@
       });
     }
 
+    function rebuildRemoteActions(deleteForm, id) {
+      var actions = deleteForm.parentElement;
+      if (!actions) return;
+      [].slice.call(actions.querySelectorAll('form')).forEach(function (form) {
+        var oldEdit = form.querySelector('button[value="nc_connector_edit_start"]');
+        var oldMigrate = form.querySelector('button[value="nc_connector_migrate_start"]');
+        if (oldEdit || oldMigrate) form.remove();
+      });
+      [].slice.call(actions.children).forEach(function (child) {
+        if (child.tagName === 'BUTTON' && (child.textContent || '').trim() === 'Bearbeiten') child.remove();
+        if (child.dataset && child.dataset.ncMigrationInfo) child.remove();
+      });
+      actions.insertBefore(postForm('Bearbeiten', 'nc_connector_edit_start', id, 'edit'), deleteForm);
+    }
+
+    [].slice.call(section.querySelectorAll('button[value="nc_connector_edit_start"]')).forEach(function (button) {
+      var form = button.closest('form');
+      if (form) form.remove();
+    });
+
     [].slice.call(section.querySelectorAll('button[value="nc_connector_delete"]')).forEach(function (deleteButton) {
       var deleteForm = deleteButton.closest('form');
-      var card = deleteButton.closest('details');
-      if (!deleteForm || !card) return;
+      if (!deleteForm) return;
       var idInput = deleteForm.querySelector('input[name="connection_id"]');
       if (!idInput) return;
-      var text = card.textContent || '';
-      var isLocal = text.indexOf('bestehende Legacy-Konfiguration') !== -1;
-      if (isLocal) rebuildLocalActions(deleteForm, idInput.value);
+      var id = idInput.value;
+
+      loadConnection(id).then(function (data) {
+        if (data.adapter === 'local') rebuildLocalActions(deleteForm, id, data);
+        else rebuildRemoteActions(deleteForm, id);
+      }).catch(function (error) {
+        var actions = deleteForm.parentElement;
+        if (!actions) return;
+        var info = document.createElement('span');
+        info.className = 'bratonien-main-cache__warning';
+        info.textContent = 'Verbindungstyp konnte nicht geladen werden: '+(error.message || String(error));
+        actions.insertBefore(info, deleteForm);
+      });
     });
   });
 })();
