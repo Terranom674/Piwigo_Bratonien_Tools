@@ -53,6 +53,30 @@ function bratonien_tools_nc_connector_admin_connections(array $connections)
   return $visible;
 }
 
+function bratonien_tools_nc_connector_admin_last_status(array $connection)
+{
+  $latest = bratonien_tools_nc_connector_connection_last_status($connection);
+  $legacy_id = (int)($connection['legacy_fallback_connection_id'] ?? 0);
+  if ($legacy_id < 1)
+  {
+    return $latest;
+  }
+
+  $legacy = bratonien_tools_nc_connector_connection($legacy_id, false);
+  if (!$legacy)
+  {
+    return $latest;
+  }
+
+  $legacy_status = bratonien_tools_nc_connector_connection_last_status($legacy);
+  if ((int)($legacy_status['timestamp'] ?? 0) > (int)($latest['timestamp'] ?? 0))
+  {
+    return $legacy_status;
+  }
+
+  return $latest;
+}
+
 $tools = bratonien_tools_get_tools();
 $messages = array();
 $errors = array();
@@ -182,7 +206,7 @@ foreach ($nc_connector['connections'] as $visible_connection)
 }
 foreach ($nc_connector['connections'] as &$nc_connection)
 {
-  $nc_connection['last_sync'] = bratonien_tools_nc_connector_connection_last_status($nc_connection);
+  $nc_connection['last_sync'] = bratonien_tools_nc_connector_admin_last_status($nc_connection);
   $nc_connection['display_name'] = $nc_connection['name'];
 
   $storage_lines = array();
