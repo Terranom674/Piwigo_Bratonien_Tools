@@ -59,10 +59,6 @@ for target in (status_file, public_file):
 PY
 }
 
-compact_output() {
-    tail -n 12 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//'
-}
-
 failure() {
     local code="$1" command="$2" line="$3"
     trap - ERR
@@ -94,28 +90,6 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --state "$SHADOW_MAP_FILE"
 
 trap - ERR
-PREVIEW_CACHE="$PIWIGO_ROOT/_data/bratonien-tools/nc-webdav-preview/connection-$CONNECTION_ID"
-PREVIEW_OUTPUT=""
-PREVIEW_EXIT=0
-if PREVIEW_OUTPUT="$(php "$SCRIPT_DIR/lib/precache-webdav-previews.php" \
-    --mapping="$WEBDAV_MAPPING_FILE" \
-    --base-url="$WEBDAV_BASE_URL" \
-    --user="$WEBDAV_USER" \
-    --password-file="$WEBDAV_PASSWORD_FILE" \
-    --cache-dir="$PREVIEW_CACHE" 2>&1)"; then
-    PREVIEW_EXIT=0
-else
-    PREVIEW_EXIT=$?
-fi
-[[ -z "$PREVIEW_OUTPUT" ]] || printf '%s\n' "$PREVIEW_OUTPUT"
-if [[ "$PREVIEW_EXIT" -ne 0 ]]; then
-    DETAIL="Exit-Code: $PREVIEW_EXIT"
-    if [[ -n "$PREVIEW_OUTPUT" ]]; then
-        DETAIL+="; Ausgabe: $(printf '%s\n' "$PREVIEW_OUTPUT" | compact_output)"
-    fi
-    write_status error "WebDAV-Vorschaubilder konnten beim Einlesen nicht erzeugt werden" "$DETAIL"
-    exit "$PREVIEW_EXIT"
-fi
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     PIWIGO_OUTPUT=""
@@ -133,7 +107,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     if [[ "$PIWIGO_EXIT" -ne 0 ]]; then
         DETAIL="Exit-Code: $PIWIGO_EXIT"
         if [[ -n "$PIWIGO_OUTPUT" ]]; then
-            DETAIL+="; Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | compact_output)"
+            DETAIL+="; Ausgabe: $(printf '%s\n' "$PIWIGO_OUTPUT" | tail -n 12 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//')"
         fi
 
         if grep -qi 'Invalid username/password' <<<"$PIWIGO_OUTPUT"; then
@@ -160,28 +134,21 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         exit "$PIWIGO_EXIT"
     fi
 
-    DERIVATIVE_OUTPUT=""
-    DERIVATIVE_EXIT=0
-    if DERIVATIVE_OUTPUT="$(php "$SCRIPT_DIR/lib/build-webdav-derivatives.php" \
-        --piwigo-root="$PIWIGO_ROOT" \
-        --connection-id="$CONNECTION_ID" 2>&1)"; then
-        DERIVATIVE_EXIT=0
-    else
-        DERIVATIVE_EXIT=$?
-    fi
-    [[ -z "$DERIVATIVE_OUTPUT" ]] || printf '%s\n' "$DERIVATIVE_OUTPUT"
-    if [[ "$DERIVATIVE_EXIT" -ne 0 ]]; then
-        DETAIL="Exit-Code: $DERIVATIVE_EXIT"
-        if [[ -n "$DERIVATIVE_OUTPUT" ]]; then
-            DETAIL+="; Ausgabe: $(printf '%s\n' "$DERIVATIVE_OUTPUT" | compact_output)"
-        fi
-        write_status error "Piwigo-Derivate für WebDAV-Bilder konnten nicht erzeugt werden" "$DETAIL"
-        exit "$DERIVATIVE_EXIT"
+    MEDIA_UNIT="bratonien-nc-media-${CONNECTION_ID}-$(date +%s)"
+    if ! systemd-run \
+        --quiet \
+        --collect \
+        --unit="$MEDIA_UNIT" \
+        --property=RuntimeMaxSec=30min \
+        --setenv="PIWIGO_CONFIG=$CONFIG_FILE" \
+        /usr/bin/env bash "$SCRIPT_DIR/build-webdav-media.sh"; then
+        write_status error "Bildaufbereitung konnte nicht im Hintergrund gestartet werden"
+        exit 1
     fi
 
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt" \
+            "WebDAV eingelesen und Piwigo synchronisiert; Bildaufbereitung läuft im Hintergrund" \
             "" \
             "api" \
             "ok" \
@@ -190,7 +157,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "Fallback wurde nicht benötigt"
     elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Piwigo über Fallback synchronisiert und Derivate erzeugt" \
+            "WebDAV eingelesen und Piwigo über Fallback synchronisiert; Bildaufbereitung läuft im Hintergrund" \
             "" \
             "fallback" \
             "not_used" \
@@ -198,8 +165,8 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "ok" \
             "Benutzername/Passwort-Fallback erfolgreich"
     else
-        write_status ok "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt"
+        write_status ok "WebDAV eingelesen und Piwigo synchronisiert; Bildaufbereitung läuft im Hintergrund"
     fi
 else
-    write_status ok "WebDAV eingelesen und Vorschaubilder erzeugt; Registrierung erfolgt über den bestehenden produktiven Piwigo-Sync"
+    write_status ok "WebDAV eingelesen; Piwigo-Synchronisierung ist für diese Verbindung deaktiviert"
 fi
