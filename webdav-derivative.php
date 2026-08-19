@@ -20,12 +20,31 @@ function bratonien_tools_webdav_derivative_abort($status, $message)
   exit;
 }
 
+function bratonien_tools_webdav_derivative_ajax_response($url)
+{
+  http_response_code(200);
+  header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
+  echo json_encode(array('url'=>(string)$url), JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+function bratonien_tools_webdav_derivative_binary_url($image_id, $type)
+{
+  return get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-derivative.php?id='.(int)$image_id.'&type='.rawurlencode((string)$type);
+}
+
 function bratonien_tools_webdav_derivative_fallback($image_id)
 {
   $url = bratonien_tools_webdav_image_url((int)$image_id, false);
   if (!$url)
   {
     bratonien_tools_webdav_derivative_abort(404, 'WebDAV-Bildquelle ist nicht verfuegbar.');
+  }
+
+  if (isset($_GET['ajaxload']) && (string)$_GET['ajaxload'] === 'true')
+  {
+    bratonien_tools_webdav_derivative_ajax_response($url);
   }
 
   header('Cache-Control: no-store');
@@ -74,17 +93,12 @@ if (!$info)
 $preview = bratonien_tools_webdav_preview_path($info);
 if (!$preview || !is_file($preview) || !is_readable($preview))
 {
-  // Altbestand kann noch keinen vorbereiteten Preview-Cache besitzen. Der
-  // fokussierte Fotorama-Request darf dann nicht mit 404 enden, weil Fotorama
-  // den fehlgeschlagenen Frame sonst nicht erneut laedt. Stattdessen wird nur
-  // fuer dieses angeforderte Bild auf die echte WebDAV-Quelle ausgewichen.
   bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
 $derivative = new DerivativeImage($params, $src);
 if ($derivative->same_as_source())
 {
-  // Niemals die lokale Connector-Platzhalterquelle ausliefern.
   bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
@@ -113,6 +127,17 @@ if (!bratonien_tools_webdav_derivative_matches_preview($target, $params, $image_
 if (!bratonien_tools_webdav_derivative_matches_preview($target, $params, $image_id))
 {
   bratonien_tools_webdav_derivative_fallback($image_id);
+}
+
+// Piwigos thumbnails.loader.js fordert nicht gecachte Derivate mit
+// ?ajaxload=true an und erwartet JSON {"url":"..."}. Erst diese URL wird
+// danach als echtes Bild geladen. Binärdaten an dieser Stelle führen direkt
+// zum Piwigo-Fehlersymbol.
+if (isset($_GET['ajaxload']) && (string)$_GET['ajaxload'] === 'true')
+{
+  bratonien_tools_webdav_derivative_ajax_response(
+    bratonien_tools_webdav_derivative_binary_url($image_id, $type)
+  );
 }
 
 $size = @filesize($target);
