@@ -258,7 +258,45 @@ try
     }
   }
 
+  $fallback_user = trim((string)($_POST['nc_fallback_user'] ?? ($credentials['piwigo_user'] ?? '')));
+  $submitted_fallback_password = (string)($_POST['nc_fallback_password'] ?? '');
+  $fallback_password = $submitted_fallback_password !== '' ? $submitted_fallback_password : (string)($credentials['piwigo_password'] ?? '');
+  if (($fallback_user === '') !== ($fallback_password === ''))
+  {
+    bratonien_tools_nc_edit_fail(
+      'Fallback-Benutzer und Fallback-Passwort müssen gemeinsam vollständig sein.',
+      array('nc_fallback_user','nc_fallback_password'),
+      'Piwigo-Fallback'
+    );
+  }
+  if ($fallback_user !== '')
+  {
+    try
+    {
+      bratonien_tools_nc_connector_validate_fallback_credentials($fallback_user, $fallback_password);
+    }
+    catch (Throwable $e)
+    {
+      bratonien_tools_nc_edit_fail(
+        'Der Piwigo-Fallback wurde abgelehnt: '.$e->getMessage(),
+        array('nc_fallback_user','nc_fallback_password'),
+        'Piwigo-Fallback'
+      );
+    }
+  }
+
   $result = bratonien_tools_nc_connector_update_local_friendly();
+
+  if (array_key_exists('nc_fallback_user', $_POST) || array_key_exists('nc_fallback_password', $_POST))
+  {
+    $updated = bratonien_tools_nc_connector_connection($id, true);
+    if (!$updated) throw new RuntimeException('Die Verbindung konnte nach dem Speichern nicht erneut geladen werden.');
+    $updated_credentials = bratonien_tools_nc_connector_scoped_secret($updated);
+    $updated_credentials['piwigo_user'] = $fallback_user;
+    $updated_credentials['piwigo_password'] = $fallback_password;
+    bratonien_tools_nc_connector_store_scoped_secret($id, $updated, $updated_credentials);
+  }
+
   bratonien_tools_nc_edit_json(200, array(
     'ok'=>true,
     'message'=>(string)($result['message'] ?? 'Verbindung wurde gespeichert.'),
@@ -301,6 +339,12 @@ catch (Throwable $e)
     $stage = 'Piwigo API';
     $add('nc_connection_api_key_id');
     $add('nc_connection_api_key_secret');
+  }
+  if (stripos($message, 'Fallback') !== false)
+  {
+    $stage = 'Piwigo-Fallback';
+    $add('nc_fallback_user');
+    $add('nc_fallback_password');
   }
 
   bratonien_tools_nc_edit_fail(
