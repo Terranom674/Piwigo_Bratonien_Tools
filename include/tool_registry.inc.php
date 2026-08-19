@@ -6,16 +6,10 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exists($GLOBALS['template'], 'func_combine_script'))
 {
-  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.15';
+  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.24';
   $GLOBALS['template']->func_combine_script(array(
     'id'=>'bratonien_nc_connector_edit_v2',
     'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_edit_v2.js',
-    'load'=>'footer',
-    'version'=>$script_version,
-  ));
-  $GLOBALS['template']->func_combine_script(array(
-    'id'=>'bratonien_nc_connector_source_ui',
-    'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_source_ui.js',
     'load'=>'footer',
     'version'=>$script_version,
   ));
@@ -34,7 +28,6 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_lock.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_manage.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_takeover.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_auth.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_create_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_piwigo_api.inc.php');
@@ -75,7 +68,6 @@ function bratonien_tools_get_tools()
     'nc_connector_create_local' => array('handler' => 'bratonien_tools_nc_connector_create_local_api_first'),
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
     'nc_connector_edit_start' => array('handler' => 'bratonien_tools_nc_connector_edit_start'),
-    'nc_connector_migrate_start' => array('handler' => 'bratonien_tools_nc_connector_migrate_start'),
     'nc_connector_update_local' => array('handler' => 'bratonien_tools_nc_connector_update_local_friendly'),
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_safe'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
@@ -92,10 +84,7 @@ function bratonien_tools_get_tools()
     'nc_connector_wizard_finish' => array('handler' => 'bratonien_tools_nc_wizard_finish_dispatch'),
     'nc_connector_wizard_back' => array('handler' => 'bratonien_tools_nc_wizard_back'),
     'nc_connector_wizard_reset' => array('handler' => 'bratonien_tools_nc_wizard_reset'),
-    'nc_connector_import_legacy' => array('handler' => 'bratonien_tools_nc_connector_import_legacy'),
     'nc_connector_verify' => array('handler' => 'bratonien_tools_nc_connector_verify_connection_scoped'),
-    'nc_connector_prepare_takeover' => array('handler' => 'bratonien_tools_nc_connector_prepare_takeover'),
-    'nc_connector_cancel_takeover' => array('handler' => 'bratonien_tools_nc_connector_cancel_takeover'),
     'nc_connector_piwigo_api_test' => array('handler' => 'bratonien_tools_nc_connector_piwigo_api_test'),
     'nc_connector_piwigo_api_delete' => array('handler' => 'bratonien_tools_nc_connector_api_delete'),
     'nc_connector_fallback_save' => array('handler' => 'bratonien_tools_nc_connector_fallback_save_scoped'),
