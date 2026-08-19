@@ -1,10 +1,63 @@
 (function () {
   'use strict';
 
+  var wizardOpenKey = 'bratonienNcWizardOpen';
+  var wizardModeKey = 'bratonienNcWizardMode';
+
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
     });
+  }
+
+  function setWizardOpen(open) {
+    try {
+      if (open) sessionStorage.setItem(wizardOpenKey, '1');
+      else sessionStorage.removeItem(wizardOpenKey);
+    } catch (e) {}
+  }
+
+  function setWizardMode(mode) {
+    try {
+      if (mode) sessionStorage.setItem(wizardModeKey, mode);
+      else sessionStorage.removeItem(wizardModeKey);
+    } catch (e) {}
+  }
+
+  function showWizardDialog() {
+    var dialog = document.getElementById('bratonien-nc-wizard-dialog');
+    if (!dialog) return;
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      dialog.setAttribute('open', 'open');
+    }
+  }
+
+  function closeWizardDialog() {
+    var dialog = document.getElementById('bratonien-nc-wizard-dialog');
+    if (!dialog) return;
+    if (typeof dialog.close === 'function' && dialog.open) dialog.close();
+    else dialog.removeAttribute('open');
+  }
+
+  function syncWizardRedirectState() {
+    var url;
+    try { url = new URL(window.location.href); } catch (e) { return; }
+    var state = url.searchParams.get('nc_wizard');
+    if (state !== 'open' && state !== 'closed') return;
+
+    if (state === 'open') {
+      setWizardOpen(true);
+      showWizardDialog();
+    } else {
+      setWizardOpen(false);
+      setWizardMode('');
+      closeWizardDialog();
+    }
+
+    url.searchParams.delete('nc_wizard');
+    try { window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + url.hash); } catch (e) {}
   }
 
   function fieldNodes(form, fieldName) {
@@ -94,10 +147,8 @@
         }).then(jsonResponse);
       })
       .then(function () {
-        try {
-          sessionStorage.setItem('bratonienNcWizardMode', 'migrate');
-          sessionStorage.setItem('bratonienNcWizardOpen', '1');
-        } catch (e) {}
+        setWizardMode('migrate');
+        setWizardOpen(true);
         window.location.reload();
       })
       .catch(function (error) {
@@ -107,9 +158,40 @@
       });
   }
 
+  function enhanceWizardLaunchers(root) {
+    [].slice.call(root.querySelectorAll('button[value="nc_connector_migrate_start"], button[value="nc_connector_edit_start"]')).forEach(function (button) {
+      var form = button.closest('form');
+      if (!form || form.dataset.wizardLauncherEnhanced === '1') return;
+      form.dataset.wizardLauncherEnhanced = '1';
+      form.addEventListener('submit', function () {
+        setWizardMode(button.value === 'nc_connector_migrate_start' ? 'migrate' : 'edit');
+        setWizardOpen(true);
+      }, true);
+    });
+  }
+
+  function enhanceWizardForms(root) {
+    [].slice.call(root.querySelectorAll('form[data-bratonien-wizard-form]')).forEach(function (form) {
+      if (form.dataset.wizardLifecycleEnhanced === '1') return;
+      form.dataset.wizardLifecycleEnhanced = '1';
+      form.addEventListener('submit', function (event) {
+        var submitter = event.submitter;
+        var tool = submitter ? String(submitter.value || '') : '';
+        if (tool === 'nc_connector_wizard_reset') {
+          setWizardOpen(false);
+          setWizardMode('');
+          return;
+        }
+        // Do not close on "finish" before the server has accepted the values.
+        // The redirect explicitly closes the dialog only after a successful finish.
+        setWizardOpen(true);
+      }, true);
+    });
+  }
+
   function enhanceMigrationButtons(root) {
     var label = 'Nextcloud-Ordner auswählen & migrieren';
-    var title = 'Die WebDAV-Quelle wird im Nextcloud-Ordnerbrowser ausgewählt. Der bestehende SMB-/Legacy-Speicher wird nicht als WebDAV-Quelle übernommen.';
+    var title = 'Die WebDAV-Quelle wird im Nextcloud-Ordnerbrowser ausgewählt. Der bestehende SMB-/Legacy-Speicher bleibt intern nur als Fallback erhalten.';
     [].slice.call(root.querySelectorAll('button[value="nc_connector_migrate_start"]')).forEach(function (button) {
       if (button.textContent !== label) button.textContent = label;
       if (button.title !== title) button.title = title;
@@ -155,24 +237,24 @@
     if (legacyHeading && !form.querySelector('[data-webdav-source-note]')) {
       var note = document.createElement('p');
       note.dataset.webdavSourceNote = '1';
-      note.className = 'bratonien-main-cache__warning';
-      note.innerHTML = '<strong>Wichtig:</strong> Der folgende SMB-/lokale Speicher gehört ausschließlich zum bisherigen Legacy-Fallback. Er wird <strong>nicht</strong> als WebDAV-Quelle übernommen.';
+      note.className = 'bratonien-base-note';
+      note.innerHTML = '<strong>Fallback:</strong> Der folgende lokale Speicher gehört nur zum bisherigen Ausweichweg. Er ist nicht die WebDAV-Quelle.';
       legacyHeading.insertAdjacentElement('beforebegin', note);
     }
 
     if (storageHeading && storageList && addStorage) {
-      storageHeading.textContent = 'Legacy-Speicher (nur Fallback)';
+      storageHeading.textContent = 'Legacy-Speicher (Fallback)';
 
       var details = document.createElement('details');
       details.dataset.legacyStorageTechnical = '1';
       details.style.marginTop = '.75rem';
       var summary = document.createElement('summary');
-      summary.textContent = 'Technische Legacy-Speicherzuordnung bearbeiten';
+      summary.textContent = 'Technische Fallback-Einstellungen';
       details.appendChild(summary);
 
       var info = document.createElement('p');
       info.className = 'bratonien-base-note';
-      info.textContent = 'Diese Felder betreffen nur den alten Fallback-Weg. Für WebDAV werden keine SMB-Adressen oder lokalen Mount-Pfade eingegeben.';
+      info.textContent = 'Diese Felder sind nur für den alten Ausweichweg relevant. Für WebDAV werden keine lokalen Mount-Pfade benötigt.';
       details.appendChild(info);
 
       storageHeading.insertAdjacentElement('beforebegin', details);
@@ -180,13 +262,15 @@
       details.appendChild(storageList);
       details.appendChild(addStorage);
 
-      addStorage.textContent = 'Legacy-Speicher manuell hinzufügen';
-      addStorage.title = 'Nur für den alten Legacy-Fallback. WebDAV-Ordner werden im Nextcloud-Ordnerbrowser ausgewählt.';
+      addStorage.textContent = 'Fallback-Speicher hinzufügen';
+      addStorage.title = 'Nur für den Legacy-Fallback.';
     }
   }
 
   function enhance(root) {
     if (!root || root.nodeType !== 1) return;
+    enhanceWizardLaunchers(root);
+    enhanceWizardForms(root);
     enhanceMigrationButtons(root);
     if (root.matches && root.matches('#bratonien-nc-connection-edit-v2')) enhanceEditor(root);
     var dialog = root.querySelector ? root.querySelector('#bratonien-nc-connection-edit-v2') : null;
@@ -197,7 +281,10 @@
     var section = document.getElementById('nc-connector');
     if (!section) return;
 
+    syncWizardRedirectState();
     enhance(section);
+    enhanceWizardLaunchers(document);
+    enhanceWizardForms(document);
     enhanceMigrationButtons(document);
 
     var observer = new MutationObserver(function (mutations) {
@@ -208,6 +295,8 @@
       });
       var dialog = document.getElementById('bratonien-nc-connection-edit-v2');
       if (dialog) enhanceEditor(dialog);
+      enhanceWizardLaunchers(document);
+      enhanceWizardForms(document);
       enhanceMigrationButtons(document);
     });
 
