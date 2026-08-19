@@ -61,7 +61,6 @@ function bratonien_tools_save_album_rule()
     )));
   }
 
-  bratonien_tools_clear_watermark_cache();
   return array('message'=>'Albumregel gespeichert.');
 }
 
@@ -94,34 +93,7 @@ function bratonien_tools_resolve_album_rule($category_id, array $categories, arr
     $by_id[(int)$category['id']] = $category;
   }
 
-  $category_id = (int)$category_id;
-  $root = $by_id[$category_id] ?? null;
-  $is_private = $root && isset($root['status']) && $root['status'] === 'private';
-
-  if ($is_private)
-  {
-    if (isset($rules[$category_id]))
-    {
-      $rule = $rules[$category_id];
-      if ($rule['mode'] === 'disabled')
-      {
-        return array('mode'=>'disabled','profile_id'=>null,'source'=>'album');
-      }
-      if ($rule['mode'] === 'profile')
-      {
-        return array('mode'=>'profile','profile_id'=>(int)$rule['profile_id'],'source'=>'album');
-      }
-    }
-
-    $profile_id = $defaults['private_profile'] ?? null;
-    if (empty($profile_id))
-    {
-      return array('mode'=>'disabled','profile_id'=>null,'source'=>'global');
-    }
-    return array('mode'=>'profile','profile_id'=>(int)$profile_id,'source'=>'global');
-  }
-
-  $current = $category_id;
+  $current = (int)$category_id;
   $visited = array();
 
   while ($current > 0 && isset($by_id[$current]) && !isset($visited[$current]))
@@ -144,7 +116,10 @@ function bratonien_tools_resolve_album_rule($category_id, array $categories, arr
     $current = (int)($by_id[$current]['id_uppercat'] ?? 0);
   }
 
-  $profile_id = $defaults['public_profile'] ?? null;
+  $root = $by_id[(int)$category_id] ?? null;
+  $is_private = $root && isset($root['status']) && $root['status'] === 'private';
+  $profile_id = $is_private ? ($defaults['private_profile'] ?? null) : ($defaults['public_profile'] ?? null);
+
   if (empty($profile_id))
   {
     return array('mode'=>'disabled','profile_id'=>null,'source'=>'global');
