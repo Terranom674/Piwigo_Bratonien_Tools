@@ -20,6 +20,19 @@ function bratonien_tools_webdav_derivative_abort($status, $message)
   exit;
 }
 
+function bratonien_tools_webdav_derivative_fallback($image_id)
+{
+  $url = bratonien_tools_webdav_image_url((int)$image_id, false);
+  if (!$url)
+  {
+    bratonien_tools_webdav_derivative_abort(404, 'WebDAV-Bildquelle ist nicht verfuegbar.');
+  }
+
+  header('Cache-Control: no-store');
+  header('Location: '.$url, true, 302);
+  exit;
+}
+
 $image_id = (int)($_GET['id'] ?? 0);
 $type = trim((string)($_GET['type'] ?? ''));
 if ($image_id < 1 || $type === '')
@@ -61,19 +74,24 @@ if (!$info)
 $preview = bratonien_tools_webdav_preview_path($info);
 if (!$preview || !is_file($preview) || !is_readable($preview))
 {
-  bratonien_tools_webdav_derivative_abort(404, 'Nextcloud-Preview ist noch nicht vorbereitet.');
+  // Altbestand kann noch keinen vorbereiteten Preview-Cache besitzen. Der
+  // fokussierte Fotorama-Request darf dann nicht mit 404 enden, weil Fotorama
+  // den fehlgeschlagenen Frame sonst nicht erneut laedt. Stattdessen wird nur
+  // fuer dieses angeforderte Bild auf die echte WebDAV-Quelle ausgewichen.
+  bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
 $derivative = new DerivativeImage($params, $src);
 if ($derivative->same_as_source())
 {
-  bratonien_tools_webdav_derivative_abort(404, 'Derivat entspricht der Platzhalterquelle und wird nicht ausgeliefert.');
+  // Niemals die lokale Connector-Platzhalterquelle ausliefern.
+  bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
 $target = $derivative->get_path();
 if ($target === '')
 {
-  bratonien_tools_webdav_derivative_abort(500, 'Derivat-Zielpfad fehlt.');
+  bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
 if (!bratonien_tools_webdav_derivative_matches_preview($target, $params, $image_id))
@@ -88,13 +106,13 @@ if (!bratonien_tools_webdav_derivative_matches_preview($target, $params, $image_
   if (!bratonien_tools_webdav_generate_derivative($params, $src, $detail))
   {
     error_log('Bratonien WebDAV on-demand derivative #'.$image_id.' type='.$type.': '.$detail);
-    bratonien_tools_webdav_derivative_abort(503, 'Derivat konnte noch nicht erzeugt werden.');
+    bratonien_tools_webdav_derivative_fallback($image_id);
   }
 }
 
 if (!bratonien_tools_webdav_derivative_matches_preview($target, $params, $image_id))
 {
-  bratonien_tools_webdav_derivative_abort(503, 'Erzeugtes Derivat ist noch nicht gueltig.');
+  bratonien_tools_webdav_derivative_fallback($image_id);
 }
 
 $size = @filesize($target);
