@@ -78,6 +78,89 @@
         + '<button type="button" class="buttonLike" data-remove-storage>Entfernen</button></div>';
     }
 
+    function clearValidation(form) {
+      [].slice.call(form.querySelectorAll('[aria-invalid="true"]')).forEach(function (field) {
+        field.removeAttribute('aria-invalid');
+        field.style.borderColor = '';
+        field.style.boxShadow = '';
+      });
+      [].slice.call(form.querySelectorAll('[data-edit-v2-field-error]')).forEach(function (node) { node.remove(); });
+      var box = form.querySelector('[data-edit-v2-error-summary]');
+      if (box) box.remove();
+    }
+
+    function fieldNodes(form, fieldName) {
+      return [].slice.call(form.querySelectorAll('[name="'+fieldName.replace(/"/g, '\\"')+'"]'));
+    }
+
+    function showValidation(form, data) {
+      clearValidation(form);
+      var message = (data && data.message) ? data.message : 'Die Verbindung konnte nicht gespeichert werden.';
+      var summary = document.createElement('div');
+      summary.dataset.editV2ErrorSummary = '1';
+      summary.className = 'bratonien-main-cache__warning';
+      summary.style.margin = '0 0 1rem';
+      summary.style.padding = '.75rem';
+      summary.style.border = '1px solid currentColor';
+      summary.innerHTML = '<strong>Speichern fehlgeschlagen:</strong> '+escapeHtml(message);
+      form.insertBefore(summary, form.firstChild);
+
+      var first = null;
+      var fields = data && Array.isArray(data.fields) ? data.fields : [];
+      fields.forEach(function (fieldName) {
+        fieldNodes(form, fieldName).forEach(function (field) {
+          field.setAttribute('aria-invalid', 'true');
+          field.style.borderColor = '#d65a5a';
+          field.style.boxShadow = '0 0 0 1px #d65a5a';
+          if (!first) first = field;
+          var note = document.createElement('span');
+          note.dataset.editV2FieldError = '1';
+          note.className = 'bratonien-main-cache__warning';
+          note.style.display = 'block';
+          note.style.marginTop = '.25rem';
+          note.textContent = message;
+          field.insertAdjacentElement('afterend', note);
+        });
+      });
+
+      if (first) {
+        first.scrollIntoView({block:'center', behavior:'smooth'});
+        window.setTimeout(function () { first.focus(); }, 150);
+      } else {
+        summary.scrollIntoView({block:'center', behavior:'smooth'});
+      }
+    }
+
+    function submitEditor(form, editDialog) {
+      clearValidation(form);
+      if (!form.reportValidity()) return;
+
+      var submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = true;
+
+      var body = new FormData(form);
+      fetch('plugins/bratonien_tools/nc-connector-edit-save.php', {
+        method:'POST',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Accept':'application/json'},
+        body:body
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok || !data.ok) {
+            showValidation(form, data);
+            return;
+          }
+          editDialog.close();
+          window.location.reload();
+        });
+      }).catch(function (error) {
+        showValidation(form, {message:error.message || String(error), fields:[]});
+      }).finally(function () {
+        if (submit) submit.disabled = false;
+      });
+    }
+
     function openEditor(id) {
       var editDialog = dialog();
       var content = editDialog.querySelector('[data-edit-v2-content]');
@@ -132,7 +215,7 @@
           + '<label class="bratonien-label">Maximale Wartezeit (Sek.)</label><input name="nc_max_wait_seconds" type="number" min="60" value="'+escapeHtml(legacy.max_wait_seconds)+'">'
           + '<label class="bratonien-label">Vollprüfung nach (Sek.)</label><input name="nc_full_sync_seconds" type="number" min="300" value="'+escapeHtml(legacy.full_sync_seconds)+'">'
           + '</div></details>'
-          + '<div class="bratonien-actions" style="margin-top:1rem"><button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_update_local">Änderungen prüfen und speichern</button><button class="buttonLike" type="button" data-edit-v2-cancel>Abbrechen</button></div>'
+          + '<div class="bratonien-actions" style="margin-top:1rem"><button class="buttonLike" type="submit">Änderungen prüfen und speichern</button><button class="buttonLike" type="button" data-edit-v2-cancel>Abbrechen</button></div>'
           + '</form>';
 
         var form = content.querySelector('[data-edit-v2-form]');
@@ -145,6 +228,11 @@
           if (!remove) return;
           var row = remove.closest('[data-storage-row]');
           if (row) row.remove();
+        });
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          submitEditor(form, editDialog);
         });
       }).catch(function (error) {
         content.innerHTML = '<p class="bratonien-main-cache__warning"><strong>Bearbeiten nicht möglich:</strong> '+escapeHtml(error.message || String(error))+'</p>';
