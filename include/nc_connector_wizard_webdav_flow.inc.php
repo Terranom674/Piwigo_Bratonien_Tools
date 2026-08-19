@@ -28,7 +28,7 @@ function bratonien_tools_nc_wizard_scan_webdav_first()
   {
     try
     {
-      $response = bratonien_tools_nc_wizard_http($candidate_url.'/status.php');
+      $response = bratonien_tools_nc_transport_http($candidate_url.'/status.php');
       if ($response['status'] < 200 || $response['status'] >= 300) continue;
       $candidate_status = json_decode($response['body'], true);
       if (!is_array($candidate_status) || empty($candidate_status['installed'])) continue;
@@ -44,7 +44,7 @@ function bratonien_tools_nc_wizard_scan_webdav_first()
     throw new RuntimeException('Unter dieser Adresse konnte keine Nextcloud erreicht werden. HTTP und HTTPS wurden automatisch geprüft.');
   }
 
-  $user_response = bratonien_tools_nc_wizard_http(
+  $user_response = bratonien_tools_nc_transport_http(
     $base_url.'/ocs/v2.php/cloud/user?format=json',
     $username,
     $password,
@@ -104,7 +104,7 @@ function bratonien_tools_nc_wizard_scan_webdav_first()
     'api_error'=>'',
   ));
 
-  bratonien_tools_nc_wizard_refresh_directory_state($state, '');
+  bratonien_tools_nc_transport_refresh_directory_state($state, '');
   bratonien_tools_nc_wizard_store($state);
 
   return array('message'=>'Nextcloud und WebDAV wurden bestätigt. Jetzt können die Verzeichnisse des angemeldeten Benutzers ausgewählt werden.');
