@@ -19,7 +19,7 @@
 
     function escapeHtml(value) {
       return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c];
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
       });
     }
 
@@ -60,7 +60,7 @@
       node.className = 'bratonien-edit-dialog';
       node.innerHTML = '<div class="bratonien-edit-dialog__body">'
         + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">'
-        + '<div><h4 style="margin:0">Verbindung bearbeiten</h4><p class="bratonien-base-note" style="margin:.35rem 0 0">Alle Daten dieser Verbindung werden hier gepflegt. Eine Migration ist ein eigener Vorgang.</p></div>'
+        + '<div><h4 style="margin:0">Verbindung bearbeiten</h4><p class="bratonien-base-note" style="margin:.35rem 0 0">Alle für diese Verbindung nötigen Zugänge werden hier gemeinsam gepflegt.</p></div>'
         + '<button type="button" class="buttonLike" data-edit-v2-close>Schließen</button></div>'
         + '<div data-edit-v2-content style="margin-top:1rem"></div></div>';
       document.body.appendChild(node);
@@ -169,13 +169,13 @@
       else editDialog.setAttribute('open', 'open');
 
       loadConnection(id).then(function (data) {
-        if (data.adapter !== 'local') throw new Error('Diese Ansicht ist nur für die bestehende Legacy-Verbindung vorgesehen.');
+        if (data.adapter !== 'local') throw new Error('Diese Ansicht ist für eine noch nicht migrierte Verbindung vorgesehen.');
         var legacy = data.legacy || {};
         var webdav = data.webdav || {};
         var storages = Array.isArray(legacy.storages) ? legacy.storages : [];
         var rows = storages.map(storageRow).join('') || storageRow({});
         var migrationText = webdav.migration_ready
-          ? '<strong>Bereit.</strong> Nextcloud-Zugang und verbindungseigener Piwigo-API-Key sind vollständig gespeichert.'
+          ? '<strong>Bereit.</strong> Nextcloud-Zugang und ein gültiger Piwigo-Zugang sind vollständig gespeichert.'
           : '<strong>Noch nicht bereit.</strong> Es fehlen: '+escapeHtml((webdav.migration_missing || []).join(', ') || 'WebDAV-Zugangsdaten')+'.';
 
         content.innerHTML = '<form method="post" data-edit-v2-form>'
@@ -185,17 +185,19 @@
           + '<label class="bratonien-label">Name</label><input name="connection_name" value="'+escapeHtml(data.name)+'" required>'
           + '</div>'
           + '<h5 style="margin-top:1.2rem">Nextcloud / WebDAV</h5>'
-          + '<p class="bratonien-base-note">Diese Angaben werden für den neuen WebDAV-Weg benötigt und gehören zu genau dieser Verbindung.</p>'
+          + '<p class="bratonien-base-note">Diese Angaben bestimmen, auf welche Ordner diese Verbindung zugreifen darf.</p>'
           + '<div class="bratonien-form-grid">'
           + '<label class="bratonien-label">Nextcloud-Adresse</label><input name="nc_nextcloud_url" value="'+escapeHtml(webdav.nextcloud_url || '')+'" placeholder="https://cloud.example.de">'
           + '<label class="bratonien-label">Nextcloud-Benutzer</label><input name="nc_nextcloud_user" value="'+escapeHtml(webdav.nextcloud_user || '')+'" autocomplete="username">'
           + '<label class="bratonien-label">Nextcloud-Passwort</label><input name="nc_nextcloud_password" type="password" autocomplete="current-password" placeholder="'+(webdav.has_nextcloud_password ? 'gespeichert – leer = unverändert' : 'noch nicht gespeichert')+'">'
           + '</div>'
-          + '<h5 style="margin-top:1.2rem">Piwigo API dieser Verbindung</h5>'
-          + '<p class="bratonien-base-note">Der API-Key wird verbindungseigen gespeichert und beim Speichern geprüft.</p>'
+          + '<h5 style="margin-top:1.2rem">Piwigo-Zugang</h5>'
+          + '<p class="bratonien-base-note">Bevorzugt wird die API. Benutzername und Passwort können als Fallback verwendet werden.</p>'
           + '<div class="bratonien-form-grid">'
           + '<label class="bratonien-label">API-Schlüssel-ID</label><input name="nc_connection_api_key_id" value="'+escapeHtml(webdav.api_key_id || '')+'" autocomplete="off">'
           + '<label class="bratonien-label">API-Geheimnis</label><input name="nc_connection_api_key_secret" type="password" autocomplete="new-password" placeholder="'+(webdav.has_api_key_secret ? 'gespeichert – leer = unverändert' : 'noch nicht gespeichert')+'">'
+          + '<label class="bratonien-label">Fallback-Benutzer</label><input name="nc_fallback_user" value="'+escapeHtml(webdav.fallback_user || '')+'" autocomplete="username">'
+          + '<label class="bratonien-label">Fallback-Passwort</label><input name="nc_fallback_password" type="password" autocomplete="current-password" placeholder="'+(webdav.has_fallback_password ? 'gespeichert – leer = unverändert' : 'noch nicht gespeichert')+'">'
           + '</div>'
           + '<p class="bratonien-base-note"><strong>WebDAV-Migration:</strong> '+migrationText+'</p>'
           + '<h5 style="margin-top:1.2rem">Bestehender Legacy-Weg</h5><div class="bratonien-form-grid">'
@@ -274,10 +276,10 @@
           actions.insertBefore(postForm('Auf WebDAV migrieren', 'nc_connector_migrate_start', id, 'migrate'), deleteForm);
         } else {
           var missing = (webdav.migration_missing || []).join(', ');
-          info.textContent = 'WebDAV-Migration noch nicht bereit: '+(missing || 'Zugangsdaten fehlen')+'. Zuerst „Bearbeiten“.';
+          info.textContent = 'Migration noch nicht bereit: '+(missing || 'Zugangsdaten fehlen')+'. Zuerst „Bearbeiten“.';
         }
       }).catch(function (error) {
-        info.textContent = 'WebDAV-Migration kann nicht geprüft werden: '+(error.message || String(error));
+        info.textContent = 'Migration kann nicht geprüft werden: '+(error.message || String(error));
       });
     }
 
@@ -316,7 +318,7 @@
         if (!actions) return;
         var info = document.createElement('span');
         info.className = 'bratonien-main-cache__warning';
-        info.textContent = 'Verbindungstyp konnte nicht geladen werden: '+(error.message || String(error));
+        info.textContent = 'Verbindung konnte nicht geladen werden: '+(error.message || String(error));
         actions.insertBefore(info, deleteForm);
       });
     });
