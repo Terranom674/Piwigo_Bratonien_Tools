@@ -56,19 +56,30 @@ if (!is_array($config) || (string)($config['source_mode'] ?? '') !== 'webdav-pla
   exit(0);
 }
 
-$gallery_root = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
-if ($gallery_root === '' || strpos($gallery_root, $piwigo_root.'/') !== 0)
+$prefixes = array(
+  './_data/bratonien-tools/nc-webdav-gallery/connection-'.$connection_id.'/',
+  './_data/bratonien-tools/nc-webdav-source/connection-'.$connection_id.'/',
+  './galleries/bratonien-webdav-'.$connection_id.'/',
+);
+
+$gallery_root = rtrim(str_replace('\\', '/', (string)($config['parallel_gallery_root'] ?? '')), '/');
+$normalized_piwigo_root = rtrim(str_replace('\\', '/', $piwigo_root), '/');
+if ($gallery_root !== '' && strpos($gallery_root, $normalized_piwigo_root.'/') === 0)
 {
-  fwrite(STDERR, "Verbindungseigene Gallery-Root ist ungueltig.\n");
-  exit(1);
+  $relative = ltrim(substr($gallery_root, strlen($normalized_piwigo_root)), '/');
+  if ($relative !== '') $prefixes[] = './'.rtrim($relative, '/').'/';
+}
+$prefixes = array_values(array_unique($prefixes));
+
+$where = array();
+foreach ($prefixes as $prefix)
+{
+  $escaped = $db->real_escape_string(addcslashes($prefix, "_%\\"));
+  $where[] = "path LIKE '{$escaped}%' ESCAPE '\\\\'";
 }
 
-$relative = ltrim(substr($gallery_root, strlen($piwigo_root)), '/');
-$db_prefix = './'.rtrim($relative, '/').'/';
-$escaped_prefix = $db->real_escape_string(addcslashes($db_prefix, "_%\\"));
 $images_table = $prefixeTable.'images';
-$query = "SELECT id, path FROM `{$images_table}` WHERE path LIKE '{$escaped_prefix}%' ESCAPE '\\\\'";
-$rows = $db->query($query);
+$rows = $db->query("SELECT id, path FROM `{$images_table}` WHERE ".implode(' OR ', $where));
 if (!$rows)
 {
   fwrite(STDERR, "Connector-Bilder konnten nicht gelesen werden: ".$db->error."\n");
@@ -79,12 +90,18 @@ $missing_ids = array();
 while ($row = $rows->fetch_assoc())
 {
   $path = (string)$row['path'];
-  if (strpos($path, $db_prefix) !== 0)
+  $owned = false;
+  foreach ($prefixes as $prefix)
   {
-    continue;
+    if (strpos($path, $prefix) === 0)
+    {
+      $owned = true;
+      break;
+    }
   }
+  if (!$owned) continue;
 
-  $absolute = $piwigo_root.'/'.ltrim(preg_replace('#^\\./#', '', $path), '/');
+  $absolute = $piwigo_root.'/'.ltrim(preg_replace('#^\./#', '', $path), '/');
   if (!is_file($absolute))
   {
     $missing_ids[] = (int)$row['id'];
@@ -98,9 +115,10 @@ if (!$missing_ids)
   exit(0);
 }
 
-// Erst jetzt Piwigo bootstrappen. Dieser Prozess wird nur nach einem erfolgreich
-// abgeschlossenen WebDAV-Abruf gestartet. Eine nicht erreichbare Verbindung kann
-// daher niemals ueber diesen Pfad Bilder loeschen.
+// Dieser Prozess wird ausschliesslich nach einem erfolgreich abgeschlossenen
+// WebDAV-Aufbau und erfolgreicher Piwigo-Synchronisierung gestartet. Eine
+// nicht erreichbare Verbindung kann deshalb niemals ueber diesen Pfad Bilder
+// entfernen.
 define('PHPWG_ROOT_PATH', $piwigo_root.'/');
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 $_SERVER['SERVER_ADDR'] = '127.0.0.1';
@@ -117,8 +135,8 @@ $_SERVER['HTTPS'] = 'off';
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
 include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
 
-delete_elements($missing_ids, false);
+$deleted = delete_elements(array_values(array_unique(array_map('intval', $missing_ids))), false);
 update_category('all');
 invalidate_user_cache(true);
 
-echo 'WebDAV-Bereinigung: '.count($missing_ids)." nicht mehr freigegebene/ vorhandene Bilder aus Piwigo entfernt.\n";
+echo 'WebDAV-Bereinigung: '.(int)$deleted." nicht mehr freigegebene/vorhandene Bilder aus Piwigo entfernt.\n";

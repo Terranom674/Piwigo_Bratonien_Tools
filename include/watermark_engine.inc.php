@@ -23,7 +23,6 @@ function bratonien_tools_watermark_engine_enabled()
   // Piwigo recalculates use_watermark for custom derivatives from the native
   // watermark file itself. Therefore an active Bratonien engine must keep the
   // native watermark file empty, not only the stored use_watermark flags false.
-  // This initialization is required only once per PHP request.
   if ($enabled)
   {
     bratonien_tools_disable_piwigo_watermarks();

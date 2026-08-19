@@ -4,58 +4,84 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_nc_connector_webdav_site_id(array $connection)
+function bratonien_tools_nc_connector_db_prefix_from_absolute($path)
 {
-  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
-  if ((string)($connection['adapter'] ?? '') !== 'remote') return 0;
-  if ((string)($config['source_mode'] ?? '') !== 'webdav-placeholder') return 0;
+  $path = rtrim(str_replace('\\', '/', (string)$path), '/');
+  $piwigo_root = rtrim(str_replace('\\', '/', PHPWG_ROOT_PATH), '/');
+  if ($path === '' || strpos($path, $piwigo_root.'/') !== 0) return '';
 
-  $gallery_root = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
-  $piwigo_root = rtrim(PHPWG_ROOT_PATH, '/');
-  if ($gallery_root === '' || strpos($gallery_root, $piwigo_root.'/') !== 0) return 0;
-
-  $relative = ltrim(substr($gallery_root, strlen($piwigo_root)), '/');
-  if ($relative === '') return 0;
-  $site_url = './'.rtrim($relative, '/').'/';
-
-  $result = pwg_query(
-    "SELECT id FROM ".SITES_TABLE.
-    " WHERE galleries_url='".pwg_db_real_escape_string($site_url)."' LIMIT 1"
-  );
-  if (!pwg_db_num_rows($result)) return 0;
-
-  $row = pwg_db_fetch_assoc($result);
-  return (int)$row['id'];
+  $relative = ltrim(substr($path, strlen($piwigo_root)), '/');
+  return $relative === '' ? '' : './'.rtrim($relative, '/').'/';
 }
 
-function bratonien_tools_nc_connector_gallery_db_prefix(array $connection)
+function bratonien_tools_nc_connector_owned_db_prefixes(array $connection)
 {
-  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
-  $gallery_root = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
-  $piwigo_root = rtrim(PHPWG_ROOT_PATH, '/');
-  if ($gallery_root === '' || strpos($gallery_root, $piwigo_root.'/') !== 0) return '';
+  $id = (int)($connection['id'] ?? 0);
+  if ($id < 1) return array();
 
-  $relative = ltrim(substr($gallery_root, strlen($piwigo_root)), '/');
-  return $relative === '' ? '' : './'.rtrim($relative, '/').'/';
+  $prefixes = array(
+    './_data/bratonien-tools/nc-webdav-gallery/connection-'.$id.'/',
+    './_data/bratonien-tools/nc-webdav-source/connection-'.$id.'/',
+    './galleries/bratonien-webdav-'.$id.'/',
+  );
+
+  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+  $configured = bratonien_tools_nc_connector_db_prefix_from_absolute($config['parallel_gallery_root'] ?? '');
+  if ($configured !== '') $prefixes[] = $configured;
+
+  return array_values(array_unique($prefixes));
+}
+
+function bratonien_tools_nc_connector_owned_site_urls(array $connection)
+{
+  $id = (int)($connection['id'] ?? 0);
+  if ($id < 1) return array();
+
+  $urls = array(
+    './_data/bratonien-tools/nc-webdav-gallery/connection-'.$id.'/',
+    './galleries/bratonien-webdav-'.$id.'/',
+  );
+
+  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+  $configured = bratonien_tools_nc_connector_db_prefix_from_absolute($config['parallel_gallery_root'] ?? '');
+  if ($configured !== '') $urls[] = $configured;
+
+  return array_values(array_unique($urls));
 }
 
 function bratonien_tools_nc_connector_remove_webdav_piwigo_content(array $connection)
 {
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
 
-  $site_id = bratonien_tools_nc_connector_webdav_site_id($connection);
-  $db_prefix = bratonien_tools_nc_connector_gallery_db_prefix($connection);
-  if ($db_prefix === '') return array('site_id'=>$site_id, 'images'=>0);
+  $prefixes = bratonien_tools_nc_connector_owned_db_prefixes($connection);
+  if (!$prefixes) return array('sites'=>0, 'images'=>0);
 
-  $escaped = pwg_db_real_escape_string(addcslashes($db_prefix, '_%\\'));
+  $where = array();
+  foreach ($prefixes as $prefix)
+  {
+    $escaped = pwg_db_real_escape_string(addcslashes($prefix, '_%\\'));
+    $where[] = "path LIKE '".$escaped."%' ESCAPE '\\\\'";
+  }
+
   $image_rows = array();
   $result = pwg_query(
-    "SELECT id, path, representative_ext FROM ".IMAGES_TABLE.
-    " WHERE path LIKE '".$escaped."%' ESCAPE '\\\\'"
+    'SELECT id, path, representative_ext FROM '.IMAGES_TABLE.
+    ' WHERE '.implode(' OR ', $where)
   );
   while ($row = pwg_db_fetch_assoc($result))
   {
-    if (strpos((string)$row['path'], $db_prefix) !== 0) continue;
+    $path = (string)$row['path'];
+    $owned = false;
+    foreach ($prefixes as $prefix)
+    {
+      if (strpos($path, $prefix) === 0)
+      {
+        $owned = true;
+        break;
+      }
+    }
+    if (!$owned) continue;
+
     $row['id'] = (int)$row['id'];
     $image_rows[$row['id']] = $row;
   }
@@ -77,13 +103,23 @@ function bratonien_tools_nc_connector_remove_webdav_piwigo_content(array $connec
     delete_elements(array_map('intval', array_keys($image_rows)), false);
   }
 
-  if ($site_id > 0)
+  $site_count = 0;
+  foreach (bratonien_tools_nc_connector_owned_site_urls($connection) as $site_url)
   {
-    delete_site($site_id);
+    $result = pwg_query(
+      "SELECT id FROM ".SITES_TABLE.
+      " WHERE galleries_url='".pwg_db_real_escape_string($site_url)."'"
+    );
+    while ($row = pwg_db_fetch_assoc($result))
+    {
+      delete_site((int)$row['id']);
+      $site_count++;
+    }
   }
 
+  update_category('all');
   invalidate_user_cache(true);
-  return array('site_id'=>$site_id, 'images'=>count($image_rows));
+  return array('sites'=>$site_count, 'images'=>count($image_rows));
 }
 
 /**
@@ -99,7 +135,7 @@ function bratonien_tools_nc_connector_delete_safe()
     throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
   }
 
-  $cleanup = array('site_id'=>0, 'images'=>0);
+  $cleanup = array('sites'=>0, 'images'=>0);
   if (
     (string)($connection['adapter'] ?? '') === 'remote'
     && (string)($connection['config']['source_mode'] ?? '') === 'webdav-placeholder'
