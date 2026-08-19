@@ -18,7 +18,7 @@ function bratonien_tools_register_nc_productive_ws_methods($arr)
         'info' => 'Piwigo storage site to synchronize. Default: 1.',
       ),
     ),
-    'Runs the approved direct Bratonien filesystem synchronization for the NC Connector.',
+    'Synchronizes the NC Connector into the existing Piwigo album hierarchy.',
     null,
     array(
       'admin_only' => true,
@@ -35,6 +35,88 @@ function bratonien_tools_nc_productive_error(&$errors, $path, $type)
   );
 }
 
+function bratonien_tools_nc_relative_path($basedir, $path)
+{
+  $basedir = rtrim(str_replace('\\', '/', (string)$basedir), '/');
+  $path = str_replace('\\', '/', (string)$path);
+  if ($path === $basedir) return '';
+  if (strpos($path, $basedir.'/') !== 0)
+  {
+    throw new RuntimeException('WebDAV-Pfad liegt ausserhalb der Connector-Wurzel: '.$path);
+  }
+  return trim(substr($path, strlen($basedir)), '/');
+}
+
+function bratonien_tools_nc_find_album($parent_id, $dir, $name, $excluded_site_id)
+{
+  $where_parent = $parent_id === null ? 'id_uppercat IS NULL' : 'id_uppercat='.(int)$parent_id;
+  $dir_sql = pwg_db_real_escape_string((string)$dir);
+  $name_sql = pwg_db_real_escape_string((string)$name);
+  $query = '\nSELECT id, dir, name\n  FROM '.CATEGORIES_TABLE.'\n  WHERE '.$where_parent.'\n    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')\n    AND (\n      dir = \\''.$dir_sql.'\\'\n      OR LOWER(name) = LOWER(\\''.$name_sql.'\\')\n    )\n  ORDER BY CASE WHEN dir = \\''.$dir_sql.'\\' THEN 0 ELSE 1 END, id\n  LIMIT 1\n;';
+  $result = pwg_query($query);
+  if (!pwg_db_num_rows($result)) return null;
+  $row = pwg_db_fetch_assoc($result);
+  return (int)$row['id'];
+}
+
+function bratonien_tools_nc_ensure_album_path($relative_dir, $excluded_site_id, array &$cache, array &$created_ids)
+{
+  $relative_dir = trim((string)$relative_dir, '/');
+  if ($relative_dir === '') return null;
+  if (isset($cache[$relative_dir])) return $cache[$relative_dir];
+
+  $parts = explode('/', $relative_dir);
+  $parent_id = null;
+  $path = '';
+  foreach ($parts as $part)
+  {
+    if ($part === '') continue;
+    $path = $path === '' ? $part : $path.'/'.$part;
+    if (isset($cache[$path]))
+    {
+      $parent_id = $cache[$path];
+      continue;
+    }
+
+    $display_name = str_replace('_', ' ', $part);
+    $album_id = bratonien_tools_nc_find_album($parent_id, $part, $display_name, $excluded_site_id);
+    if ($album_id === null)
+    {
+      $created = create_virtual_category($display_name, $parent_id);
+      if (!is_array($created) || empty($created['id']))
+      {
+        $detail = is_array($created) && !empty($created['error']) ? (string)$created['error'] : 'unbekannter Fehler';
+        throw new RuntimeException('Album "'.$display_name.'" konnte nicht angelegt werden: '.$detail);
+      }
+      $album_id = (int)$created['id'];
+      pwg_query('UPDATE '.CATEGORIES_TABLE." SET status='private' WHERE id=".$album_id.' LIMIT 1');
+      add_permission_on_category(array($album_id), get_admins());
+      $created_ids[] = $album_id;
+    }
+
+    $cache[$path] = $album_id;
+    $parent_id = $album_id;
+  }
+
+  return $parent_id;
+}
+
+function bratonien_tools_nc_managed_images($basedir)
+{
+  $prefix = rtrim((string)$basedir, '/').'/';
+  $escaped = pwg_db_real_escape_string(addcslashes($prefix, '_%\\'));
+  $query = "SELECT id, path FROM ".IMAGES_TABLE." WHERE path LIKE '".$escaped."%' ESCAPE '\\\\'";
+  return simple_hash_from_query($query, 'id', 'path');
+}
+
+function bratonien_tools_nc_remove_storage_categories($site_id)
+{
+  $ids = query2array('SELECT id FROM '.CATEGORIES_TABLE.' WHERE site_id='.(int)$site_id.' AND dir IS NOT NULL', null, 'id');
+  if (!$ids) return 0;
+  delete_categories(array_map('intval', $ids));
+  return count($ids);
+}
+
 function bratonien_tools_ws_nc_sync_productive($params, &$service)
 {
   global $conf, $user;
@@ -42,181 +124,110 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
   $piwigo_version = defined('PHPWG_VERSION') ? (string)PHPWG_VERSION : '';
   if ($piwigo_version !== '16.4.0')
   {
-    return new PwgError(
-      409,
-      'Bratonien API synchronization is not approved for Piwigo '.$piwigo_version.'. Use the administrator fallback until this Piwigo version has been verified.'
-    );
+    return new PwgError(409, 'Bratonien API synchronization is not approved for Piwigo '.$piwigo_version.'.');
   }
-
   if (empty($conf['enable_synchronization']))
   {
     return new PwgError(403, 'Piwigo filesystem synchronization is disabled.');
   }
 
   $site_id = isset($params['site_id']) ? (int)$params['site_id'] : 1;
-  if ($site_id < 1)
-  {
-    return new PwgError(400, 'Invalid site_id.');
-  }
+  if ($site_id < 1) return new PwgError(400, 'Invalid site_id.');
 
   include_once(PHPWG_ROOT_PATH.'admin/include/functions.php');
   include_once(PHPWG_ROOT_PATH.'admin/site_reader_local.php');
 
-  $query = 'SELECT galleries_url FROM '.SITES_TABLE.' WHERE id = '.$site_id.' LIMIT 1';
-  $result = pwg_query($query);
-  if (!pwg_db_num_rows($result))
-  {
-    return new PwgError(404, 'Piwigo site does not exist.');
-  }
-
+  $result = pwg_query('SELECT galleries_url FROM '.SITES_TABLE.' WHERE id='.$site_id.' LIMIT 1');
+  if (!pwg_db_num_rows($result)) return new PwgError(404, 'Piwigo site does not exist.');
   list($site_url) = pwg_db_fetch_row($result);
-  if (url_is_remote($site_url))
-  {
-    return new PwgError(400, 'Remote Piwigo sites are not supported by this synchronization method.');
-  }
+  if (url_is_remote($site_url)) return new PwgError(400, 'Remote Piwigo sites are not supported.');
 
   $site_reader = new LocalSiteReader($site_url);
-  if (!$site_reader->open())
-  {
-    return new PwgError(500, 'Piwigo could not open the configured local site.');
-  }
+  if (!$site_reader->open()) return new PwgError(500, 'Piwigo could not open the configured local site.');
 
-  list($dbnow) = pwg_db_fetch_row(pwg_query('SELECT NOW()'));
+  $basedir = preg_replace('#/*$#', '', (string)$site_url);
   $errors = array();
   $counts = array(
-    'new_categories' => 0,
-    'del_categories' => 0,
-    'new_elements' => 0,
-    'del_elements' => 0,
-    'upd_elements' => 0,
-    'new_formats' => 0,
-    'del_formats' => 0,
-    'metadata_candidates' => 0,
-    'metadata_updated' => 0,
+    'reused_categories'=>0,
+    'new_categories'=>0,
+    'removed_duplicate_categories'=>0,
+    'new_elements'=>0,
+    'del_elements'=>0,
+    'upd_elements'=>0,
   );
 
   try
   {
-    $query = 'SELECT id, id_uppercat, uppercats, global_rank, status, visible FROM '.CATEGORIES_TABLE.' WHERE dir IS NOT NULL AND site_id = '.$site_id;
-    $db_categories = hash_from_query($query, 'id');
-    $db_fulldirs = get_fulldirs(array_keys($db_categories));
-    $basedir = preg_replace('#/*$#', '', $site_url);
-    $db_fulldirs = array_flip($db_fulldirs);
-    $fs_fulldirs = $site_reader->get_full_directories($basedir);
+    $counts['removed_duplicate_categories'] = bratonien_tools_nc_remove_storage_categories($site_id);
 
-    $next_rank = array('NULL'=>1);
-    $result = pwg_query('SELECT id FROM '.CATEGORIES_TABLE);
-    while ($row = pwg_db_fetch_assoc($result))
+    list($dbnow) = pwg_db_fetch_row(pwg_query('SELECT NOW()'));
+    $fs_dirs = $site_reader->get_full_directories($basedir);
+    usort($fs_dirs, function($a, $b)
     {
-      $next_rank[$row['id']] = 1;
-    }
-    $result = pwg_query('SELECT id_uppercat, MAX(`rank`)+1 AS next_rank FROM '.CATEGORIES_TABLE.' GROUP BY id_uppercat');
-    while ($row = pwg_db_fetch_assoc($result))
-    {
-      $key = empty($row['id_uppercat']) ? 'NULL' : $row['id_uppercat'];
-      $next_rank[$key] = (int)$row['next_rank'];
-    }
+      return substr_count((string)$a, '/') <=> substr_count((string)$b, '/');
+    });
 
-    $next_id = pwg_db_nextval('id', CATEGORIES_TABLE);
-    $category_inserts = array();
-
-    foreach (array_diff($fs_fulldirs, array_keys($db_fulldirs)) as $fulldir)
+    $album_cache = array();
+    $created_ids = array();
+    $dir_to_album = array();
+    foreach ($fs_dirs as $full_dir)
     {
-      $dir = basename($fulldir);
-      if (!preg_match($conf['sync_chars_regex'], $dir))
+      $relative = bratonien_tools_nc_relative_path($basedir, $full_dir);
+      if ($relative === '') continue;
+      $before = count($created_ids);
+      $album_id = bratonien_tools_nc_ensure_album_path($relative, $site_id, $album_cache, $created_ids);
+      if ($album_id !== null)
       {
-        bratonien_tools_nc_productive_error($errors, $fulldir, 'PWG-UPDATE-1');
-        continue;
+        $dir_to_album[$full_dir] = $album_id;
+        if (count($created_ids) === $before) $counts['reused_categories']++;
       }
-
-      $insert = array(
-        'id' => $next_id++,
-        'dir' => $dir,
-        'name' => str_replace('_', ' ', $dir),
-        'site_id' => $site_id,
-        'commentable' => boolean_to_string($conf['newcat_default_commentable']),
-        'status' => 'private',
-        'visible' => boolean_to_string($conf['newcat_default_visible']),
-      );
-
-      $parent_path = dirname($fulldir);
-      if (isset($db_fulldirs[$parent_path]))
-      {
-        $parent = $db_fulldirs[$parent_path];
-        $insert['id_uppercat'] = $parent;
-        $insert['uppercats'] = $db_categories[$parent]['uppercats'].','.$insert['id'];
-        $insert['rank'] = $next_rank[$parent]++;
-        $insert['global_rank'] = $db_categories[$parent]['global_rank'].'.'.$insert['rank'];
-        if ((string)$db_categories[$parent]['visible'] === 'false')
-        {
-          $insert['visible'] = 'false';
-        }
-      }
-      else
-      {
-        $insert['uppercats'] = (string)$insert['id'];
-        $insert['rank'] = $next_rank['NULL']++;
-        $insert['global_rank'] = (string)$insert['rank'];
-      }
-
-      $category_inserts[] = $insert;
-      $db_categories[$insert['id']] = array(
-        'id' => $insert['id'],
-        'id_uppercat' => $insert['id_uppercat'] ?? null,
-        'uppercats' => $insert['uppercats'],
-        'global_rank' => $insert['global_rank'],
-        'status' => 'private',
-        'visible' => $insert['visible'],
-      );
-      $db_fulldirs[$fulldir] = $insert['id'];
-      $next_rank[$insert['id']] = 1;
     }
-
-    if ($category_inserts)
-    {
-      mass_inserts(
-        CATEGORIES_TABLE,
-        array('id','dir','name','site_id','id_uppercat','uppercats','commentable','visible','status','rank','global_rank'),
-        $category_inserts
-      );
-      $category_ids = array_map(function ($row) { return (int)$row['id']; }, $category_inserts);
-      pwg_activity('album', $category_ids, 'add', array('sync'=>true));
-      add_permission_on_category($category_ids, get_admins());
-      $counts['new_categories'] = count($category_ids);
-    }
-
-    $to_delete_categories = array();
-    foreach (array_diff(array_keys($db_fulldirs), $fs_fulldirs) as $fulldir)
-    {
-      $to_delete_categories[] = (int)$db_fulldirs[$fulldir];
-      unset($db_fulldirs[$fulldir]);
-    }
-    if ($to_delete_categories)
-    {
-      delete_categories($to_delete_categories);
-      $counts['del_categories'] = count($to_delete_categories);
-    }
+    $counts['new_categories'] = count($created_ids);
 
     $fs = $site_reader->get_elements($basedir);
-    $cat_ids = array_diff(array_keys($db_categories), $to_delete_categories);
-    $db_elements = array();
-    if ($cat_ids)
+    $db_elements = bratonien_tools_nc_managed_images($basedir);
+    $db_by_path = array_flip($db_elements);
+
+    $to_delete = array();
+    foreach ($db_elements as $id=>$path)
     {
-      $query = 'SELECT id, path FROM '.IMAGES_TABLE.' WHERE storage_category_id IN ('.implode(',', array_map('intval', $cat_ids)).')';
-      $db_elements = simple_hash_from_query($query, 'id', 'path');
+      if (!array_key_exists($path, $fs)) $to_delete[] = (int)$id;
+    }
+    if ($to_delete)
+    {
+      delete_elements($to_delete, false);
+      $counts['del_elements'] = count($to_delete);
+      foreach ($to_delete as $id)
+      {
+        if (isset($db_elements[$id])) unset($db_by_path[$db_elements[$id]], $db_elements[$id]);
+      }
     }
 
     $next_element_id = pwg_db_nextval('id', IMAGES_TABLE);
     $image_inserts = array();
     $image_links = array();
-    $format_inserts = array();
-    $new_image_ids = array();
+    $new_ids = array();
+    $all_ids = array();
 
-    foreach (array_diff(array_keys($fs), $db_elements) as $path)
+    foreach ($fs as $path=>$file_info)
     {
       $dirname = dirname($path);
-      if (!isset($db_fulldirs[$dirname]))
+      $relative_dir = bratonien_tools_nc_relative_path($basedir, $dirname);
+      $category_id = null;
+      if ($relative_dir !== '')
       {
+        $category_id = $dir_to_album[$dirname] ?? bratonien_tools_nc_ensure_album_path($relative_dir, $site_id, $album_cache, $created_ids);
+      }
+
+      if (isset($db_by_path[$path]))
+      {
+        $id = (int)$db_by_path[$path];
+        $all_ids[] = $id;
+        pwg_query('DELETE FROM '.IMAGE_CATEGORY_TABLE.' WHERE image_id='.$id);
+        if ($category_id !== null)
+        {
+          single_insert(IMAGE_CATEGORY_TABLE, array('image_id'=>$id, 'category_id'=>$category_id));
+        }
         continue;
       }
 
@@ -229,116 +240,40 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
       $id = $next_element_id++;
       $image_inserts[] = array(
-        'id' => $id,
-        'file' => $filename,
-        'name' => get_name_from_file($filename),
-        'date_available' => $dbnow,
-        'path' => $path,
-        'representative_ext' => $fs[$path]['representative_ext'],
-        'storage_category_id' => $db_fulldirs[$dirname],
-        'added_by' => (int)$user['id'],
+        'id'=>$id,
+        'file'=>$filename,
+        'name'=>get_name_from_file($filename),
+        'date_available'=>$dbnow,
+        'path'=>$path,
+        'representative_ext'=>$file_info['representative_ext'],
+        'storage_category_id'=>null,
+        'added_by'=>(int)$user['id'],
       );
-      $image_links[] = array('image_id'=>$id, 'category_id'=>$db_fulldirs[$dirname]);
-      $new_image_ids[] = $id;
-
-      if (!empty($conf['enable_formats']) && !empty($fs[$path]['formats']))
+      if ($category_id !== null)
       {
-        foreach ($fs[$path]['formats'] as $ext => $filesize)
-        {
-          $format_inserts[] = array('image_id'=>$id, 'ext'=>$ext, 'filesize'=>$filesize);
-        }
+        $image_links[] = array('image_id'=>$id, 'category_id'=>$category_id);
       }
+      $new_ids[] = $id;
+      $all_ids[] = $id;
     }
 
     if ($image_inserts)
     {
       mass_inserts(IMAGES_TABLE, array_keys($image_inserts[0]), $image_inserts);
-      mass_inserts(IMAGE_CATEGORY_TABLE, array_keys($image_links[0]), $image_links);
-      pwg_activity('photo', $new_image_ids, 'add', array('sync'=>true));
-      $counts['new_elements'] = count($image_inserts);
-    }
-    if ($format_inserts)
-    {
-      mass_inserts(IMAGE_FORMAT_TABLE, array_keys($format_inserts[0]), $format_inserts);
-      $counts['new_formats'] += count($format_inserts);
+      if ($image_links) mass_inserts(IMAGE_CATEGORY_TABLE, array_keys($image_links[0]), $image_links);
+      pwg_activity('photo', $new_ids, 'add', array('sync'=>true));
+      $counts['new_elements'] = count($new_ids);
     }
 
-    if (!empty($conf['enable_formats']) && $db_elements)
-    {
-      $db_elements_flip = array_flip($db_elements);
-      $existing_ids = array();
-      foreach (array_intersect_key($fs, $db_elements_flip) as $path => $unused)
-      {
-        $existing_ids[] = (int)$db_elements_flip[$path];
-      }
-
-      if ($existing_ids)
-      {
-        $db_formats = array();
-        $result = pwg_query('SELECT * FROM '.IMAGE_FORMAT_TABLE.' WHERE image_id IN ('.implode(',', $existing_ids).')');
-        while ($row = pwg_db_fetch_assoc($result))
-        {
-          $db_formats[$row['image_id']][$row['ext']] = $row['format_id'];
-        }
-
-        $formats_to_delete = array();
-        $formats_to_insert = array();
-        foreach ($existing_ids as $image_id)
-        {
-          $path = $db_elements[$image_id];
-          $known = $db_formats[$image_id] ?? array();
-          $present = $fs[$path]['formats'] ?? array();
-          foreach (array_diff_key($known, $present) as $format_id)
-          {
-            $formats_to_delete[] = (int)$format_id;
-          }
-          foreach (array_diff_key($present, $known) as $ext => $filesize)
-          {
-            $formats_to_insert[] = array('image_id'=>$image_id, 'ext'=>$ext, 'filesize'=>$filesize);
-          }
-        }
-
-        if ($formats_to_delete)
-        {
-          pwg_query('DELETE FROM '.IMAGE_FORMAT_TABLE.' WHERE format_id IN ('.implode(',', $formats_to_delete).')');
-          $counts['del_formats'] = count($formats_to_delete);
-        }
-        if ($formats_to_insert)
-        {
-          mass_inserts(IMAGE_FORMAT_TABLE, array_keys($formats_to_insert[0]), $formats_to_insert);
-          $counts['new_formats'] += count($formats_to_insert);
-        }
-      }
-    }
-
-    $to_delete_elements = array();
-    foreach (array_diff($db_elements, array_keys($fs)) as $path)
-    {
-      $id = array_search($path, $db_elements, true);
-      if ($id !== false)
-      {
-        $to_delete_elements[] = (int)$id;
-      }
-    }
-    if ($to_delete_elements)
-    {
-      delete_elements($to_delete_elements);
-      $counts['del_elements'] = count($to_delete_elements);
-    }
-
-    update_category('all');
-    update_global_rank();
-
-    $files = get_filelist('', $site_id, true, false);
     $updates = array();
-    foreach ($files as $id => $file)
+    foreach ($all_ids as $id)
     {
-      $data = $site_reader->get_element_update_attributes($file['path']);
-      if (!is_array($data))
-      {
-        continue;
-      }
-      $data['id'] = $id;
+      $path_result = pwg_query('SELECT path FROM '.IMAGES_TABLE.' WHERE id='.(int)$id.' LIMIT 1');
+      if (!pwg_db_num_rows($path_result)) continue;
+      list($path) = pwg_db_fetch_row($path_result);
+      $data = $site_reader->get_element_update_attributes($path);
+      if (!is_array($data)) continue;
+      $data['id'] = (int)$id;
       $updates[] = $data;
     }
     if ($updates)
@@ -351,94 +286,25 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     }
     $counts['upd_elements'] = count($updates);
 
-    $metadata_files = get_filelist('', $site_id, true, true);
-    $counts['metadata_candidates'] = count($metadata_files);
-    $metadata_updates = array();
-    $tags_of = array();
-
-    foreach ($metadata_files as $id => $element_infos)
-    {
-      $data = $site_reader->get_element_metadata($element_infos);
-      if (!is_array($data))
-      {
-        bratonien_tools_nc_productive_error($errors, $element_infos['path'], 'PWG-ERROR-NO-FS');
-        continue;
-      }
-
-      $data['date_metadata_update'] = $dbnow;
-      $data['id'] = $id;
-      $metadata_updates[] = $data;
-
-      foreach (array('keywords','tags') as $key)
-      {
-        if (!isset($data[$key]))
-        {
-          continue;
-        }
-        $tags_of[$id] = $tags_of[$id] ?? array();
-        foreach (explode(',', $data[$key]) as $tag_name)
-        {
-          $tags_of[$id][] = tag_id_from_tag_name($tag_name);
-        }
-      }
-    }
-
-    if ($metadata_updates)
-    {
-      mass_updates(
-        IMAGES_TABLE,
-        array(
-          'primary'=>array('id'),
-          'update'=>array_unique(array_merge(
-            array_diff($site_reader->get_metadata_attributes(), array('keywords','tags')),
-            array('date_metadata_update')
-          )),
-        ),
-        $metadata_updates,
-        MASS_UPDATES_SKIP_EMPTY
-      );
-    }
-    if ($tags_of)
-    {
-      set_tags_of($tags_of);
-    }
-    $counts['metadata_updated'] = count($metadata_updates);
-
-    // Mirror Piwigo 16.4.0 Maintenance -> "Update albums informations".
-    // This repairs the derived album hierarchy and counters that the direct
-    // API sync otherwise bypasses when no admin maintenance page is invoked.
     images_integrity();
     categories_integrity();
     update_uppercats();
     update_category('all');
     update_global_rank();
-    invalidate_user_cache(true);
-
-    // Mirror Piwigo 16.4.0 Maintenance -> "Update photos information".
-    // This finalizes physical paths, ratings and derived photo information.
-    images_integrity();
-    update_path();
-    include_once(PHPWG_ROOT_PATH.'include/functions_rate.inc.php');
-    update_rating_score();
     invalidate_user_cache();
-  }
-  catch (Throwable $e)
-  {
-    return new PwgError(500, 'Bratonien direct synchronization failed: '.$e->getMessage());
-  }
 
-  return array(
-    'mode' => 'productive',
-    'engine' => 'bratonien-direct',
-    'approved_piwigo_version' => '16.4.0',
-    'piwigo_version' => $piwigo_version,
-    'site_id' => $site_id,
-    'site_url' => $site_url,
-    'counts' => $counts,
-    'errors' => $errors,
-    'error_count' => count($errors),
-    'database_writes' => true,
-    'username' => isset($user['username']) ? (string)$user['username'] : '',
-    'status' => isset($user['status']) ? (string)$user['status'] : '',
-  );
+    return array(
+      'mode'=>'productive',
+      'piwigo_version'=>$piwigo_version,
+      'site_id'=>$site_id,
+      'site_url'=>$site_url,
+      'counts'=>$counts,
+      'errors'=>$errors,
+      'database_writes'=>array_sum($counts) > 0,
+    );
+  }
+  catch (Throwable $error)
+  {
+    return new PwgError(500, 'Bratonien NC synchronization failed: '.$error->getMessage());
+  }
 }
