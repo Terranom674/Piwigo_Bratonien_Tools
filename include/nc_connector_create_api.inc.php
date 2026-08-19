@@ -6,6 +6,11 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 function bratonien_tools_nc_connector_create_local_api_first()
 {
+  throw new RuntimeException('Neue Verbindungen über die alte lokale PostgreSQL-/Storage-Struktur sind ab 0.9.6.2 gesperrt. Bestehende lokale Verbindungen bleiben für die schrittweise Migration weiterhin aktiv. Neue Verbindungen müssen über den WebDAV-Assistenten angelegt werden.');
+}
+
+function bratonien_tools_nc_connector_create_local_api_first_legacy()
+{
   $required = array(
     'nc_name' => 'Name',
     'nc_host' => 'PostgreSQL-Host',
