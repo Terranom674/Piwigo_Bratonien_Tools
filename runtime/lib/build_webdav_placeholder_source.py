@@ -130,8 +130,6 @@ class WebDavClient:
         base_path = urllib.parse.unquote(urllib.parse.urlparse(url).path).rstrip("/")
         current: dict[str, object] | None = None
         children: list[dict[str, object]] = []
-        for response in root.findall(f"{{{DAV}}}response") if False else []:
-            pass
         try:
             root = ET.fromstring(payload)
         except ET.ParseError as error:
