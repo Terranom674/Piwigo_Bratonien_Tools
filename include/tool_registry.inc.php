@@ -6,11 +6,18 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exists($GLOBALS['template'], 'func_combine_script'))
 {
+  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.15';
   $GLOBALS['template']->func_combine_script(array(
     'id'=>'bratonien_nc_connector_edit_v2',
     'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_edit_v2.js',
     'load'=>'footer',
-    'version'=>function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.10',
+    'version'=>$script_version,
+  ));
+  $GLOBALS['template']->func_combine_script(array(
+    'id'=>'bratonien_nc_connector_source_ui',
+    'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_source_ui.js',
+    'load'=>'footer',
+    'version'=>$script_version,
   ));
 }
 
