@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PIWIGO_ROOT_DEFAULT="${BRATONIEN_NC_PIWIGO_ROOT:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
+CONFIG_DIR="${BRATONIEN_NC_CONFIG_DIR:-/etc/bratonien-tools/nc-connector}"
+NATIVE_MODE="${BRATONIEN_NC_NATIVE:-0}"
 shopt -s nullglob
 
 read_config_value() {
@@ -39,10 +41,14 @@ write_route_status() {
     ' "$ROUTE_STATUS_FILE" "$route" "$label" "$detail" "$success"
 }
 
-php "$SCRIPT_DIR/reconcile.php"
+if [[ "$NATIVE_MODE" != "1" ]]; then
+    php "$SCRIPT_DIR/reconcile.php"
+fi
 php "$SCRIPT_DIR/reconcile-webdav.php"
 php "$SCRIPT_DIR/cleanup-webdav-piwigo.php"
-php "$SCRIPT_DIR/cleanup-stale.php"
+if [[ "$NATIVE_MODE" != "1" ]]; then
+    php "$SCRIPT_DIR/cleanup-stale.php"
+fi
 
 configs=("$CONFIG_DIR"/connection-*.conf)
 webdav_configs=("$CONFIG_DIR"/webdav-connection-*.conf)
@@ -58,7 +64,7 @@ for candidate in "${webdav_configs[@]}" "${configs[@]}"; do
     route_piwigo_root="$(read_config_value PIWIGO_ROOT "$candidate")"
     [[ -n "$route_piwigo_root" ]] && break
 done
-[[ -n "$route_piwigo_root" ]] || route_piwigo_root="/var/www/piwigo"
+[[ -n "$route_piwigo_root" ]] || route_piwigo_root="$PIWIGO_ROOT_DEFAULT"
 ROUTE_STATUS_FILE="${route_piwigo_root%/}/_data/bratonien-tools/nc-connector-status/route-status.json"
 
 failure_count=0
@@ -91,43 +97,45 @@ for config in "${webdav_configs[@]}"; do
     fi
 done
 
-for config in "${configs[@]}"; do
-    [[ -f "$config" ]] || continue
-    name="$(basename "$config")"
-    connection_id="0"
-    if [[ "$name" =~ ^connection-([0-9]+)\.conf$ ]]; then
-        connection_id="${BASH_REMATCH[1]}"
-    fi
-    if [[ "$connection_id" -lt 1 ]]; then
-        echo "NC Connector: $name besitzt keine gueltige Verbindungs-ID." >&2
-        failure_count=$((failure_count + 1))
-        summary_parts+=("$name: ungueltige Verbindungs-ID")
-        continue
-    fi
+if [[ "$NATIVE_MODE" != "1" ]]; then
+    for config in "${configs[@]}"; do
+        [[ -f "$config" ]] || continue
+        name="$(basename "$config")"
+        connection_id="0"
+        if [[ "$name" =~ ^connection-([0-9]+)\.conf$ ]]; then
+            connection_id="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$connection_id" -lt 1 ]]; then
+            echo "NC Connector: $name besitzt keine gueltige Verbindungs-ID." >&2
+            failure_count=$((failure_count + 1))
+            summary_parts+=("$name: ungueltige Verbindungs-ID")
+            continue
+        fi
 
-    piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
-    [[ -n "$piwigo_root" ]] || piwigo_root="/var/www/piwigo"
-    tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
-    if [[ -f "$tombstone_dir/deleted-$connection_id" ]]; then
-        echo "NC Connector: Verbindung $connection_id wurde geloescht; Laufzeitdateien werden entfernt."
-        rm -f -- "$CONFIG_DIR/connection-$connection_id.conf" \
-            "$CONFIG_DIR/connection-$connection_id.db-password" \
-            "$CONFIG_DIR/connection-$connection_id.piwigo-password" \
-            "$CONFIG_DIR/connection-$connection_id.storages.tsv" \
-            "$CONFIG_DIR/connection-$connection_id.roots.tsv"
-        rm -f -- "$tombstone_dir/deleted-$connection_id"
-        continue
-    fi
+        piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
+        [[ -n "$piwigo_root" ]] || piwigo_root="$PIWIGO_ROOT_DEFAULT"
+        tombstone_dir="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status"
+        if [[ -f "$tombstone_dir/deleted-$connection_id" ]]; then
+            echo "NC Connector: Verbindung $connection_id wurde geloescht; Laufzeitdateien werden entfernt."
+            rm -f -- "$CONFIG_DIR/connection-$connection_id.conf" \
+                "$CONFIG_DIR/connection-$connection_id.db-password" \
+                "$CONFIG_DIR/connection-$connection_id.piwigo-password" \
+                "$CONFIG_DIR/connection-$connection_id.storages.tsv" \
+                "$CONFIG_DIR/connection-$connection_id.roots.tsv"
+            rm -f -- "$tombstone_dir/deleted-$connection_id"
+            continue
+        fi
 
-    local_count=$((local_count + 1))
-    echo "NC Connector Local #$connection_id: $name"
-    if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
-        summary_parts+=("Local #$connection_id erfolgreich")
-    else
-        failure_count=$((failure_count + 1))
-        summary_parts+=("Local #$connection_id fehlgeschlagen")
-    fi
-done
+        local_count=$((local_count + 1))
+        echo "NC Connector Local #$connection_id: $name"
+        if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
+            summary_parts+=("Local #$connection_id erfolgreich")
+        else
+            failure_count=$((failure_count + 1))
+            summary_parts+=("Local #$connection_id fehlgeschlagen")
+        fi
+    done
+fi
 
 summary_detail="$(IFS='; '; printf '%s' "${summary_parts[*]}")"
 [[ -n "$summary_detail" ]] || summary_detail="Keine Verbindung wurde ausgefuehrt."
