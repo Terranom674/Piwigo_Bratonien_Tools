@@ -13,12 +13,6 @@ if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exi
     'load'=>'footer',
     'version'=>$script_version,
   ));
-  $GLOBALS['template']->func_combine_script(array(
-    'id'=>'bratonien_nc_connector_run_now',
-    'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_run_now.js',
-    'load'=>'footer',
-    'version'=>$script_version,
-  ));
 }
 
 require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
@@ -123,7 +117,6 @@ function bratonien_tools_get_tools()
     'album_share_create' => array('handler' => 'bratonien_tools_create_album_share'),
     'album_share_regenerate_link' => array('handler' => 'bratonien_tools_regenerate_album_share_link'),
     'album_share_revoke' => array('handler' => 'bratonien_tools_revoke_album_share'),
-    'nc_connector_create_local' => array('handler' => 'bratonien_tools_nc_connector_create_local_api_first'),
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
     'nc_connector_edit_start' => array('handler' => 'bratonien_tools_nc_connector_edit_start'),
     'nc_connector_update_local' => array('handler' => 'bratonien_tools_nc_connector_update_local_friendly'),
