@@ -11,7 +11,6 @@ $piwigoRoot = dirname($pluginRoot, 2);
 $base = rtrim($piwigoRoot, '/').'/_data/bratonien-tools';
 $schedulerDir = $base.'/nc-connector-scheduler';
 $stateFile = $schedulerDir.'/state.json';
-$workerLock = $schedulerDir.'/worker.lock';
 $runtimeDir = $base.'/nc-connector-runtime';
 $stateRoot = $base.'/nc-connector-state';
 
@@ -41,13 +40,6 @@ foreach (array($schedulerDir, $runtimeDir, $stateRoot) as $dir)
   }
 }
 
-$lock = @fopen($workerLock, 'c+');
-if (!is_resource($lock) || !@flock($lock, LOCK_EX | LOCK_NB))
-{
-  if (is_resource($lock)) fclose($lock);
-  exit(0);
-}
-
 $state = native_scheduler_state($stateFile);
 $state['enabled'] = true;
 $state['mode'] = 'piwigo-native';
@@ -58,6 +50,7 @@ $state['timestamp'] = time();
 native_scheduler_write($stateFile, $state);
 
 $env = $_ENV;
+$env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 $env['BRATONIEN_NC_NATIVE'] = '1';
 $env['BRATONIEN_NC_PIWIGO_ROOT'] = $piwigoRoot;
 $env['BRATONIEN_NC_CONFIG_DIR'] = $runtimeDir;
@@ -65,7 +58,8 @@ $env['BRATONIEN_NC_STATE_ROOT'] = $stateRoot;
 $env['LC_ALL'] = 'C';
 $env['LANG'] = 'C';
 
-$command = array('/usr/bin/env', 'bash', $pluginRoot.'/runtime/run-all.sh');
+$bash = is_executable('/usr/bin/bash') ? '/usr/bin/bash' : '/bin/bash';
+$command = array($bash, $pluginRoot.'/runtime/run-all.sh');
 $spec = array(
   0=>array('file','/dev/null','r'),
   1=>array('pipe','w'),
@@ -103,7 +97,4 @@ if (empty($state['next_due']) || (int)$state['next_due'] < time())
   $state['next_due'] = time() + 60;
 }
 native_scheduler_write($stateFile, $state);
-
-@flock($lock, LOCK_UN);
-fclose($lock);
 exit($exit === 0 ? 0 : 1);
