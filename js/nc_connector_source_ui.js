@@ -1,6 +1,112 @@
 (function () {
   'use strict';
 
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
+    });
+  }
+
+  function fieldNodes(form, fieldName) {
+    return [].slice.call(form.querySelectorAll('[name="'+fieldName.replace(/"/g, '\\"')+'"]'));
+  }
+
+  function clearPickerErrors(form) {
+    [].slice.call(form.querySelectorAll('[data-source-picker-error]')).forEach(function (node) { node.remove(); });
+    [].slice.call(form.querySelectorAll('[data-source-picker-invalid="1"]')).forEach(function (field) {
+      field.removeAttribute('data-source-picker-invalid');
+      if (field.getAttribute('aria-invalid') === 'true') field.removeAttribute('aria-invalid');
+      field.style.borderColor = '';
+      field.style.boxShadow = '';
+    });
+  }
+
+  function showPickerError(form, data) {
+    clearPickerErrors(form);
+    var message = data && data.message ? data.message : 'Die Nextcloud-Ordnerauswahl konnte nicht gestartet werden.';
+    var fields = data && Array.isArray(data.fields) ? data.fields : [];
+
+    var summary = document.createElement('div');
+    summary.dataset.sourcePickerError = '1';
+    summary.className = 'bratonien-main-cache__warning';
+    summary.style.margin = '0 0 1rem';
+    summary.style.padding = '.75rem';
+    summary.style.border = '1px solid currentColor';
+    summary.innerHTML = '<strong>Ordnerauswahl nicht möglich:</strong> '+escapeHtml(message);
+    form.insertBefore(summary, form.firstChild);
+
+    var first = null;
+    fields.forEach(function (fieldName) {
+      fieldNodes(form, fieldName).forEach(function (field) {
+        field.dataset.sourcePickerInvalid = '1';
+        field.setAttribute('aria-invalid', 'true');
+        field.style.borderColor = '#d65a5a';
+        field.style.boxShadow = '0 0 0 1px #d65a5a';
+        if (!first) first = field;
+      });
+    });
+
+    if (first) {
+      first.scrollIntoView({block:'center', behavior:'smooth'});
+      window.setTimeout(function () { first.focus(); }, 150);
+    } else {
+      summary.scrollIntoView({block:'center', behavior:'smooth'});
+    }
+  }
+
+  function jsonResponse(response) {
+    return response.json().then(function (data) {
+      if (!response.ok || !data.ok) throw data;
+      return data;
+    });
+  }
+
+  function startSourcePicker(form, button) {
+    clearPickerErrors(form);
+    if (!form.reportValidity()) return;
+
+    button.disabled = true;
+    var originalText = button.textContent;
+    button.textContent = 'Verbindung prüfen …';
+
+    var saveBody = new FormData(form);
+    fetch('plugins/bratonien_tools/nc-connector-edit-save.php', {
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
+      headers:{'Accept':'application/json'},
+      body:saveBody
+    })
+      .then(jsonResponse)
+      .then(function () {
+        button.textContent = 'Nextcloud-Ordner laden …';
+        var pickerBody = new FormData();
+        var token = form.querySelector('input[name="pwg_token"]');
+        var id = form.querySelector('input[name="connection_id"]');
+        pickerBody.append('pwg_token', token ? token.value : '');
+        pickerBody.append('connection_id', id ? id.value : '');
+        return fetch('plugins/bratonien_tools/nc-connector-source-picker-start.php', {
+          method:'POST',
+          credentials:'same-origin',
+          cache:'no-store',
+          headers:{'Accept':'application/json'},
+          body:pickerBody
+        }).then(jsonResponse);
+      })
+      .then(function () {
+        try {
+          sessionStorage.setItem('bratonienNcWizardMode', 'migrate');
+          sessionStorage.setItem('bratonienNcWizardOpen', '1');
+        } catch (e) {}
+        window.location.reload();
+      })
+      .catch(function (error) {
+        showPickerError(form, error && typeof error === 'object' ? error : {message:String(error), fields:[]});
+        button.disabled = false;
+        button.textContent = originalText;
+      });
+  }
+
   function enhanceMigrationButtons(root) {
     [].slice.call(root.querySelectorAll('button[value="nc_connector_migrate_start"]')).forEach(function (button) {
       button.textContent = 'Nextcloud-Ordner auswählen & migrieren';
@@ -14,6 +120,9 @@
     form.dataset.sourceUiEnhanced = '1';
 
     var headings = [].slice.call(form.querySelectorAll('h5'));
+    var webdavHeading = headings.find(function (node) {
+      return (node.textContent || '').trim() === 'Nextcloud / WebDAV';
+    });
     var legacyHeading = headings.find(function (node) {
       return (node.textContent || '').trim() === 'Bestehender Legacy-Weg';
     });
@@ -23,11 +132,29 @@
     var storageList = form.querySelector('[data-storage-list]');
     var addStorage = form.querySelector('[data-add-storage]');
 
+    if (webdavHeading && !form.querySelector('[data-webdav-source-picker]')) {
+      var webdavGrid = webdavHeading.nextElementSibling;
+      while (webdavGrid && !webdavGrid.classList.contains('bratonien-form-grid')) webdavGrid = webdavGrid.nextElementSibling;
+      if (webdavGrid) {
+        var picker = document.createElement('div');
+        picker.dataset.webdavSourcePicker = '1';
+        picker.style.margin = '.8rem 0 1rem';
+        picker.innerHTML = '<p class="bratonien-base-note" style="margin:.25rem 0 .5rem"><strong>WebDAV-Quelle:</strong> Du musst keinen Pfad kennen. Die Ordner des oben eingetragenen Nextcloud-Benutzers werden automatisch geladen und können anschließend ausgewählt werden.</p>';
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'buttonLike';
+        button.textContent = 'Nextcloud-Ordner automatisch auswählen';
+        button.addEventListener('click', function () { startSourcePicker(form, button); });
+        picker.appendChild(button);
+        webdavGrid.insertAdjacentElement('afterend', picker);
+      }
+    }
+
     if (legacyHeading && !form.querySelector('[data-webdav-source-note]')) {
       var note = document.createElement('p');
       note.dataset.webdavSourceNote = '1';
       note.className = 'bratonien-main-cache__warning';
-      note.innerHTML = '<strong>Wichtig:</strong> Der folgende SMB-/lokale Speicher gehört ausschließlich zum bisherigen Legacy-Fallback. Er wird <strong>nicht</strong> als WebDAV-Quelle übernommen. Die WebDAV-Quellordner werden beim Start der Migration direkt aus Nextcloud angezeigt und ausgewählt.';
+      note.innerHTML = '<strong>Wichtig:</strong> Der folgende SMB-/lokale Speicher gehört ausschließlich zum bisherigen Legacy-Fallback. Er wird <strong>nicht</strong> als WebDAV-Quelle übernommen.';
       legacyHeading.insertAdjacentElement('beforebegin', note);
     }
 
