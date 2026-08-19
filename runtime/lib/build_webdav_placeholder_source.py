@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build a placeholder-backed local source tree from Nextcloud WebDAV.
 
-This creates only tiny placeholder files plus a metadata mapping; no Nextcloud
-original media is downloaded. The authenticated Nextcloud user is never used as
-an album name. Selecting the user's WebDAV root mirrors its children directly.
+This is intentionally additive: it does not replace the existing local-storage
+connector path. It creates only tiny placeholder files plus a metadata mapping;
+no Nextcloud original media is downloaded.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ from pathlib import Path, PurePosixPath
 DAV = "DAV:"
 OC = "http://owncloud.org/ns"
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+# 1x1 transparent GIF, 34 bytes. The filename keeps the remote extension;
+# the placeholder exists only so Piwigo can discover the logical image entry.
 PLACEHOLDER = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
 
 
@@ -146,7 +148,13 @@ def link_placeholder(seed: Path, target: Path) -> None:
         target.write_bytes(PLACEHOLDER)
 
 
-def build_root(client: WebDavClient, remote_root: str, local_root: Path, seed: Path, mapping: dict[str, dict[str, object]]) -> tuple[int, int, int]:
+def build_root(
+    client: WebDavClient,
+    remote_root: str,
+    local_root: Path,
+    seed: Path,
+    mapping: dict[str, dict[str, object]],
+) -> tuple[int, int, int]:
     files = 0
     folders = 0
     skipped = 0
@@ -245,19 +253,17 @@ def main() -> int:
         mapping: dict[str, dict[str, object]] = {}
         manifest: list[str] = []
         total_files = total_folders = total_skipped = 0
-        used_fileids: set[int] = set()
+        used_names: set[str] = set()
 
         for remote_root_raw in args.root:
             remote_root = validate_relative(remote_root_raw)
             current, _ = client.list_collection(remote_root)
             fileid = int(current["fileid"])
-            if fileid in used_fileids:
-                fail(f"duplicate selected Nextcloud root fileid: {fileid}")
-            used_fileids.add(fileid)
-            # An explicitly selected folder keeps its own name. The authenticated
-            # user's WebDAV root is transparent and must never become an album.
-            display = "" if remote_root == "" else (str(current.get("display_name", "")).strip() or PurePosixPath(remote_root).name)
+            display = str(current.get("display_name", "")).strip() or (PurePosixPath(remote_root).name if remote_root else args.user)
             local_name = f"root-{fileid}"
+            if local_name in used_names:
+                fail(f"duplicate selected Nextcloud root fileid: {fileid}")
+            used_names.add(local_name)
             local_root = staging / local_name
             files, folders, skipped = build_root(client, remote_root, local_root, seed, mapping)
             total_files += files

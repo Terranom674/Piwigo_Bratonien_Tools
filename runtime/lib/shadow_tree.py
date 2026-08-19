@@ -79,23 +79,15 @@ def preferred_target(source_key: str, raw_name: str, parent_target: Path, old_ma
     return safe_name(raw_name)
 
 
-def mirror_directory(
-    source: Path,
-    target: Path,
-    source_key: str,
-    target_key: Path,
-    old_map: dict[str, str],
-    new_map: dict[str, str],
-    used: set[str] | None = None,
-) -> None:
+def mirror_directory(source: Path, target: Path, source_key: str, target_key: Path, old_map: dict[str, str], new_map: dict[str, str]) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    used_names = used if used is not None else set()
+    used: set[str] = set()
     for child in sorted(source.iterdir(), key=lambda item: (item.name.casefold(), item.name)):
         if child.is_symlink():
             continue
         child_source_key = f"{source_key}/{child.name}"
         preferred = preferred_target(child_source_key, child.name, target_key, old_map)
-        child_name = unique_name(preferred, used_names, child.is_file())
+        child_name = unique_name(preferred, used, child.is_file())
         child_target = target / child_name
         child_target_key = target_key / child_name
         new_map[child_source_key] = child_target_key.as_posix()
@@ -128,26 +120,11 @@ def build(manifest: Path, destination: Path, state_file: Path) -> None:
 
     try:
         used_roots: set[str] = set()
-        transparent_roots = 0
         for entry in sorted(entries, key=lambda item: (item["display_name"].casefold(), item["share_id"])):
             source = Path(entry["source_path"])
             source_key = f"share:{entry['share_id']}"
-            is_file_share = entry["item_type"] == "file"
-
-            # Empty display_name is intentional: it represents the authenticated
-            # user's WebDAV root. Its children belong directly at destination;
-            # the Nextcloud username must never become an album wrapper.
-            if not is_file_share and entry["display_name"] == "":
-                transparent_roots += 1
-                if transparent_roots > 1:
-                    raise ValueError("only one transparent WebDAV root is allowed")
-                if not source.is_dir():
-                    raise FileNotFoundError(f"source is not a readable directory: {source}")
-                new_map[source_key] = "."
-                mirror_directory(source, staging, source_key, Path("."), old_map, new_map, used_roots)
-                continue
-
             preferred = preferred_target(source_key, entry["display_name"], Path("."), old_map)
+            is_file_share = entry["item_type"] == "file"
             root_name = unique_name(preferred, used_roots, is_file_share)
             root_key = Path(root_name)
             new_map[source_key] = root_key.as_posix()
