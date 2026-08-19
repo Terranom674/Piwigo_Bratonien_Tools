@@ -108,9 +108,11 @@
   }
 
   function enhanceMigrationButtons(root) {
+    var label = 'Nextcloud-Ordner auswählen & migrieren';
+    var title = 'Die WebDAV-Quelle wird im Nextcloud-Ordnerbrowser ausgewählt. Der bestehende SMB-/Legacy-Speicher wird nicht als WebDAV-Quelle übernommen.';
     [].slice.call(root.querySelectorAll('button[value="nc_connector_migrate_start"]')).forEach(function (button) {
-      button.textContent = 'Nextcloud-Ordner auswählen & migrieren';
-      button.title = 'Die WebDAV-Quelle wird im Nextcloud-Ordnerbrowser ausgewählt. Der bestehende SMB-/Legacy-Speicher wird nicht als WebDAV-Quelle übernommen.';
+      if (button.textContent !== label) button.textContent = label;
+      if (button.title !== title) button.title = title;
     });
   }
 
