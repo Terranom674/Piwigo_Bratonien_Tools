@@ -13,6 +13,33 @@
     var tokenInput = section.querySelector('input[name="pwg_token"]');
     var pwgToken = tokenInput ? tokenInput.value : '';
 
+    var technicalButton = document.getElementById('bratonien-nc-technical-open');
+    if (technicalButton) technicalButton.remove();
+    var technicalCreate = document.getElementById('bratonien-nc-technical-create');
+    if (technicalCreate) technicalCreate.remove();
+
+    var statusHeading = Array.prototype.find.call(section.querySelectorAll('h4'), function (heading) {
+      return heading.textContent.trim() === 'Status';
+    });
+    var statusCard = statusHeading ? statusHeading.closest('.bratonien-card') : null;
+    if (statusCard && pwgToken && !statusCard.querySelector('[data-nc-run-now]')) {
+      var runForm = document.createElement('form');
+      runForm.method = 'post';
+      runForm.className = 'bratonien-actions';
+      runForm.style.marginTop = '1rem';
+      runForm.setAttribute('data-nc-run-now', '1');
+      runForm.innerHTML = '<input type="hidden" name="pwg_token" value="'+escapeHtml(pwgToken)+'">'
+        + '<button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_run_now">Jetzt abgleichen</button>';
+      runForm.addEventListener('submit', function () {
+        var button = runForm.querySelector('button');
+        if (button) {
+          button.disabled = true;
+          button.textContent = 'Abgleich wird gestartet …';
+        }
+      });
+      statusCard.appendChild(runForm);
+    }
+
     function escapeHtml(value) {
       return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
         return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
