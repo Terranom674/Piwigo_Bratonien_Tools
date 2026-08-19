@@ -36,6 +36,11 @@ $latest = array(
   'api'=>array('state'=>'not_run','message'=>''),
   'fallback'=>array('state'=>'not_run','message'=>''),
   'error_detail'=>'',
+  'route'=>'',
+  'route_label'=>'Noch kein Datenweg erfasst',
+  'route_timestamp'=>0,
+  'route_time_label'=>'Nicht verfügbar',
+  'route_detail'=>'',
 );
 
 if (is_dir($dir))
@@ -55,6 +60,44 @@ if (is_dir($dir))
     {
       $latest = array_merge($latest, $decoded);
       $latest['connection_file'] = basename($file);
+    }
+  }
+
+  $route_file = $dir.'/route-status.json';
+  if (is_readable($route_file))
+  {
+    $route = json_decode((string)@file_get_contents($route_file), true);
+    if (is_array($route))
+    {
+      $route_name = (string)($route['route'] ?? '');
+      $route_timestamp = (int)($route['timestamp'] ?? 0);
+      $route_label = (string)($route['label'] ?? '');
+
+      if ($route_name === 'webdav')
+      {
+        $route_label = 'WEBDAV PRIMÄR';
+      }
+      elseif ($route_name === 'legacy_fallback')
+      {
+        $route_label = 'LEGACY-FALLBACK AKTIV';
+      }
+      elseif ($route_name === 'failed')
+      {
+        $route_label = 'FEHLER - KEIN ERFOLGREICHER DATENWEG';
+      }
+      elseif ($route_label === '')
+      {
+        $route_label = 'UNBEKANNTER DATENWEG';
+      }
+
+      $latest['route'] = $route_name;
+      $latest['route_label'] = $route_label;
+      $latest['route_timestamp'] = $route_timestamp;
+      $latest['route_time_label'] = $route_timestamp > 0 ? date('d.m.Y H:i:s', $route_timestamp) : 'Nicht verfügbar';
+      $latest['route_detail'] = (string)($route['detail'] ?? '');
+
+      $base_message = trim((string)($latest['message'] ?? ''));
+      $latest['message'] = $route_label.($base_message !== '' ? ' · '.$base_message : '');
     }
   }
 }
