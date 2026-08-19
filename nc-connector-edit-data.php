@@ -27,7 +27,6 @@ if (!function_exists('is_admin') || !is_admin())
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_manage.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_connection_scope.inc.php');
-require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector_edit.inc.php');
 
 $id = (int)($_GET['connection_id'] ?? 0);
 $connection = bratonien_tools_nc_connector_connection($id, true);
@@ -40,27 +39,13 @@ if (!$connection)
 
 $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
 $credentials = array();
-$migration = array('ready'=>false, 'missing'=>array());
-$migration_available = false;
 try
 {
   $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
-  if ((string)$connection['adapter'] === 'local')
-  {
-    $migration_config = isset($config['migration']) && is_array($config['migration']) ? $config['migration'] : array();
-    $already_paired = (string)($migration_config['role'] ?? '') === 'legacy-fallback'
-      && (int)($migration_config['webdav_successor_connection_id'] ?? 0) > 0;
-    $migration_available = !$already_paired;
-    if ($migration_available)
-    {
-      $migration = bratonien_tools_nc_connector_migration_state($connection);
-    }
-  }
 }
 catch (Throwable $e)
 {
   $credentials = array();
-  $migration = array('ready'=>false, 'missing'=>array('gespeicherte Zugangsdaten konnten nicht gelesen werden'));
 }
 
 $storages = array();
@@ -102,9 +87,6 @@ $payload = array(
     'has_api_key_secret'=>trim((string)($credentials['api_key_secret'] ?? '')) !== '',
     'fallback_user'=>(string)($credentials['piwigo_user'] ?? ''),
     'has_fallback_password'=>(string)($credentials['piwigo_password'] ?? '') !== '',
-    'migration_available'=>$migration_available,
-    'migration_ready'=>$migration_available && !empty($migration['ready']),
-    'migration_missing'=>$migration_available ? array_values((array)($migration['missing'] ?? array())) : array(),
   ),
 );
 
