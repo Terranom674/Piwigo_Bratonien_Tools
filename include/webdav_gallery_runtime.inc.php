@@ -14,13 +14,14 @@ function bratonien_tools_filter_webdav_gallery_derivative_url($url, $params, $sr
     return $url;
   }
 
+  $derivative_path = '';
   try
   {
     $derivative = new DerivativeImage($params, $src_image);
     if (!$derivative->same_as_source())
     {
-      $path = $derivative->get_path();
-      if ($path !== '' && is_file($path) && is_readable($path))
+      $derivative_path = $derivative->get_path();
+      if ($derivative_path !== '' && is_file($derivative_path) && is_readable($derivative_path))
       {
         return $url;
       }
@@ -28,7 +29,37 @@ function bratonien_tools_filter_webdav_gallery_derivative_url($url, $params, $sr
   }
   catch (Throwable $e)
   {
-    error_log('Bratonien WebDAV gallery derivative lookup #'.(int)$src_image->id.': '.$e->getMessage());
+    error_log('Bratonien WebDAV derivative lookup #'.(int)$src_image->id.': '.$e->getMessage());
+  }
+
+  $script_name = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+  if ($script_name === 'picture.php' && function_exists('bratonien_tools_webdav_generate_derivative'))
+  {
+    $detail = '';
+    try
+    {
+      if (bratonien_tools_webdav_generate_derivative($params, $src_image, $detail))
+      {
+        if ($derivative_path === '')
+        {
+          $probe = new DerivativeImage($params, $src_image);
+          if (!$probe->same_as_source()) $derivative_path = $probe->get_path();
+        }
+        if ($derivative_path !== '' && is_file($derivative_path) && is_readable($derivative_path))
+        {
+          return $url;
+        }
+      }
+    }
+    catch (Throwable $e)
+    {
+      $detail = get_class($e).': '.$e->getMessage();
+    }
+
+    if ($detail !== '')
+    {
+      error_log('Bratonien WebDAV picture derivative #'.(int)$src_image->id.': '.$detail);
+    }
   }
 
   $preview_url = bratonien_tools_webdav_image_url((int)$src_image->id, true);
