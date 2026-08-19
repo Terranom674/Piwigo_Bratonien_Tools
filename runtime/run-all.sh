@@ -5,6 +5,14 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PIWIGO_ROOT_DEFAULT="${BRATONIEN_NC_PIWIGO_ROOT:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
 CONFIG_DIR="${BRATONIEN_NC_CONFIG_DIR:-/etc/bratonien-tools/nc-connector}"
 NATIVE_MODE="${BRATONIEN_NC_NATIVE:-0}"
+GLOBAL_LOCK_DIR="${PIWIGO_ROOT_DEFAULT%/}/_data/bratonien-tools/nc-connector-scheduler"
+GLOBAL_LOCK_FILE="$GLOBAL_LOCK_DIR/worker.lock"
+mkdir -p -- "$GLOBAL_LOCK_DIR"
+exec 8>"$GLOBAL_LOCK_FILE"
+if ! flock -n 8; then
+    echo "NC Connector: ein Lauf ist bereits aktiv."
+    exit 0
+fi
 shopt -s nullglob
 
 read_config_value() {
