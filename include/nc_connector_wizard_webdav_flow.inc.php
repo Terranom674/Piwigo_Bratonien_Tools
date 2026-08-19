@@ -126,7 +126,6 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected'])
     ? array_values(array_unique(array_map(function($path) { return trim((string)$path, '/'); }, $state['directory_selected'])))
     : array();
-  $selected = array_values(array_filter($selected, function($path) { return $path !== ''; }));
   if (!$selected)
   {
     throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis auswählen.');
@@ -143,9 +142,12 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
     {
       throw new RuntimeException('Für eine Auswahl fehlt die eindeutige Nextcloud-Datei-ID. Bitte das Verzeichnis erneut auswählen.');
     }
+    $display_name = $path === ''
+      ? (trim((string)($state['display_name'] ?? '')) !== '' ? trim((string)$state['display_name']) : (string)$state['username'])
+      : basename($path);
     $roots[] = array(
       'fileid'=>$fileid,
-      'display_name'=>basename($path),
+      'display_name'=>$display_name,
       'webdav_path'=>$path,
     );
   }
