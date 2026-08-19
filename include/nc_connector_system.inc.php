@@ -170,7 +170,7 @@ function bratonien_tools_nc_connector_last_status(array $connections)
 
   foreach ($connections as $connection)
   {
-    if (empty($connection['enabled']) || (string)($connection['takeover_state'] ?? '') !== 'active')
+    if (empty($connection['enabled']))
     {
       continue;
     }
@@ -190,6 +190,13 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
   $timer = 'bratonien-nc-connector.timer';
   $service = 'bratonien-nc-connector.service';
 
+  $active = bratonien_tools_nc_connector_systemctl_value(array('is-active', $timer));
+  $enabled = bratonien_tools_nc_connector_systemctl_value(array('is-enabled', $timer));
+  $service_active_raw = bratonien_tools_nc_connector_systemctl_value(array('is-active', $service));
+  $service_active = in_array($service_active_raw, array('active', 'activating'), true);
+  $service_started_raw = bratonien_tools_nc_connector_systemctl_value(array('show', $service, '--property=ActiveEnterTimestamp', '--value'));
+  $service_started_timestamp = bratonien_tools_nc_connector_parse_systemd_time($service_started_raw);
+
   $next_realtime_raw = bratonien_tools_nc_connector_systemctl_value(array('show', $timer, '--property=NextElapseUSecRealtime', '--value'));
   $next_timestamp = bratonien_tools_nc_connector_parse_systemd_time($next_realtime_raw);
 
@@ -204,9 +211,6 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     $next_timestamp = bratonien_tools_nc_connector_next_from_timer_list($timer);
   }
 
-  $active = bratonien_tools_nc_connector_systemctl_value(array('is-active', $timer));
-  $enabled = bratonien_tools_nc_connector_systemctl_value(array('is-enabled', $timer));
-
   $last = bratonien_tools_nc_connector_last_status($connections);
   if ($last['timestamp'] <= 0)
   {
@@ -214,10 +218,32 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     $last['timestamp'] = bratonien_tools_nc_connector_parse_systemd_time($last_raw);
   }
 
+  if ($next_timestamp > 0)
+  {
+    $next_label = date('d.m.Y H:i:s', $next_timestamp);
+  }
+  elseif ($service_active && $active === 'active' && $enabled === 'enabled')
+  {
+    $next_label = 'Nach Abschluss des aktuellen Laufs';
+  }
+  elseif ($active === 'active' && $enabled === 'enabled')
+  {
+    $next_label = 'Wird von systemd neu geplant';
+  }
+  else
+  {
+    $next_label = 'Nicht verfügbar';
+  }
+
   return array(
     'timer_name' => $timer,
     'timer_active' => $active === 'active',
     'timer_enabled' => $enabled === 'enabled',
+    'service_active' => $service_active,
+    'current_run_timestamp' => $service_started_timestamp,
+    'current_run_label' => $service_active
+      ? ($service_started_timestamp > 0 ? 'Läuft seit '.date('d.m.Y H:i:s', $service_started_timestamp) : 'Läuft gerade')
+      : 'Kein Lauf aktiv',
     'last_run_timestamp' => (int)$last['timestamp'],
     'last_run_label' => $last['timestamp'] > 0 ? date('d.m.Y H:i:s', (int)$last['timestamp']) : 'Nicht verfügbar',
     'last_run_state' => (string)$last['state'],
@@ -229,7 +255,7 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     'last_run_fallback_message' => (string)$last['fallback_message'],
     'last_run_error_detail' => (string)$last['error_detail'],
     'next_run_timestamp' => $next_timestamp,
-    'next_run_label' => $next_timestamp > 0 ? date('d.m.Y H:i:s', $next_timestamp) : 'Nicht verfügbar',
+    'next_run_label' => $next_label,
     'legacy_runtime_exists' => is_dir('/opt/piwigo-sync'),
     'legacy_config_exists' => is_dir('/etc/piwigo-sync'),
     'legacy_service_exists' => is_file('/etc/systemd/system/piwigo-sync.service'),
