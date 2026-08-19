@@ -67,7 +67,9 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
 {
   $scheduler = bratonien_tools_nc_scheduler_read_state();
   $enabled = !isset($scheduler['enabled']) || !empty($scheduler['enabled']);
-  $running = (string)($scheduler['state'] ?? '') === 'running';
+  $scheduler_state = (string)($scheduler['state'] ?? '');
+  $running = $scheduler_state === 'running';
+  $queued = $scheduler_state === 'queued';
   $started = (int)($scheduler['started_at'] ?? 0);
   $next = (int)($scheduler['next_due'] ?? 0);
   $last = bratonien_tools_nc_connector_last_status($connections);
@@ -81,10 +83,23 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     $next_label = 'Beim nächsten Piwigo-Aufruf';
   }
 
-  if ((int)$last['timestamp'] <= 0 && !empty($scheduler['finished_at']))
+  $scheduler_timestamp = (int)($scheduler['timestamp'] ?? 0);
+  if ($scheduler_timestamp > (int)$last['timestamp'])
+  {
+    $last['timestamp'] = $scheduler_timestamp;
+    $last['state'] = $scheduler_state;
+    $last['message'] = (string)($scheduler['message'] ?? '');
+    if ($scheduler_state === 'error')
+    {
+      $detail = trim((string)($scheduler['stderr'] ?? ''));
+      if ($detail === '') $detail = trim((string)($scheduler['stdout'] ?? ''));
+      $last['error_detail'] = $detail;
+    }
+  }
+  elseif ((int)$last['timestamp'] <= 0 && !empty($scheduler['finished_at']))
   {
     $last['timestamp'] = (int)$scheduler['finished_at'];
-    $last['state'] = (string)($scheduler['state'] ?? '');
+    $last['state'] = $scheduler_state;
     $last['message'] = (string)($scheduler['message'] ?? '');
     if ((string)$last['state'] === 'error')
     {
@@ -94,13 +109,17 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     }
   }
 
+  $current_label = 'Kein Lauf aktiv';
+  if ($queued) $current_label = 'Abgleich angefordert';
+  if ($running) $current_label = $started > 0 ? 'Läuft seit '.date('d.m.Y H:i:s', $started) : 'Läuft gerade';
+
   return array(
     'timer_name'=>'Piwigo nativer NC-Scheduler',
     'timer_active'=>$enabled,
     'timer_enabled'=>$enabled,
-    'service_active'=>$running,
-    'current_run_timestamp'=>$started,
-    'current_run_label'=>$running ? ($started > 0 ? 'Läuft seit '.date('d.m.Y H:i:s', $started) : 'Läuft gerade') : 'Kein Lauf aktiv',
+    'service_active'=>$running || $queued,
+    'current_run_timestamp'=>$queued ? (int)($scheduler['queued_at'] ?? 0) : $started,
+    'current_run_label'=>$current_label,
     'last_run_timestamp'=>(int)$last['timestamp'],
     'last_run_label'=>(int)$last['timestamp'] > 0 ? date('d.m.Y H:i:s', (int)$last['timestamp']) : 'Nicht verfügbar',
     'last_run_state'=>(string)$last['state'],

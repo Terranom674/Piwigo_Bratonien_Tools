@@ -93,7 +93,37 @@ function bratonien_tools_resolve_album_rule($category_id, array $categories, arr
     $by_id[(int)$category['id']] = $category;
   }
 
-  $current = (int)$category_id;
+  $category_id = (int)$category_id;
+  $root = $by_id[$category_id] ?? null;
+  $is_private = $root && isset($root['status']) && $root['status'] === 'private';
+
+  // Privat ist eine Vererbungsgrenze. Eine direkt auf diesem privaten Album
+  // gesetzte Regel bleibt moeglich, aber Regeln oeffentlicher Eltern duerfen
+  // nicht in ein privates Album hineinvererbt werden.
+  if ($is_private)
+  {
+    if (isset($rules[$category_id]))
+    {
+      $rule = $rules[$category_id];
+      if ($rule['mode'] === 'disabled')
+      {
+        return array('mode'=>'disabled','profile_id'=>null,'source'=>'album');
+      }
+      if ($rule['mode'] === 'profile')
+      {
+        return array('mode'=>'profile','profile_id'=>(int)$rule['profile_id'],'source'=>'album');
+      }
+    }
+
+    $profile_id = $defaults['private_profile'] ?? null;
+    if (empty($profile_id))
+    {
+      return array('mode'=>'disabled','profile_id'=>null,'source'=>'global');
+    }
+    return array('mode'=>'profile','profile_id'=>(int)$profile_id,'source'=>'global');
+  }
+
+  $current = $category_id;
   $visited = array();
 
   while ($current > 0 && isset($by_id[$current]) && !isset($visited[$current]))
@@ -116,10 +146,7 @@ function bratonien_tools_resolve_album_rule($category_id, array $categories, arr
     $current = (int)($by_id[$current]['id_uppercat'] ?? 0);
   }
 
-  $root = $by_id[(int)$category_id] ?? null;
-  $is_private = $root && isset($root['status']) && $root['status'] === 'private';
-  $profile_id = $is_private ? ($defaults['private_profile'] ?? null) : ($defaults['public_profile'] ?? null);
-
+  $profile_id = $defaults['public_profile'] ?? null;
   if (empty($profile_id))
   {
     return array('mode'=>'disabled','profile_id'=>null,'source'=>'global');

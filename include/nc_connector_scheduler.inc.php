@@ -117,7 +117,10 @@ function bratonien_tools_nc_scheduler_spawn($force = false)
 
   $state['enabled'] = true;
   $state['mode'] = 'piwigo-native';
+  $state['state'] = 'queued';
+  $state['message'] = 'NC-Abgleich wurde angefordert.';
   $state['queued_at'] = $now;
+  $state['timestamp'] = $now;
   $state['next_due'] = $now + bratonien_tools_nc_scheduler_interval();
   bratonien_tools_nc_scheduler_write_state($state);
 
@@ -136,10 +139,15 @@ function bratonien_tools_nc_scheduler_spawn($force = false)
 
   if ($exit !== 0)
   {
+    $state = bratonien_tools_nc_scheduler_read_state();
+    $state['state'] = 'error';
+    $state['message'] = 'Der native NC-Abgleich konnte nicht gestartet werden.';
+    $state['timestamp'] = time();
+    bratonien_tools_nc_scheduler_write_state($state);
     throw new RuntimeException('Der native NC-Abgleich konnte nicht gestartet werden.');
   }
 
-  return array('started'=>true, 'message'=>'NC-Abgleich wurde gestartet.');
+  return array('started'=>true, 'message'=>'NC-Abgleich wurde angefordert.');
 }
 
 function bratonien_tools_nc_scheduler_tick()

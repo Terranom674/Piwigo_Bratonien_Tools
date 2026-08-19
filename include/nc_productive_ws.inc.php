@@ -56,7 +56,6 @@ function bratonien_tools_nc_find_album($parent_id, $dir, $name, $excluded_site_i
 SELECT id, dir, name
   FROM '.CATEGORIES_TABLE.'
   WHERE '.$where_parent.'
-    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')
     AND (
       dir = \''.$dir_sql.'\'
       OR LOWER(name) = LOWER(\''.$name_sql.'\')
@@ -122,10 +121,9 @@ function bratonien_tools_nc_managed_images($basedir)
 
 function bratonien_tools_nc_remove_storage_categories($site_id)
 {
-  $ids = query2array('SELECT id FROM '.CATEGORIES_TABLE.' WHERE site_id='.(int)$site_id.' AND dir IS NOT NULL', null, 'id');
-  if (!$ids) return 0;
-  delete_categories(array_map('intval', $ids));
-  return count($ids);
+  // Bestehende Piwigo-Alben gehoeren nicht automatisch dem Connector.
+  // Ohne eindeutige Connector-Eigentumsmarkierung darf hier nichts geloescht werden.
+  return 0;
 }
 
 function bratonien_tools_ws_nc_sync_productive($params, &$service)
@@ -169,8 +167,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
   try
   {
-    $counts['removed_duplicate_categories'] = bratonien_tools_nc_remove_storage_categories($site_id);
-
     list($dbnow) = pwg_db_fetch_row(pwg_query('SELECT NOW()'));
     $fs_dirs = $site_reader->get_full_directories($basedir);
     usort($fs_dirs, function($a, $b)
@@ -199,20 +195,10 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
     $db_elements = bratonien_tools_nc_managed_images($basedir);
     $db_by_path = array_flip($db_elements);
 
-    $to_delete = array();
-    foreach ($db_elements as $id=>$path)
-    {
-      if (!array_key_exists($path, $fs)) $to_delete[] = (int)$id;
-    }
-    if ($to_delete)
-    {
-      delete_elements($to_delete, false);
-      $counts['del_elements'] = count($to_delete);
-      foreach ($to_delete as $id)
-      {
-        if (isset($db_elements[$id])) unset($db_by_path[$db_elements[$id]], $db_elements[$id]);
-      }
-    }
+    // Nicht-destruktiver Schutz: Bestehende Piwigo-Bilder werden niemals allein
+    // deshalb geloescht, weil sie im aktuellen WebDAV-Scan nicht vorkommen.
+    // Das Entfernen ist erst wieder zulaessig, wenn Connector-Eigentum eindeutig
+    // und verbindungsbezogen gespeichert wird.
 
     $next_element_id = pwg_db_nextval('id', IMAGES_TABLE);
     $image_inserts = array();
@@ -232,13 +218,9 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
       if (isset($db_by_path[$path]))
       {
-        $id = (int)$db_by_path[$path];
-        $all_ids[] = $id;
-        pwg_query('DELETE FROM '.IMAGE_CATEGORY_TABLE.' WHERE image_id='.$id);
-        if ($category_id !== null)
-        {
-          single_insert(IMAGE_CATEGORY_TABLE, array('image_id'=>$id, 'category_id'=>$category_id));
-        }
+        // Altbestand niemals umhaengen. Vorhandene Bild-Album-Zuordnungen bleiben
+        // exakt bestehen; der Connector darf nur neue Datensaetze ergaenzen.
+        $all_ids[] = (int)$db_by_path[$path];
         continue;
       }
 
@@ -276,8 +258,10 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
       $counts['new_elements'] = count($new_ids);
     }
 
+    // Bestehende Bilder werden nicht durch den Connector aktualisiert. Nur neu
+    // angelegte Connector-Bilder erhalten die aus der Quelle ermittelten Attribute.
     $updates = array();
-    foreach ($all_ids as $id)
+    foreach ($new_ids as $id)
     {
       $path_result = pwg_query('SELECT path FROM '.IMAGES_TABLE.' WHERE id='.(int)$id.' LIMIT 1');
       if (!pwg_db_num_rows($path_result)) continue;
