@@ -6,7 +6,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 if (isset($GLOBALS['template']) && is_object($GLOBALS['template']) && method_exists($GLOBALS['template'], 'func_combine_script'))
 {
-  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.27';
+  $script_version = function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : '0.9.6.30';
   $GLOBALS['template']->func_combine_script(array(
     'id'=>'bratonien_nc_connector_edit_v2',
     'path'=>BRATONIEN_TOOLS_PATH.'js/nc_connector_edit_v2.js',
@@ -41,57 +41,13 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_delete_safe.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_webdav.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_webdav_flow.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_edit.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_scheduler.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_system.inc.php');
 
 function bratonien_tools_nc_connector_run_now()
 {
-  $service = 'bratonien-nc-connector.service';
-  $active = bratonien_tools_nc_connector_systemctl_value(array('is-active', $service));
-  if ($active === 'active' || $active === 'activating')
-  {
-    return array('message'=>'Der NC-Abgleich läuft bereits.');
-  }
-
-  if (!function_exists('proc_open'))
-  {
-    throw new RuntimeException('Der NC-Abgleich konnte nicht gestartet werden: proc_open ist nicht verfügbar.');
-  }
-
-  $commands = array(
-    array('/usr/bin/sudo', '-n', '/usr/bin/systemctl', 'start', '--no-block', $service),
-    array('/usr/bin/systemctl', 'start', '--no-block', $service),
-  );
-  $last_error = '';
-
-  foreach ($commands as $command)
-  {
-    if (!is_executable($command[0]))
-    {
-      continue;
-    }
-    $spec = array(
-      0=>array('file','/dev/null','r'),
-      1=>array('pipe','w'),
-      2=>array('pipe','w'),
-    );
-    $process = @proc_open($command, $spec, $pipes, null, array_merge($_ENV, array('LC_ALL'=>'C','LANG'=>'C')));
-    if (!is_resource($process))
-    {
-      continue;
-    }
-    $stdout = trim((string)stream_get_contents($pipes[1]));
-    $stderr = trim((string)stream_get_contents($pipes[2]));
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $exit = proc_close($process);
-    if ($exit === 0)
-    {
-      return array('message'=>'NC-Abgleich wurde gestartet.');
-    }
-    $last_error = $stderr !== '' ? $stderr : $stdout;
-  }
-
-  throw new RuntimeException('Der NC-Abgleich konnte nicht gestartet werden'.($last_error !== '' ? ': '.$last_error : '.'));
+  $result = bratonien_tools_nc_scheduler_spawn(true);
+  return array('message'=>(string)($result['message'] ?? 'NC-Abgleich wurde gestartet.'));
 }
 
 function bratonien_tools_get_tools()
