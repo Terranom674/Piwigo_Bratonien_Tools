@@ -47,24 +47,31 @@ function bratonien_cleanup_tree($path, $allowed_root)
   @rmdir($path);
 }
 
-function bratonien_webdav_site_images($site_id)
+function bratonien_connection_id_from_owned_path($path)
 {
-  $rows = array();
-  $query = '
-SELECT DISTINCT i.id, i.path, i.representative_ext
-  FROM '.IMAGES_TABLE.' AS i
-  LEFT JOIN '.CATEGORIES_TABLE.' AS sc ON sc.id = i.storage_category_id
-  LEFT JOIN '.IMAGE_CATEGORY_TABLE.' AS ic ON ic.image_id = i.id
-  LEFT JOIN '.CATEGORIES_TABLE.' AS vc ON vc.id = ic.category_id
-  WHERE sc.site_id = '.(int)$site_id.' OR vc.site_id = '.(int)$site_id.'
-;';
-  $result = pwg_query($query);
-  while ($row = pwg_db_fetch_assoc($result))
+  $path = (string)$path;
+  foreach (array(
+    '#^\./_data/bratonien-tools/nc-webdav-gallery/connection-([0-9]+)/#',
+    '#^\./_data/bratonien-tools/nc-webdav-source/connection-([0-9]+)/#',
+    '#^\./galleries/bratonien-webdav-([0-9]+)/#',
+  ) as $pattern)
   {
-    $row['id'] = (int)$row['id'];
-    $rows[$row['id']] = $row;
+    if (preg_match($pattern, $path, $match)) return (int)$match[1];
   }
-  return $rows;
+  return 0;
+}
+
+function bratonien_connection_id_from_site_url($url)
+{
+  $url = (string)$url;
+  foreach (array(
+    '#^\./_data/bratonien-tools/nc-webdav-gallery/connection-([0-9]+)/$#',
+    '#^\./galleries/bratonien-webdav-([0-9]+)/$#',
+  ) as $pattern)
+  {
+    if (preg_match($pattern, $url, $match)) return (int)$match[1];
+  }
+  return 0;
 }
 
 try
@@ -84,24 +91,24 @@ try
     }
   }
 
-  $site_prefix = './_data/bratonien-tools/nc-webdav-gallery/connection-';
-  $result = pwg_query(
-    "SELECT id, galleries_url FROM ".SITES_TABLE.
-    " WHERE galleries_url LIKE '".pwg_db_real_escape_string($site_prefix)."%'"
-  );
-
-  $removed_sites = 0;
   $removed_images = 0;
-  while ($site = pwg_db_fetch_assoc($result))
+  $stale_by_connection = array();
+  $result = pwg_query(
+    "SELECT id, path, representative_ext FROM ".IMAGES_TABLE.
+    " WHERE path LIKE './_data/bratonien-tools/nc-webdav-gallery/connection-%'".
+    " OR path LIKE './_data/bratonien-tools/nc-webdav-source/connection-%'".
+    " OR path LIKE './galleries/bratonien-webdav-%'"
+  );
+  while ($row = pwg_db_fetch_assoc($result))
   {
-    $site_id = (int)$site['id'];
-    $site_url = (string)$site['galleries_url'];
-    if (!preg_match('#^\./_data/bratonien-tools/nc-webdav-gallery/connection-([0-9]+)/$#', $site_url, $match)) continue;
-
-    $connection_id = (int)$match[1];
+    $connection_id = bratonien_connection_id_from_owned_path($row['path'] ?? '');
     if ($connection_id < 1 || isset($active[$connection_id])) continue;
+    $row['id'] = (int)$row['id'];
+    $stale_by_connection[$connection_id][$row['id']] = $row;
+  }
 
-    $images = bratonien_webdav_site_images($site_id);
+  foreach ($stale_by_connection as $connection_id=>$images)
+  {
     foreach ($images as $row)
     {
       try
@@ -114,48 +121,60 @@ try
       }
     }
 
-    delete_site($site_id);
-
-    if ($images)
-    {
-      $ids = array_keys($images);
-      $remaining = query2array(
-        'SELECT id FROM '.IMAGES_TABLE.' WHERE id IN ('.implode(',', array_map('intval', $ids)).')',
-        null,
-        'id'
-      );
-      if ($remaining)
-      {
-        delete_elements(array_map('intval', $remaining), false);
-      }
-    }
-
-    $removed_sites++;
+    delete_elements(array_map('intval', array_keys($images)), false);
     $removed_images += count($images);
-    echo 'NC WebDAV: entferne verwaiste Piwigo-Site '.$site_id.' für gelöschte Verbindung '.$connection_id.".\n";
+    echo 'NC WebDAV: entferne '.count($images).' verwaiste Bilder der gelöschten Verbindung '.$connection_id.".\n";
+  }
 
-    $gallery_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-gallery';
-    $source_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-source';
-    $preview_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-preview';
+  $removed_sites = 0;
+  $result = pwg_query('SELECT id, galleries_url FROM '.SITES_TABLE);
+  $stale_sites = array();
+  while ($site = pwg_db_fetch_assoc($result))
+  {
+    $connection_id = bratonien_connection_id_from_site_url($site['galleries_url'] ?? '');
+    if ($connection_id < 1 || isset($active[$connection_id])) continue;
+    $stale_sites[] = array('id'=>(int)$site['id'], 'connection_id'=>$connection_id);
+  }
+
+  foreach ($stale_sites as $site)
+  {
+    delete_site($site['id']);
+    $removed_sites++;
+    echo 'NC WebDAV: entferne verwaiste Piwigo-Site '.$site['id'].' der gelöschten Verbindung '.$site['connection_id'].".\n";
+  }
+
+  $stale_connection_ids = array_unique(array_merge(
+    array_map('intval', array_keys($stale_by_connection)),
+    array_map(function($site) { return (int)$site['connection_id']; }, $stale_sites)
+  ));
+
+  $gallery_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-gallery';
+  $source_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-source';
+  $preview_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-webdav-preview';
+  $legacy_root = PHPWG_ROOT_PATH.'galleries';
+  $state_root = '/var/lib/bratonien-tools/nc-connector';
+  $status_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-connector-status';
+
+  foreach ($stale_connection_ids as $connection_id)
+  {
+    if ($connection_id < 1) continue;
     bratonien_cleanup_tree($gallery_root.'/connection-'.$connection_id, $gallery_root);
     bratonien_cleanup_tree($source_root.'/connection-'.$connection_id, $source_root);
     bratonien_cleanup_tree($preview_root.'/connection-'.$connection_id, $preview_root);
-
-    $state_root = '/var/lib/bratonien-tools/nc-connector';
+    bratonien_cleanup_tree($legacy_root.'/bratonien-webdav-'.$connection_id, $legacy_root);
     bratonien_cleanup_tree($state_root.'/connection-'.$connection_id, $state_root);
 
     foreach (glob('/etc/bratonien-tools/nc-connector/webdav-connection-'.$connection_id.'.*') ?: array() as $file)
     {
       @unlink($file);
     }
-
-    $status_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-connector-status';
     @unlink($status_root.'/connection-'.$connection_id.'.json');
     @unlink($status_root.'/deleted-'.$connection_id);
   }
 
-  if ($removed_sites > 0)
+  if ($removed_sites > 0 || $removed_images > 0)
   {
+    update_category('all');
     invalidate_user_cache(true);
   }
 
