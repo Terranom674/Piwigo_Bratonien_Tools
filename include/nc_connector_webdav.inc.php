@@ -6,11 +6,6 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 /**
  * Return the only existing local connector as migration fallback.
- *
- * The 0.9.6.2 migration path is deliberately conservative: automatic pairing
- * only happens when there is exactly one local connection. Its enabled/state
- * flags are never changed here, so the proven local path keeps running while
- * WebDAV is introduced beside it.
  */
 function bratonien_tools_nc_connector_single_local_fallback()
 {
@@ -40,10 +35,7 @@ function bratonien_tools_nc_connector_single_local_fallback()
 }
 
 /**
- * Link the new WebDAV connection with the single existing local connection.
- *
- * This is metadata only. The legacy connection is explicitly left untouched
- * as an always-available fallback until a later, separately approved cutover.
+ * Link a WebDAV connection with the single existing local fallback.
  */
 function bratonien_tools_nc_connector_pair_migration_fallback($webdav_id, array &$webdav_config, $now)
 {
@@ -83,11 +75,11 @@ function bratonien_tools_nc_connector_pair_migration_fallback($webdav_id, array 
 }
 
 /**
- * Create a WebDAV-backed connector beside the existing local mode.
+ * Create or update a WebDAV-backed connector from the user-facing wizard.
  *
- * Since 0.9.6.2, when exactly one local connection exists, the new WebDAV
- * connection is automatically paired with it for migration. The local
- * connection remains untouched and keeps running as fallback.
+ * Remote connections are updated in place. When the editor was opened for a
+ * legacy connection, a WebDAV successor is created and the legacy connection
+ * stays available as fallback.
  */
 function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
 {
@@ -103,7 +95,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $password = (string)($state['_password'] ?? '');
   if ($base_url === '' || $username === '' || $password === '')
   {
-    throw new RuntimeException('Für den WebDAV-Testpfad fehlen Nextcloud-Adresse oder Zugangsdaten.');
+    throw new RuntimeException('Für den WebDAV-Zugang fehlen Nextcloud-Adresse oder Zugangsdaten.');
   }
 
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected'])
@@ -113,7 +105,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     ? $state['directory_selected_fileids']
     : array();
   $selected = array_values(array_filter($selected, function($path) { return $path !== ''; }));
-  if (!$selected) throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis für den WebDAV-Testpfad auswählen.');
+  if (!$selected) throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis auswählen.');
 
   $roots = array();
   foreach ($selected as $path)
@@ -138,6 +130,14 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $fallback_password = (string)($state['_fallback_password'] ?? '');
   $api_enabled = $api_key_id !== '' && $api_key_secret !== '';
 
+  $editing_id = (int)($state['editing_connection_id'] ?? 0);
+  $editing_mode = (string)($state['editing_mode'] ?? '');
+  $editing_connection = $editing_id > 0 ? bratonien_tools_nc_connector_connection($editing_id, false) : null;
+  $editing_remote = $editing_connection
+    && (string)$editing_connection['adapter'] === 'remote'
+    && (string)($editing_connection['config']['source_mode'] ?? '') === 'webdav-placeholder'
+    && $editing_mode === 'update';
+
   $config = array(
     'origin'=>'native',
     'source_mode'=>'webdav-placeholder',
@@ -157,6 +157,19 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     'api_enabled'=>$api_enabled,
   );
 
+  if ($editing_remote)
+  {
+    $old_config = is_array($editing_connection['config'] ?? null) ? $editing_connection['config'] : array();
+    foreach (array('state_dir','status_file','parallel_gallery_root','source_fingerprint','runtime','migration') as $preserve)
+    {
+      if (array_key_exists($preserve, $old_config)) $config[$preserve] = $old_config[$preserve];
+    }
+    foreach (array('quiet_seconds','max_wait_seconds','full_sync_seconds') as $preserve)
+    {
+      if (isset($old_config[$preserve])) $config[$preserve] = (int)$old_config[$preserve];
+    }
+  }
+
   foreach (array('product'=>'nextcloud_product', 'version'=>'nextcloud_version') as $state_key=>$config_key)
   {
     $value = trim((string)($state[$state_key] ?? ''));
@@ -175,15 +188,31 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($secret_payload)) throw new RuntimeException('WebDAV-Zugangsdaten konnten nicht serialisiert werden.');
 
-  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($config_json)) throw new RuntimeException('WebDAV-Konfiguration konnte nicht serialisiert werden.');
-
   bratonien_tools_nc_connector_ensure_table();
   $table = bratonien_tools_nc_connector_table();
   $now = date('Y-m-d H:i:s');
-  $connection_key = 'webdav-'.bin2hex(random_bytes(12));
   $secret_blob = bratonien_tools_nc_connector_encrypt_secret($secret_payload);
 
+  if ($editing_remote)
+  {
+    $config['state_dir'] = trim((string)($config['state_dir'] ?? '')) !== '' ? $config['state_dir'] : '/var/lib/bratonien-tools/nc-connector/connection-'.$editing_id;
+    $config['status_file'] = trim((string)($config['status_file'] ?? '')) !== '' ? $config['status_file'] : $config['state_dir'].'/connector-status.json';
+    $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($config_json)) throw new RuntimeException('WebDAV-Konfiguration konnte nicht serialisiert werden.');
+
+    pwg_query("UPDATE `$table` SET name='".pwg_db_real_escape_string($name)."', config_json='".pwg_db_real_escape_string($config_json)."', secret_blob='".pwg_db_real_escape_string($secret_blob)."', updated='".pwg_db_real_escape_string($now)."' WHERE id=".$editing_id." LIMIT 1");
+    unset($_SESSION['bratonien_nc_wizard']);
+
+    return array(
+      'connection_id'=>$editing_id,
+      'message'=>'WebDAV-Verbindung #'.$editing_id.' wurde gespeichert. Der nächste Connector-Lauf verwendet die neuen Einstellungen.',
+    );
+  }
+
+  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($config_json)) throw new RuntimeException('WebDAV-Konfiguration konnte nicht serialisiert werden.');
+
+  $connection_key = 'webdav-'.bin2hex(random_bytes(12));
   pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,takeover_state,config_json,secret_blob,created,updated) VALUES ('"
     .pwg_db_real_escape_string($connection_key)."','"
     .pwg_db_real_escape_string($name)."','remote',0,'disabled','"
@@ -193,7 +222,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     .pwg_db_real_escape_string($now)."')");
 
   $id = (int)pwg_db_insert_id();
-  if ($id < 1) throw new RuntimeException('Die WebDAV-Testverbindung konnte nicht eindeutig angelegt werden.');
+  if ($id < 1) throw new RuntimeException('Die WebDAV-Verbindung konnte nicht eindeutig angelegt werden.');
 
   try
   {
@@ -204,7 +233,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($config_json))
     {
-      throw new RuntimeException('Die WebDAV-Testverbindung konnte nach dem Anlegen nicht serialisiert werden.');
+      throw new RuntimeException('Die WebDAV-Verbindung konnte nach dem Anlegen nicht serialisiert werden.');
     }
     pwg_query("UPDATE `$table` SET config_json='".pwg_db_real_escape_string($config_json)."' WHERE id=".$id." LIMIT 1");
   }
@@ -214,17 +243,19 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     throw $e;
   }
 
+  unset($_SESSION['bratonien_nc_wizard']);
+
   if ($legacy_fallback_id !== null)
   {
     return array(
       'connection_id'=>$id,
       'legacy_fallback_connection_id'=>$legacy_fallback_id,
-      'message'=>'WebDAV-Verbindung wurde parallel angelegt. Die bestehende lokale Verbindung #'.$legacy_fallback_id.' bleibt unverändert als laufender Fallback erhalten.',
+      'message'=>'WebDAV-Nachfolger wurde angelegt. Die bestehende lokale Verbindung #'.$legacy_fallback_id.' bleibt als Fallback erhalten.',
     );
   }
 
   return array(
     'connection_id'=>$id,
-    'message'=>'Parallele WebDAV-Verbindung wurde angelegt. Bestehende Verbindungen blieben unverändert.',
+    'message'=>'WebDAV-Verbindung wurde angelegt.',
   );
 }
