@@ -61,6 +61,7 @@ function bratonien_tools_save_album_rule()
     )));
   }
 
+  bratonien_tools_clear_watermark_cache();
   return array('message'=>'Albumregel gespeichert.');
 }
 
@@ -97,9 +98,6 @@ function bratonien_tools_resolve_album_rule($category_id, array $categories, arr
   $root = $by_id[$category_id] ?? null;
   $is_private = $root && isset($root['status']) && $root['status'] === 'private';
 
-  // Privat ist eine Vererbungsgrenze. Eine direkt auf diesem privaten Album
-  // gesetzte Regel bleibt moeglich, aber Regeln oeffentlicher Eltern duerfen
-  // nicht in ein privates Album hineinvererbt werden.
   if ($is_private)
   {
     if (isset($rules[$category_id]))
