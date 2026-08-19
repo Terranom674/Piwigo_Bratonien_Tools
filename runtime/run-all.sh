@@ -11,7 +11,7 @@ if ! php "$SCRIPT_DIR/reconcile.php"; then
 fi
 
 if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
-    echo "NC Connector: WebDAV-Testverbindungen konnten nicht mit der parallelen Runtime abgeglichen werden." >&2
+    echo "NC Connector: WebDAV-Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
     exit 1
 fi
 
@@ -37,20 +37,37 @@ if [[ ${#configs[@]} -eq 0 && ${#webdav_configs[@]} -eq 0 ]]; then
     exit 0
 fi
 
-result=0
+# WebDAV ist ab 0.9.6.2 der primaere Produktionsweg.
+# Die alte lokale Verbindung bleibt unveraendert vorhanden, wird aber nur noch
+# ausgefuehrt, wenn kein WebDAV-Lauf erfolgreich abgeschlossen wurde. Dadurch
+# gibt es keinen doppelten regulaeren Import mehr, waehrend der alte Weg als
+# echter Rueckfall erhalten bleibt.
+webdav_success=0
+webdav_failed=0
 
-# WebDAV zuerst: Der parallele Shadow Tree muss bereits vollständig stehen,
-# bevor der weiterhin produktive lokale Weg seine normale Piwigo-
-# Dateisynchronisierung ausführt. So wird der neue Baum im selben Minutenlauf
-# sichtbar, ohne dass der WebDAV-Zweig selbst eine zweite globale Piwigo-
-# Synchronisierung startet.
 for config in "${webdav_configs[@]}"; do
     name="$(basename "$config")"
-    echo "NC Connector WebDAV parallel: $name"
-    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
-        result=1
+    echo "NC Connector WebDAV primaer: $name"
+    if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
+        webdav_success=1
+    else
+        webdav_failed=1
+        echo "NC Connector: WebDAV-Lauf fehlgeschlagen; Legacy-Fallback bleibt verfuegbar." >&2
     fi
 done
+
+if [[ "$webdav_success" -eq 1 ]]; then
+    echo "NC Connector: WebDAV erfolgreich; Legacy-Verbindung wird in diesem Lauf nicht ausgefuehrt."
+    exit 0
+fi
+
+if [[ ${#configs[@]} -eq 0 ]]; then
+    echo "NC Connector: WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." >&2
+    exit 1
+fi
+
+echo "NC Connector: kein erfolgreicher WebDAV-Lauf; Legacy-Fallback wird ausgefuehrt."
+legacy_result=0
 
 for config in "${configs[@]}"; do
     name="$(basename "$config")"
@@ -78,10 +95,18 @@ for config in "${configs[@]}"; do
         continue
     fi
 
-    echo "NC Connector lokal: $name"
+    echo "NC Connector Legacy-Fallback: $name"
     if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync.sh"; then
-        result=1
+        legacy_result=1
     fi
 done
 
-exit "$result"
+if [[ "$legacy_result" -eq 0 ]]; then
+    echo "NC Connector: Legacy-Fallback erfolgreich."
+    exit 0
+fi
+
+if [[ "$webdav_failed" -eq 1 ]]; then
+    echo "NC Connector: WebDAV und Legacy-Fallback sind fehlgeschlagen." >&2
+fi
+exit 1
