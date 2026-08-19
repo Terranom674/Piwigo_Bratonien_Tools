@@ -9,6 +9,7 @@ require_once(dirname(__FILE__) . '/include/database.class.php');
 require_once(dirname(__FILE__) . '/tools/watermark_profiles.inc.php');
 require_once(dirname(__FILE__) . '/include/dependencies.inc.php');
 require_once(dirname(__FILE__) . '/include/nc_connector_scheduler.inc.php');
+require_once(dirname(__FILE__) . '/include/nc_legacy_reset.inc.php');
 
 class bratonien_tools_maintain extends PluginMaintain
 {
@@ -51,6 +52,18 @@ class bratonien_tools_maintain extends PluginMaintain
   public function update($old_version, $new_version, &$errors = array())
   {
     $this->prepare($errors);
+
+    if (version_compare((string)$old_version, '0.9.7.7', '<') && version_compare((string)$new_version, '0.9.7.7', '>='))
+    {
+      try
+      {
+        bratonien_tools_nc_reset_legacy_imports();
+      }
+      catch (Throwable $e)
+      {
+        $errors[] = 'Connector-Altbestand konnte nicht vollständig bereinigt werden: '.$e->getMessage();
+      }
+    }
   }
 
   public function uninstall()
