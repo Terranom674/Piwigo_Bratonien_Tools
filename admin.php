@@ -9,6 +9,50 @@ check_status(ACCESS_ADMINISTRATOR);
 require_once(BRATONIEN_TOOLS_PATH . 'include/tool_registry.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_system.inc.php');
 
+function bratonien_tools_nc_connector_admin_connections(array $connections)
+{
+  $by_id = array();
+  foreach ($connections as $connection)
+  {
+    $by_id[(int)$connection['id']] = $connection;
+  }
+
+  $hidden_legacy_ids = array();
+  $logical_remote = array();
+  foreach ($connections as $connection)
+  {
+    if ((string)($connection['adapter'] ?? '') !== 'remote') continue;
+    $migration = isset($connection['config']['migration']) && is_array($connection['config']['migration'])
+      ? $connection['config']['migration']
+      : array();
+    if ((string)($migration['role'] ?? '') !== 'webdav-primary-candidate') continue;
+
+    $legacy_id = (int)($migration['legacy_fallback_connection_id'] ?? 0);
+    if ($legacy_id < 1 || empty($by_id[$legacy_id]) || (string)$by_id[$legacy_id]['adapter'] !== 'local') continue;
+
+    $legacy = $by_id[$legacy_id];
+    $hidden_legacy_ids[$legacy_id] = true;
+    $connection['logical_connection'] = true;
+    $connection['legacy_fallback_connection_id'] = $legacy_id;
+    $connection['enabled'] = !empty($connection['enabled']) || !empty($legacy['enabled']);
+    if ($connection['enabled']) $connection['takeover_state'] = 'active';
+    $connection['fallback_stored'] = !empty($connection['fallback_stored']) || !empty($legacy['fallback_stored']);
+    if (trim((string)$connection['name']) === '') $connection['name'] = (string)$legacy['name'];
+    $logical_remote[(int)$connection['id']] = $connection;
+  }
+
+  $visible = array();
+  foreach ($connections as $connection)
+  {
+    $id = (int)$connection['id'];
+    if (isset($hidden_legacy_ids[$id])) continue;
+    if (isset($logical_remote[$id])) $connection = $logical_remote[$id];
+    $visible[] = $connection;
+  }
+
+  return $visible;
+}
+
 $tools = bratonien_tools_get_tools();
 $messages = array();
 $errors = array();
@@ -94,6 +138,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bratonien_tool']))
   );
 
   $redirect_url = get_root_url().'admin.php?page=plugin-'.BRATONIEN_TOOLS_ID;
+  $wizard_action = strpos($tool_id, 'nc_connector_wizard_') === 0
+    || $tool_id === 'nc_connector_migrate_start'
+    || $tool_id === 'nc_connector_edit_start';
+  if ($wizard_action)
+  {
+    $wizard_closed = $tool_id === 'nc_connector_wizard_reset'
+      || ($tool_id === 'nc_connector_wizard_finish' && empty($errors));
+    if (($tool_id === 'nc_connector_migrate_start' || $tool_id === 'nc_connector_edit_start') && !empty($errors))
+    {
+      $wizard_closed = true;
+    }
+    $redirect_url .= '&nc_wizard='.($wizard_closed ? 'closed' : 'open');
+  }
   if (!headers_sent())
   {
     header('Location: '.$redirect_url, true, 303);
@@ -115,6 +172,14 @@ $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
 $private_albums = bratonien_tools_get_private_albums();
 $nc_connector = bratonien_tools_nc_connector_status();
+$nc_connector_runtime_connections = $nc_connector['connections'];
+$nc_connector['connections'] = bratonien_tools_nc_connector_admin_connections($nc_connector_runtime_connections);
+$nc_connector['connection_count'] = count($nc_connector['connections']);
+$nc_connector['active_count'] = 0;
+foreach ($nc_connector['connections'] as $visible_connection)
+{
+  if (!empty($visible_connection['enabled'])) $nc_connector['active_count']++;
+}
 foreach ($nc_connector['connections'] as &$nc_connection)
 {
   $nc_connection['last_sync'] = bratonien_tools_nc_connector_connection_last_status($nc_connection);
@@ -166,7 +231,7 @@ $nc_system_defaults = array(
 );
 $nc_connector['system'] = array_merge(
   $nc_system_defaults,
-  bratonien_tools_nc_connector_system_status($nc_connector['connections'])
+  bratonien_tools_nc_connector_system_status($nc_connector_runtime_connections)
 );
 $album_lock_page_number = isset($_GET['br_album_page']) ? max(1, (int)$_GET['br_album_page']) : 1;
 $album_lock_search = isset($_GET['br_album_search']) ? trim((string)$_GET['br_album_search']) : '';
