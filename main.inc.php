@@ -34,6 +34,7 @@ add_event_handler('get_src_image_url', 'bratonien_tools_filter_webdav_src_url', 
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_webdav_gallery_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL + 50, 4);
 add_event_handler('loc_end_element_set_global', 'bratonien_tools_batch_titles_register_action');
 add_event_handler('element_set_global_action', 'bratonien_tools_batch_titles_apply', EVENT_HANDLER_PRIORITY_NEUTRAL, 2);
+add_event_handler('init', 'bratonien_tools_watermark_cache_upgrade', EVENT_HANDLER_PRIORITY_NEUTRAL - 40);
 add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EVENT_HANDLER_PRIORITY_NEUTRAL - 30);
 add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', EVENT_HANDLER_PRIORITY_NEUTRAL - 20);
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
