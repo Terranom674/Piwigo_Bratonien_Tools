@@ -99,16 +99,16 @@ try
   $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
   $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
 
-  $nextcloud_url = trim((string)($_POST['nc_nextcloud_url'] ?? ($config['nextcloud_url'] ?? '')));
+  $nextcloud_input = trim((string)($_POST['nc_nextcloud_url'] ?? ($config['nextcloud_url'] ?? '')));
   $nextcloud_user = trim((string)($_POST['nc_nextcloud_user'] ?? ($credentials['nextcloud_user'] ?? '')));
   $submitted_nc_password = (string)($_POST['nc_nextcloud_password'] ?? '');
   $nextcloud_password = $submitted_nc_password !== '' ? $submitted_nc_password : (string)($credentials['nextcloud_password'] ?? '');
 
-  $has_any_nextcloud = $nextcloud_url !== '' || $nextcloud_user !== '' || $nextcloud_password !== '';
+  $has_any_nextcloud = $nextcloud_input !== '' || $nextcloud_user !== '' || $nextcloud_password !== '';
   if ($has_any_nextcloud)
   {
     $missing = array();
-    if ($nextcloud_url === '') $missing[] = 'nc_nextcloud_url';
+    if ($nextcloud_input === '') $missing[] = 'nc_nextcloud_url';
     if ($nextcloud_user === '') $missing[] = 'nc_nextcloud_user';
     if ($nextcloud_password === '') $missing[] = 'nc_nextcloud_password';
     if ($missing)
@@ -122,46 +122,67 @@ try
 
     try
     {
-      $nextcloud_url = bratonien_tools_nc_wizard_normalize_url($nextcloud_url);
+      $candidate_urls = bratonien_tools_nc_wizard_candidate_urls($nextcloud_input);
     }
     catch (Throwable $e)
     {
       bratonien_tools_nc_edit_fail($e->getMessage(), array('nc_nextcloud_url'), 'Nextcloud / WebDAV');
     }
 
-    $status_url = $nextcloud_url.'/status.php';
-    $probe = bratonien_tools_nc_edit_probe($status_url);
-    if (!$probe['ok'])
+    $nextcloud_url = '';
+    $last_probe = null;
+    $last_status_url = '';
+    foreach ($candidate_urls as $candidate_url)
     {
-      $technical = $probe['errno'] >= 0
-        ? 'cURL '.$probe['errno'].($probe['error'] !== '' ? ': '.$probe['error'] : '')
-        : $probe['error'];
-      bratonien_tools_nc_edit_fail(
-        'Die Nextcloud-Adresse ist vom Piwigo-Server aus nicht erreichbar.',
-        array('nc_nextcloud_url'),
-        'Nextcloud / WebDAV – Erreichbarkeit',
-        $technical.' · Ziel: '.$status_url
-      );
+      $status_url = $candidate_url.'/status.php';
+      $probe = bratonien_tools_nc_edit_probe($status_url);
+      $last_probe = $probe;
+      $last_status_url = $status_url;
+
+      if (!$probe['ok'] || $probe['http'] < 200 || $probe['http'] >= 300)
+      {
+        continue;
+      }
+
+      $status = json_decode($probe['body'], true);
+      if (!is_array($status) || empty($status['installed']))
+      {
+        continue;
+      }
+
+      $nextcloud_url = $candidate_url;
+      break;
     }
-    if ($probe['http'] < 200 || $probe['http'] >= 300)
+
+    if ($nextcloud_url === '')
     {
+      $attempts = array();
+      foreach ($candidate_urls as $candidate_url)
+      {
+        $attempts[] = $candidate_url.'/status.php';
+      }
+      if (is_array($last_probe) && !$last_probe['ok'])
+      {
+        $technical = $last_probe['errno'] >= 0
+          ? 'cURL '.$last_probe['errno'].($last_probe['error'] !== '' ? ': '.$last_probe['error'] : '')
+          : $last_probe['error'];
+        bratonien_tools_nc_edit_fail(
+          'Die Nextcloud-Adresse ist vom Piwigo-Server aus nicht erreichbar. Ohne angegebenes Protokoll wurden HTTPS und HTTP geprüft.',
+          array('nc_nextcloud_url'),
+          'Nextcloud / WebDAV – Erreichbarkeit',
+          $technical.' · Geprüft: '.implode(' ; ', $attempts)
+        );
+      }
+
       bratonien_tools_nc_edit_fail(
-        'Unter der angegebenen Nextcloud-Adresse antwortet status.php nicht erfolgreich.',
-        array('nc_nextcloud_url'),
-        'Nextcloud / WebDAV – Erreichbarkeit',
-        'HTTP '.$probe['http'].' · Ziel: '.$status_url
-      );
-    }
-    $status = json_decode($probe['body'], true);
-    if (!is_array($status) || empty($status['installed']))
-    {
-      bratonien_tools_nc_edit_fail(
-        'Die Adresse ist erreichbar, dort wurde aber keine installierte Nextcloud erkannt.',
+        'Unter der angegebenen Adresse wurde keine erreichbare installierte Nextcloud gefunden. Ohne angegebenes Protokoll wurden HTTPS und HTTP geprüft.',
         array('nc_nextcloud_url'),
         'Nextcloud / WebDAV – Erkennung',
-        'status.php lieferte keine installierte Nextcloud.'
+        'Geprüft: '.implode(' ; ', $attempts).($last_probe ? ' · Letzter HTTP-Status: '.$last_probe['http'] : '')
       );
     }
+
+    $_POST['nc_nextcloud_url'] = $nextcloud_url;
 
     $user_url = $nextcloud_url.'/ocs/v2.php/cloud/user?format=json';
     $user_probe = bratonien_tools_nc_edit_probe($user_url, $nextcloud_user, $nextcloud_password, array('OCS-APIRequest: true'));
