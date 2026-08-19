@@ -158,7 +158,6 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
   $state['technical_source'] = 'WebDAV-Verzeichnisse ausgewählt';
   $state['technical_error'] = '';
   $state['directory_selection_ready'] = false;
-  bratonien_tools_nc_wizard_store($state);
 
   if ((string)($state['editing_mode'] ?? '') === 'migrate')
   {
@@ -179,15 +178,14 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
     $state['_api_key_id'] = (string)($credentials['api_key_id'] ?? '');
     $state['_api_key_secret'] = (string)($credentials['api_key_secret'] ?? '');
     $state['api_status'] = 'ok';
+    $state['api_error'] = '';
+    $state['step'] = 4;
     bratonien_tools_nc_wizard_store($state);
 
-    $result = bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard();
-    unset($_SESSION['bratonien_nc_wizard']);
-    return array(
-      'message'=>(string)($result['message'] ?? 'WebDAV-Nachfolger wurde angelegt. Die Legacy-Verbindung bleibt als Fallback erhalten.'),
-    );
+    return array('message'=>'WebDAV-Quelle wurde übernommen. Mit „Migration starten“ wird jetzt der WebDAV-Nachfolger angelegt; die Legacy-Verbindung bleibt als Fallback erhalten.');
   }
 
+  bratonien_tools_nc_wizard_store($state);
   return array('message'=>'WebDAV-Verzeichnisse wurden übernommen. Die Verbindung ist für den nächsten Einrichtungsschritt vorbereitet.');
 }
 
