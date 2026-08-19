@@ -75,8 +75,12 @@ done < "$WEBDAV_ROOTS_FILE"
 
 [[ ${#ROOT_ARGS[@]} -gt 0 ]] || { write_status error "Keine WebDAV-Wurzeln konfiguriert"; exit 1; }
 
+WEBDAV_CONNECT_IP="$(php "$SCRIPT_DIR/lib/resolve-nextcloud-target.php" "$WEBDAV_BASE_URL")"
+[[ -n "$WEBDAV_CONNECT_IP" ]] || { write_status error "Nextcloud-Zieladresse konnte nicht ermittelt werden"; exit 1; }
+
 python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --base-url "$WEBDAV_BASE_URL" \
+    --connect-ip "$WEBDAV_CONNECT_IP" \
     --user "$WEBDAV_USER" \
     --password-file "$WEBDAV_PASSWORD_FILE" \
     "${ROOT_ARGS[@]}" \
