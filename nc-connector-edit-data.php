@@ -41,12 +41,20 @@ if (!$connection)
 $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
 $credentials = array();
 $migration = array('ready'=>false, 'missing'=>array());
+$migration_available = false;
 try
 {
   $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
   if ((string)$connection['adapter'] === 'local')
   {
-    $migration = bratonien_tools_nc_connector_migration_state($connection);
+    $migration_config = isset($config['migration']) && is_array($config['migration']) ? $config['migration'] : array();
+    $already_paired = (string)($migration_config['role'] ?? '') === 'legacy-fallback'
+      && (int)($migration_config['webdav_successor_connection_id'] ?? 0) > 0;
+    $migration_available = !$already_paired;
+    if ($migration_available)
+    {
+      $migration = bratonien_tools_nc_connector_migration_state($connection);
+    }
   }
 }
 catch (Throwable $e)
@@ -94,8 +102,9 @@ $payload = array(
     'has_api_key_secret'=>trim((string)($credentials['api_key_secret'] ?? '')) !== '',
     'fallback_user'=>(string)($credentials['piwigo_user'] ?? ''),
     'has_fallback_password'=>(string)($credentials['piwigo_password'] ?? '') !== '',
-    'migration_ready'=>!empty($migration['ready']),
-    'migration_missing'=>array_values((array)($migration['missing'] ?? array())),
+    'migration_available'=>$migration_available,
+    'migration_ready'=>$migration_available && !empty($migration['ready']),
+    'migration_missing'=>$migration_available ? array_values((array)($migration['missing'] ?? array())) : array(),
   ),
 );
 
