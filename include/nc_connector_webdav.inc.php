@@ -6,6 +6,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 
 /**
  * Link a WebDAV successor with the exact legacy connection selected for migration.
+ * The caller must execute this inside the same transaction that creates the successor.
  */
 function bratonien_tools_nc_connector_pair_migration_fallback($legacy_id, $webdav_id, array &$webdav_config, $now)
 {
@@ -198,20 +199,23 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   if (!is_string($config_json)) throw new RuntimeException('WebDAV-Konfiguration konnte nicht serialisiert werden.');
 
   $connection_key = 'webdav-'.bin2hex(random_bytes(12));
-  pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,takeover_state,config_json,secret_blob,created,updated) VALUES ('"
-    .pwg_db_real_escape_string($connection_key)."','"
-    .pwg_db_real_escape_string($name)."','remote',0,'disabled','"
-    .pwg_db_real_escape_string($config_json)."','"
-    .pwg_db_real_escape_string($secret_blob)."','"
-    .pwg_db_real_escape_string($now)."','"
-    .pwg_db_real_escape_string($now)."')");
-
-  $id = (int)pwg_db_insert_id();
-  if ($id < 1) throw new RuntimeException('Die WebDAV-Verbindung konnte nicht eindeutig angelegt werden.');
-
   $legacy_fallback_id = null;
+  $id = 0;
+
+  pwg_query('START TRANSACTION');
   try
   {
+    pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,takeover_state,config_json,secret_blob,created,updated) VALUES ('"
+      .pwg_db_real_escape_string($connection_key)."','"
+      .pwg_db_real_escape_string($name)."','remote',0,'disabled','"
+      .pwg_db_real_escape_string($config_json)."','"
+      .pwg_db_real_escape_string($secret_blob)."','"
+      .pwg_db_real_escape_string($now)."','"
+      .pwg_db_real_escape_string($now)."')");
+
+    $id = (int)pwg_db_insert_id();
+    if ($id < 1) throw new RuntimeException('Die WebDAV-Verbindung konnte nicht eindeutig angelegt werden.');
+
     $config['state_dir'] = '/var/lib/bratonien-tools/nc-connector/connection-'.$id;
     $config['status_file'] = $config['state_dir'].'/connector-status.json';
     if ($migrating_legacy)
@@ -225,10 +229,11 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
       throw new RuntimeException('Die WebDAV-Verbindung konnte nach dem Anlegen nicht serialisiert werden.');
     }
     pwg_query("UPDATE `$table` SET config_json='".pwg_db_real_escape_string($config_json)."' WHERE id=".$id." AND adapter='remote' LIMIT 1");
+    pwg_query('COMMIT');
   }
   catch (Throwable $e)
   {
-    pwg_query("DELETE FROM `$table` WHERE id=".$id." AND adapter='remote' LIMIT 1");
+    pwg_query('ROLLBACK');
     throw $e;
   }
 
