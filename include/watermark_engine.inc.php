@@ -8,8 +8,17 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_base.inc.php');
 
 function bratonien_tools_watermark_engine_enabled()
 {
+  static $initialized = false;
+  static $enabled = false;
+
+  if ($initialized)
+  {
+    return $enabled;
+  }
+
   $config = bratonien_tools_get_watermark_engine_config();
   $enabled = !empty($config['enabled']);
+  $initialized = true;
 
   // Piwigo recalculates use_watermark for custom derivatives from the native
   // watermark file itself. Therefore an active Bratonien engine must keep the
