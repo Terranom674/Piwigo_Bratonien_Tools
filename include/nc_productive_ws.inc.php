@@ -52,28 +52,11 @@ function bratonien_tools_nc_find_album($parent_id, $dir, $name, $excluded_site_i
   $where_parent = $parent_id === null ? 'id_uppercat IS NULL' : 'id_uppercat='.(int)$parent_id;
   $dir_sql = pwg_db_real_escape_string((string)$dir);
   $name_sql = pwg_db_real_escape_string((string)$name);
-  $query = '
-SELECT id, dir, name
-  FROM '.CATEGORIES_TABLE.'
-  WHERE '.$where_parent.'
-    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')
-    AND (
-      dir = \''.$dir_sql.'\'
-      OR LOWER(name) = LOWER(\''.$name_sql.'\')
-    )
-  ORDER BY CASE WHEN dir = \''.$dir_sql.'\' THEN 0 ELSE 1 END, id
-;';
+  $query = '\nSELECT id, dir, name\n  FROM '.CATEGORIES_TABLE.'\n  WHERE '.$where_parent.'\n    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')\n    AND (\n      dir = \\''.$dir_sql.'\\'\n      OR LOWER(name) = LOWER(\\''.$name_sql.'\\')\n    )\n  ORDER BY CASE WHEN dir = \\''.$dir_sql.'\\' THEN 0 ELSE 1 END, id\n  LIMIT 1\n;';
   $result = pwg_query($query);
-  $ids = array();
-  while ($row = pwg_db_fetch_assoc($result))
-  {
-    $ids[] = (int)$row['id'];
-  }
-  if (count($ids) > 1)
-  {
-    throw new RuntimeException('Albumzuordnung ist mehrdeutig fuer "'.$name.'".');
-  }
-  return count($ids) === 1 ? $ids[0] : null;
+  if (!pwg_db_num_rows($result)) return null;
+  $row = pwg_db_fetch_assoc($result);
+  return (int)$row['id'];
 }
 
 function bratonien_tools_nc_ensure_album_path($relative_dir, $excluded_site_id, array &$cache, array &$created_ids)
@@ -175,10 +158,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
 
   try
   {
-    // Older WebDAV builds created a complete physical album tree for their own
-    // Piwigo site. Remove that technical duplicate first. The WebDAV files are
-    // placeholders and are rebuilt independently, therefore database deletion
-    // must not remove the actual Nextcloud originals.
     $counts['removed_duplicate_categories'] = bratonien_tools_nc_remove_storage_categories($site_id);
 
     list($dbnow) = pwg_db_fetch_row(pwg_query('SELECT NOW()'));
@@ -286,7 +265,6 @@ function bratonien_tools_ws_nc_sync_productive($params, &$service)
       $counts['new_elements'] = count($new_ids);
     }
 
-    // Refresh the normal file attributes for connector-managed images only.
     $updates = array();
     foreach ($all_ids as $id)
     {
