@@ -17,6 +17,43 @@ read_config_value() {
     printf '%s' "$value"
 }
 
+read_webdav_failure_detail() {
+    local config="$1"
+    local connection_id piwigo_root status_file
+
+    connection_id="$(read_config_value CONNECTION_ID "$config")"
+    piwigo_root="$(read_config_value PIWIGO_ROOT "$config")"
+    [[ -n "$piwigo_root" ]] || piwigo_root="/var/www/piwigo"
+
+    if [[ -z "$connection_id" ]]; then
+        printf '%s' 'WebDAV-Lauf fehlgeschlagen; Verbindungs-ID konnte nicht ermittelt werden.'
+        return 0
+    fi
+
+    status_file="${piwigo_root%/}/_data/bratonien-tools/nc-connector-status/connection-${connection_id}.json"
+    if [[ ! -r "$status_file" ]]; then
+        printf '%s' "WebDAV-Lauf fehlgeschlagen; Detailstatus fuer Verbindung ${connection_id} ist nicht lesbar."
+        return 0
+    fi
+
+    php -r '
+      $file = $argv[1];
+      $data = json_decode((string)@file_get_contents($file), true);
+      if (!is_array($data)) {
+        echo "WebDAV-Lauf fehlgeschlagen; Detailstatus ist ungueltig.";
+        exit(0);
+      }
+      $message = trim((string)($data["message"] ?? ""));
+      $detail = trim((string)($data["error_detail"] ?? ""));
+      $parts = array();
+      if ($message !== "") $parts[] = $message;
+      if ($detail !== "") $parts[] = $detail;
+      if (!$parts) $parts[] = "WebDAV-Lauf fehlgeschlagen; kein Fehlerdetail gespeichert.";
+      $text = preg_replace("/\\s+/u", " ", implode(" - ", $parts));
+      echo trim((string)$text);
+    ' "$status_file"
+}
+
 write_route_status() {
     local route="$1"
     local label="$2"
@@ -84,6 +121,7 @@ ROUTE_STATUS_FILE="${route_piwigo_root%/}/_data/bratonien-tools/nc-connector-sta
 
 webdav_success=0
 webdav_failed=0
+webdav_failure_detail=""
 
 for config in "${webdav_configs[@]}"; do
     name="$(basename "$config")"
@@ -92,7 +130,9 @@ for config in "${webdav_configs[@]}"; do
         webdav_success=1
     else
         webdav_failed=1
-        echo "NC Connector: WebDAV-Lauf fehlgeschlagen; Legacy-Fallback bleibt verfuegbar." >&2
+        webdav_failure_detail="$(read_webdav_failure_detail "$config")"
+        echo "NC Connector: WebDAV-Lauf fehlgeschlagen: $webdav_failure_detail" >&2
+        echo "NC Connector: Legacy-Fallback bleibt verfuegbar." >&2
     fi
 done
 
@@ -108,10 +148,11 @@ if [[ "$webdav_success" -eq 1 ]]; then
 fi
 
 if [[ ${#configs[@]} -eq 0 ]]; then
+    [[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV ist fehlgeschlagen; kein Detailstatus verfuegbar."
     write_route_status \
         "failed" \
         "FEHLER - kein Datenweg" \
-        "WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." \
+        "WebDAV-Fehler: $webdav_failure_detail Keine Legacy-Fallback-Verbindung vorhanden." \
         "0" \
         "0"
     echo "NC Connector: WebDAV ist fehlgeschlagen und es ist keine Legacy-Fallback-Verbindung vorhanden." >&2
@@ -150,20 +191,22 @@ for config in "${configs[@]}"; do
 done
 
 if [[ "$legacy_result" -eq 0 ]]; then
+    [[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV war nicht erfolgreich; kein Detailstatus verfuegbar."
     write_route_status \
         "legacy_fallback" \
         "LEGACY-FALLBACK AKTIV" \
-        "WebDAV war nicht erfolgreich. Der alte lokale Datenweg wurde als Fallback ausgefuehrt." \
+        "WebDAV-Fehler: $webdav_failure_detail Legacy-Fallback wurde erfolgreich ausgefuehrt." \
         "1" \
         "1"
     echo "NC Connector: Legacy-Fallback erfolgreich."
     exit 0
 fi
 
+[[ -n "$webdav_failure_detail" ]] || webdav_failure_detail="WebDAV war nicht erfolgreich; kein Detailstatus verfuegbar."
 write_route_status \
     "failed" \
     "FEHLER - WebDAV und Fallback" \
-    "WebDAV und Legacy-Fallback sind fehlgeschlagen." \
+    "WebDAV-Fehler: $webdav_failure_detail Legacy-Fallback ist ebenfalls fehlgeschlagen." \
     "1" \
     "0"
 
