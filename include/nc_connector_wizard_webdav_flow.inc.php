@@ -177,7 +177,7 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
     $credentials = bratonien_tools_nc_connector_scoped_secret($connection);
     $state['_api_key_id'] = (string)($credentials['api_key_id'] ?? '');
     $state['_api_key_secret'] = (string)($credentials['api_key_secret'] ?? '');
-    $state['api_status'] = 'ok';
+    $state['api_status'] = !empty($migration['api_available']) ? 'ok' : 'skipped';
     $state['api_error'] = '';
     $state['step'] = 4;
     bratonien_tools_nc_wizard_store($state);
