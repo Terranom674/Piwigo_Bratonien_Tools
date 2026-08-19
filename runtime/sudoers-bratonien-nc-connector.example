@@ -1,3 +1,0 @@
-# Installieren als /etc/sudoers.d/bratonien-nc-connector-web und mit chmod 0440 absichern.
-# Der Webserver darf ausschliesslich diesen einen Connector-Service starten.
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block bratonien-nc-connector.service
