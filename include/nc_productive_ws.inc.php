@@ -52,7 +52,18 @@ function bratonien_tools_nc_find_album($parent_id, $dir, $name, $excluded_site_i
   $where_parent = $parent_id === null ? 'id_uppercat IS NULL' : 'id_uppercat='.(int)$parent_id;
   $dir_sql = pwg_db_real_escape_string((string)$dir);
   $name_sql = pwg_db_real_escape_string((string)$name);
-  $query = '\nSELECT id, dir, name\n  FROM '.CATEGORIES_TABLE.'\n  WHERE '.$where_parent.'\n    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')\n    AND (\n      dir = \\''.$dir_sql.'\\'\n      OR LOWER(name) = LOWER(\\''.$name_sql.'\\')\n    )\n  ORDER BY CASE WHEN dir = \\''.$dir_sql.'\\' THEN 0 ELSE 1 END, id\n  LIMIT 1\n;';
+  $query = '
+SELECT id, dir, name
+  FROM '.CATEGORIES_TABLE.'
+  WHERE '.$where_parent.'
+    AND (site_id IS NULL OR site_id <> '.(int)$excluded_site_id.')
+    AND (
+      dir = \''.$dir_sql.'\'
+      OR LOWER(name) = LOWER(\''.$name_sql.'\')
+    )
+  ORDER BY CASE WHEN dir = \''.$dir_sql.'\' THEN 0 ELSE 1 END, id
+  LIMIT 1
+;';
   $result = pwg_query($query);
   if (!pwg_db_num_rows($result)) return null;
   $row = pwg_db_fetch_assoc($result);
