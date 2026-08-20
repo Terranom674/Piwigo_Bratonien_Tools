@@ -10,6 +10,11 @@ if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
     exit 1
 fi
 
+if ! php "$SCRIPT_DIR/repair-webdav-orphans.php"; then
+    echo "NC Connector: verwaiste WebDAV-Bilddatensaetze konnten nicht repariert werden." >&2
+    exit 1
+fi
+
 if ! php "$SCRIPT_DIR/cleanup-webdav-piwigo.php"; then
     echo "NC Connector: Piwigo-Inhalte geloeschter WebDAV-Verbindungen konnten nicht bereinigt werden." >&2
     exit 1
