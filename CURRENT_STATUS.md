@@ -2,7 +2,7 @@
 
 ## Version
 
-**Bratonien Tools 0.9.6.8.25**
+**Bratonien Tools 9.7.1.0**
 
 Zielplattform der produktiven NC-Connector-Synchronisierung ist derzeit **Piwigo 16.4.0**.
 
