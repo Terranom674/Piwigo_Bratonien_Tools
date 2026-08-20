@@ -46,6 +46,92 @@ function bratonien_tools_webdav_derivative_test_quote_path($path)
   return implode('/', array_map('rawurlencode', $parts));
 }
 
+function bratonien_tools_webdav_derivative_test_source_info($image_id, array $image_row)
+{
+  $image_id = (int)$image_id;
+  $path = (string)($image_row['path'] ?? '');
+  if ($image_id < 1 || $path === '') return null;
+
+  $absolute = $path;
+  if (strpos($absolute, '/') !== 0)
+  {
+    $absolute = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $absolute), '/');
+  }
+
+  $resolved = realpath($absolute);
+  if ($resolved === false) return null;
+
+  $normalized = str_replace('\\', '/', $resolved);
+  if (!preg_match('#/nc-webdav-source/connection-([0-9]+)/root-([0-9]+)/(.*)$#', $normalized, $match))
+  {
+    return null;
+  }
+
+  $connection_id = (int)$match[1];
+  $root_fileid = (int)$match[2];
+  $relative_path = trim((string)$match[3], '/');
+  if ($connection_id < 1 || $root_fileid < 1 || $relative_path === '') return null;
+
+  $table = $GLOBALS['prefixeTable'].'bratonien_tools_nc_connections';
+  $connection_result = pwg_query('SELECT config_json FROM `'.$table.'` WHERE id='.$connection_id.' LIMIT 1');
+  if (!pwg_db_num_rows($connection_result)) return null;
+
+  $connection_row = pwg_db_fetch_assoc($connection_result);
+  $config = json_decode((string)$connection_row['config_json'], true);
+  if (!is_array($config) || (string)($config['source_mode'] ?? '') !== 'webdav-placeholder') return null;
+
+  $root_found = false;
+  $root_path = '';
+  $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
+  foreach ($roots as $root)
+  {
+    if ((int)($root['fileid'] ?? 0) === $root_fileid)
+    {
+      $root_found = true;
+      $root_path = trim((string)($root['webdav_path'] ?? ''), '/');
+      break;
+    }
+  }
+  if (!$root_found) return null;
+
+  $webdav_path = trim($root_path === '' ? $relative_path : $root_path.'/'.$relative_path, '/');
+  if ($webdav_path === '') return null;
+
+  $content_type = '';
+  $size = 0;
+  $etag = '';
+  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+  if ($state_dir !== '')
+  {
+    $mapping_file = $state_dir.'/webdav-map.json';
+    if (is_readable($mapping_file))
+    {
+      $mapping = json_decode((string)file_get_contents($mapping_file), true);
+      if (is_array($mapping) && isset($mapping['files']) && is_array($mapping['files']))
+      {
+        $entry = $mapping['files'][$resolved] ?? $mapping['files'][$normalized] ?? null;
+        if (is_array($entry) && (string)($entry['kind'] ?? '') === 'file')
+        {
+          $webdav_path = trim((string)($entry['webdav_path'] ?? $webdav_path), '/');
+          $content_type = (string)($entry['content_type'] ?? '');
+          $size = (int)($entry['size'] ?? 0);
+          $etag = (string)($entry['etag'] ?? '');
+        }
+      }
+    }
+  }
+
+  return array(
+    'image_id'=>$image_id,
+    'connection_id'=>$connection_id,
+    'webdav_path'=>$webdav_path,
+    'content_type'=>$content_type,
+    'size'=>$size,
+    'etag'=>$etag,
+    'coi'=>$image_row['coi'] ?? null,
+  );
+}
+
 function bratonien_tools_webdav_derivative_test_download(array $source, $destination, &$detail=null)
 {
   $detail = '';
@@ -107,7 +193,7 @@ function bratonien_tools_webdav_derivative_test_download(array $source, $destina
     CURLOPT_RETURNTRANSFER => false,
     CURLOPT_FAILONERROR => false,
     CURLOPT_FILE => $fp,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Derivative-Test/0.9.6.3',
+    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Derivative-Test',
   ));
 
   $ok = curl_exec($ch);
@@ -160,7 +246,7 @@ function bratonien_tools_webdav_derivative_test_call_i($url, &$response_body, &$
     CURLOPT_TIMEOUT => 180,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FAILONERROR => false,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-Derivative-Gate/0.9.6.3',
+    CURLOPT_USERAGENT => 'Bratonien-Tools-Derivative-Gate',
   ));
 
   $body = curl_exec($ch);
@@ -214,7 +300,7 @@ if (!pwg_db_num_rows($result))
 }
 $image_row = pwg_db_fetch_assoc($result);
 $src_image = new SrcImage($image_row);
-$source = bratonien_tools_webdav_image_source_info($image_id);
+$source = bratonien_tools_webdav_derivative_test_source_info($image_id, $image_row);
 if (!$source)
 {
   bratonien_tools_webdav_derivative_test_abort(404, 'Keine WebDAV-Quelle fuer dieses Bild gefunden.');
@@ -298,9 +384,6 @@ try
     bratonien_tools_webdav_derivative_test_abort(502, $detail);
   }
 
-  // Preserve the exact placeholder inode via a second hard link. Replacing the
-  // real source entry with rename() is then atomic and does not overwrite the
-  // shared placeholder inode used by the WebDAV source tree.
   if (!@link($materialize_path, $backup_path))
   {
     bratonien_tools_webdav_derivative_test_abort(500, 'Placeholder konnte nicht sicher per Hardlink gesichert werden.');
@@ -328,8 +411,6 @@ try
     bratonien_tools_webdav_derivative_test_abort(502, $detail."\n".$body);
   }
 
-  // Restore before anything is sent to the client. The derivative itself stays
-  // in Piwigo; only the transient Nextcloud original disappears again.
   $cleanup();
   clearstatcache(true, $derivative_path);
   if (!is_file($derivative_path) || !is_readable($derivative_path))
