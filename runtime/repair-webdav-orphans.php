@@ -43,10 +43,12 @@ try
 
   $relativePrefix = './_data/bratonien-tools/nc-webdav-gallery/connection-';
   $absolutePrefix = rtrim(PHPWG_ROOT_PATH, '/').'/_data/bratonien-tools/nc-webdav-gallery/connection-';
+  $relativeLength = strlen($relativePrefix);
+  $absoluteLength = strlen($absolutePrefix);
 
   $query = "SELECT id,path FROM ".IMAGES_TABLE.
-    " WHERE path LIKE '".pwg_db_real_escape_string($relativePrefix)."%'".
-    " OR path LIKE '".pwg_db_real_escape_string($absolutePrefix)."%'";
+    " WHERE LEFT(path,".$relativeLength.")='".pwg_db_real_escape_string($relativePrefix)."'".
+    " OR LEFT(path,".$absoluteLength.")='".pwg_db_real_escape_string($absolutePrefix)."'";
   $result = pwg_query($query);
 
   $staleIds = array();
