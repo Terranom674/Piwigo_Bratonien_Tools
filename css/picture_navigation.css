@@ -17,3 +17,12 @@
 .bratonien-picture-zone.is-active {
   opacity: 1;
 }
+
+#theImageAndInfos img[src*="plugins/bratonien_tools/webdav-derivative.php"]:not(#theMainImage):not(.bratonien-webdav-thumbnail-ready),
+#theImageAndInfos img.bratonien-webdav-thumbnail-pending {
+  visibility: hidden;
+}
+
+#theImageAndInfos img.bratonien-webdav-thumbnail-ready {
+  visibility: visible;
+}
