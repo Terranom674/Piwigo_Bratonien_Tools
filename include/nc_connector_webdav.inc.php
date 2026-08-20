@@ -54,7 +54,6 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $api_enabled = $api_key_id !== '' && $api_key_secret !== '';
 
   $config = array(
-    'origin'=>'native',
     'source_mode'=>'webdav-placeholder',
     'transport'=>'webdav',
     'nextcloud_url'=>$base_url,
@@ -76,7 +75,6 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
 
   $secret_payload = json_encode(array(
     'v'=>3,
-    'db_password'=>'',
     'piwigo_user'=>$fallback_user,
     'piwigo_password'=>$fallback_password,
     'api_key_id'=>$api_key_id,
@@ -95,9 +93,9 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $connection_key = 'webdav-'.bin2hex(random_bytes(12));
   $secret_blob = bratonien_tools_nc_connector_encrypt_secret($secret_payload);
 
-  pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,takeover_state,config_json,secret_blob,created,updated) VALUES ('"
+  pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,config_json,secret_blob,created,updated) VALUES ('"
     .pwg_db_real_escape_string($connection_key)."','"
-    .pwg_db_real_escape_string($name)."','remote',1,'active','"
+    .pwg_db_real_escape_string($name)."','remote',1,'"
     .pwg_db_real_escape_string($config_json)."','"
     .pwg_db_real_escape_string($secret_blob)."','"
     .pwg_db_real_escape_string($now)."','"
