@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.6.3
+Version: 0.9.6.4
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -81,36 +81,72 @@ function bratonien_tools_prepare_private_album_permissions()
     return;
   }
 
-  $result = pwg_query('SELECT status FROM '.CATEGORIES_TABLE.' WHERE id = '.$category_id.' LIMIT 1');
-  if (!pwg_db_num_rows($result))
+  bratonien_tools_grant_private_album_access($category_id, (int)$user['id']);
+}
+
+function bratonien_tools_preserve_private_album_access()
+{
+  global $user;
+
+  if (
+    !defined('IN_ADMIN')
+    || $_SERVER['REQUEST_METHOD'] !== 'POST'
+    || empty($user['id'])
+    || (string)($_POST['status'] ?? '') !== 'private'
+  )
   {
     return;
   }
 
-  $category = pwg_db_fetch_assoc($result);
-  if ($category['status'] !== 'public')
+  $page = (string)($_GET['page'] ?? '');
+  if ($page !== 'album-new')
   {
     return;
   }
 
-  $users = isset($_POST['users']) && is_array($_POST['users']) ? $_POST['users'] : array();
-  $current_user_id = (int)$user['id'];
-  $normalized_user_ids = array_map('intval', $users);
-
-  if (!in_array($current_user_id, $normalized_user_ids, true))
+  add_event_handler('loc_end_add_category', function($category_id) use ($user)
   {
-    $users[] = $current_user_id;
+    bratonien_tools_grant_private_album_access((int)$category_id, (int)$user['id']);
+  });
+}
+
+function bratonien_tools_grant_private_album_access($category_id, $user_id)
+{
+  $category_id = (int)$category_id;
+  $user_id = (int)$user_id;
+  if ($category_id < 1 || $user_id < 1)
+  {
+    return;
   }
 
-  $_POST['users'] = $users;
+  $query = '
+SELECT 1
+  FROM '.USER_ACCESS_TABLE.'
+  WHERE user_id = '.$user_id.'
+    AND cat_id = '.$category_id.'
+  LIMIT 1
+;';
+  $result = pwg_query($query);
+  if (pwg_db_num_rows($result) > 0)
+  {
+    return;
+  }
+
+  single_insert(
+    USER_ACCESS_TABLE,
+    array(
+      'user_id' => $user_id,
+      'cat_id' => $category_id,
+    )
+  );
 }
 
 function bratonien_tools_admin_menu($menu)
 {
   $menu[] = array(
     'NAME' => 'Bratonien Tools',
-    'URL' => get_root_url() . 'admin.php?page=plugin-' . BRATONIEN_TOOLS_ID,
+    'URL'  => get_root_url() . 'admin.php?page=plugin-' . BRATONIEN_TOOLS_ID,
   );
-
   return $menu;
 }
+?>
