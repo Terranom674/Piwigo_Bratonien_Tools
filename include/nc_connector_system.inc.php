@@ -48,7 +48,13 @@ function bratonien_tools_nc_connector_run_now()
     throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: proc_open ist in PHP nicht verfügbar.');
   }
 
-  $script = BRATONIEN_TOOLS_PATH.'runtime/run-all.sh';
+  $runtime_dir = realpath(dirname(__DIR__).'/runtime');
+  if ($runtime_dir === false || !is_dir($runtime_dir))
+  {
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: Runtime-Verzeichnis wurde nicht gefunden.');
+  }
+
+  $script = $runtime_dir.'/run-all.sh';
   if (!is_file($script) || !is_readable($script))
   {
     throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: runtime/run-all.sh ist nicht lesbar.');
@@ -60,7 +66,7 @@ function bratonien_tools_nc_connector_run_now()
     2=>array('pipe','w'),
   );
   $environment = array_merge($_ENV, array('LC_ALL'=>'C','LANG'=>'C'));
-  $process = @proc_open(array('/usr/bin/env','bash',$script), $spec, $pipes, BRATONIEN_TOOLS_PATH.'runtime', $environment);
+  $process = @proc_open(array('/usr/bin/env','bash',$script), $spec, $pipes, $runtime_dir, $environment);
   if (!is_resource($process))
   {
     throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: Connector-Prozess konnte nicht geöffnet werden.');
