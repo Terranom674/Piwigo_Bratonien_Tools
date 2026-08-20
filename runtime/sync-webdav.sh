@@ -28,6 +28,8 @@ source "$CONFIG_FILE"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LOCK_FILE="$STATE_DIR/webdav-sync.lock"
 mkdir -p -- "$STATE_DIR"
+chgrp www-data -- "$STATE_DIR"
+chmod 0750 -- "$STATE_DIR"
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
@@ -91,6 +93,9 @@ python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --source-dir "$WEBDAV_SOURCE_DIR" \
     --manifest "$MANIFEST" \
     --mapping "$WEBDAV_MAPPING_FILE"
+
+chgrp www-data -- "$WEBDAV_MAPPING_FILE"
+chmod 0640 -- "$WEBDAV_MAPPING_FILE"
 
 python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" \
