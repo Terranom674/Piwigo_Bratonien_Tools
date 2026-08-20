@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.6.4
+Version: 0.9.6.5
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -82,32 +82,6 @@ function bratonien_tools_prepare_private_album_permissions()
   }
 
   bratonien_tools_grant_private_album_access($category_id, (int)$user['id']);
-}
-
-function bratonien_tools_preserve_private_album_access()
-{
-  global $user;
-
-  if (
-    !defined('IN_ADMIN')
-    || $_SERVER['REQUEST_METHOD'] !== 'POST'
-    || empty($user['id'])
-    || (string)($_POST['status'] ?? '') !== 'private'
-  )
-  {
-    return;
-  }
-
-  $page = (string)($_GET['page'] ?? '');
-  if ($page !== 'album-new')
-  {
-    return;
-  }
-
-  add_event_handler('loc_end_add_category', function($category_id) use ($user)
-  {
-    bratonien_tools_grant_private_album_access((int)$category_id, (int)$user['id']);
-  });
 }
 
 function bratonien_tools_grant_private_album_access($category_id, $user_id)
