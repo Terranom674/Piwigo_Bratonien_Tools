@@ -15,27 +15,12 @@ function http_error_detail($body)
 {
   $body = trim((string)$body);
   if ($body === '') return '';
-
   $decoded = json_decode($body, true);
   if (is_array($decoded))
   {
     $detail = (string)($decoded['message'] ?? $decoded['err'] ?? '');
     if ($detail !== '') return $detail;
   }
-
-  if (function_exists('simplexml_load_string'))
-  {
-    $previous = libxml_use_internal_errors(true);
-    $xml = simplexml_load_string($body);
-    libxml_clear_errors();
-    libxml_use_internal_errors($previous);
-    if ($xml !== false)
-    {
-      $detail = trim((string)($xml->message ?? $xml->err ?? ''));
-      if ($detail !== '') return $detail;
-    }
-  }
-
   $plain = trim(preg_replace('/\s+/', ' ', strip_tags($body)));
   return $plain === '' ? '' : mb_substr($plain, 0, 500);
 }
@@ -74,55 +59,15 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
   return (string)$body;
 }
 
-function xml_value_sync(SimpleXMLElement $node)
-{
-  $children = $node->children();
-  if (count($children) === 0) return (string)$node;
-  $result = array();
-  foreach ($children as $name => $child)
-  {
-    $value = xml_value_sync($child);
-    if (array_key_exists($name, $result))
-    {
-      if (!is_array($result[$name]) || !array_is_list($result[$name])) $result[$name] = array($result[$name]);
-      $result[$name][] = $value;
-    }
-    else $result[$name] = $value;
-  }
-  return $result;
-}
-
 function decode_ws($body)
 {
   $decoded = json_decode((string)$body, true);
-  if (!is_array($decoded))
-  {
-    if (!function_exists('simplexml_load_string')) fail_sync('Piwigo lieferte XML, aber SimpleXML ist nicht verfuegbar.');
-    $previous = libxml_use_internal_errors(true);
-    $xml = simplexml_load_string((string)$body);
-    libxml_clear_errors();
-    libxml_use_internal_errors($previous);
-    if ($xml === false || $xml->getName() !== 'rsp') fail_sync('Piwigo lieferte weder gueltiges JSON noch eine gueltige XML-Webservice-Antwort.');
-    $decoded = array('stat'=>(string)$xml['stat']);
-    foreach ($xml->children() as $name => $child)
-    {
-      $value = xml_value_sync($child);
-      if (array_key_exists($name, $decoded))
-      {
-        if (!is_array($decoded[$name]) || !array_is_list($decoded[$name])) $decoded[$name] = array($decoded[$name]);
-        $decoded[$name][] = $value;
-      }
-      else $decoded[$name] = $value;
-    }
-  }
+  if (!is_array($decoded)) fail_sync('Piwigo lieferte keine gueltige JSON-Webservice-Antwort.');
   if (($decoded['stat'] ?? '') !== 'ok')
   {
-    $message = (string)($decoded['message'] ?? $decoded['err'] ?? 'Piwigo-Aufruf wurde abgelehnt.');
-    fail_sync($message);
+    fail_sync((string)($decoded['message'] ?? $decoded['err'] ?? 'Piwigo-Aufruf wurde abgelehnt.'));
   }
-  if (array_key_exists('result', $decoded)) return $decoded['result'];
-  unset($decoded['stat']);
-  return $decoded;
+  return $decoded['result'] ?? array();
 }
 
 function decrypt_blob($blob, $hex_key)
@@ -134,34 +79,28 @@ function decrypt_blob($blob, $hex_key)
   $iv = base64_decode((string)($payload['iv'] ?? ''), true);
   $tag = base64_decode((string)($payload['tag'] ?? ''), true);
   $cipher = base64_decode((string)($payload['data'] ?? ''), true);
+  if (!is_string($iv) || !is_string($tag) || !is_string($cipher)) fail_sync('Gespeicherte Zugangsdaten sind unvollstaendig.');
   $plain = openssl_decrypt($cipher, 'aes-256-gcm', hex2bin($hex_key), OPENSSL_RAW_DATA, $iv, $tag);
   if ($plain === false) fail_sync('Gespeicherte Zugangsdaten konnten nicht entschluesselt werden.');
-  return (string)$plain;
+  $decoded = json_decode((string)$plain, true);
+  return is_array($decoded) ? $decoded : array();
 }
 
 function ensure_webdav_site(mysqli $db, $prefixeTable, $piwigo_root, array $connection_config, $connection_id)
 {
-  if ((string)($connection_config['source_mode'] ?? '') !== 'webdav-placeholder') return 1;
-
   $gallery_root = rtrim((string)($connection_config['parallel_gallery_root'] ?? ''), '/');
   if ($gallery_root === '') fail_sync('WebDAV-Galeriewurzel fehlt in der Verbindungskonfiguration.');
+
   $piwigo_root = rtrim((string)$piwigo_root, '/');
-  if (strpos($gallery_root, $piwigo_root.'/') !== 0)
-  {
-    fail_sync('WebDAV-Galeriewurzel liegt ausserhalb der Piwigo-Installation.');
-  }
+  if (strpos($gallery_root, $piwigo_root.'/') !== 0) fail_sync('WebDAV-Galeriewurzel liegt ausserhalb der Piwigo-Installation.');
   if (!is_dir($gallery_root)) fail_sync('WebDAV-Galeriewurzel existiert nicht: '.$gallery_root);
 
   $relative = ltrim(substr($gallery_root, strlen($piwigo_root)), '/');
-  if ($relative === '') fail_sync('WebDAV-Galeriewurzel darf nicht dem Piwigo-Hauptverzeichnis entsprechen.');
   $site_url = './'.rtrim($relative, '/').'/';
   $escaped = $db->real_escape_string($site_url);
   $result = $db->query("SELECT id FROM `{$prefixeTable}sites` WHERE galleries_url='{$escaped}' LIMIT 1");
   if (!$result) fail_sync('Piwigo-Site konnte nicht gelesen werden: '.$db->error);
-  if ($result->num_rows)
-  {
-    return (int)$result->fetch_assoc()['id'];
-  }
+  if ($result->num_rows) return (int)$result->fetch_assoc()['id'];
 
   if (!$db->query("INSERT INTO `{$prefixeTable}sites` (galleries_url) VALUES ('{$escaped}')"))
   {
@@ -186,7 +125,6 @@ try
   $conf = array();
   $prefixeTable = 'piwigo_';
   require $db_config;
-  foreach (array('db_host','db_user','db_password','db_base') as $key) if (!isset($conf[$key])) fail_sync('Piwigo-Datenbankkonfiguration ist unvollstaendig: '.$key);
 
   $db = new mysqli($conf['db_host'], $conf['db_user'], $conf['db_password'], $conf['db_base']);
   if ($db->connect_errno) fail_sync('Piwigo-Datenbank ist nicht erreichbar: '.$db->connect_error);
@@ -202,80 +140,43 @@ try
   $connection_row = $connection_result->fetch_assoc();
   $connection_config = json_decode((string)$connection_row['config_json'], true);
   if (!is_array($connection_config)) $connection_config = array();
-  $connection_plain = decrypt_blob((string)$connection_row['secret_blob'], $hex_key);
-  $connection_credentials = json_decode($connection_plain, true);
-  if (!is_array($connection_credentials)) $connection_credentials = array();
+  $credentials = decrypt_blob((string)$connection_row['secret_blob'], $hex_key);
 
   $site_id = ensure_webdav_site($db, $prefixeTable, $piwigo_root, $connection_config, $connection_id);
 
-  $api = array('key_id'=>'', 'key_secret'=>'');
-  $connection_scoped = (string)($connection_config['piwigo_auth'] ?? '') === 'connection-scoped' || array_key_exists('api_enabled', $connection_config);
-  if ($connection_scoped)
-  {
-    if (!empty($connection_config['api_enabled']))
-    {
-      $api['key_id'] = trim((string)($connection_credentials['api_key_id'] ?? ''));
-      $api['key_secret'] = trim((string)($connection_credentials['api_key_secret'] ?? ''));
-    }
-  }
-  else
-  {
-    $api_result = $db->query("SELECT value FROM `{$prefixeTable}config` WHERE param='bratonien_nc_piwigo_api' LIMIT 1");
-    if ($api_result && $api_result->num_rows)
-    {
-      $api_blob = (string)$api_result->fetch_assoc()['value'];
-      if ($api_blob !== '')
-      {
-        $api_plain = decrypt_blob($api_blob, $hex_key);
-        $api_decoded = json_decode($api_plain, true);
-        if (is_array($api_decoded))
-        {
-          $api['key_id'] = (string)($api_decoded['key_id'] ?? '');
-          $api['key_secret'] = (string)($api_decoded['key_secret'] ?? '');
-        }
-      }
-    }
-  }
+  $api_enabled = !empty($connection_config['api_enabled']);
+  $api_key_id = $api_enabled ? trim((string)($credentials['api_key_id'] ?? '')) : '';
+  $api_key_secret = $api_enabled ? trim((string)($credentials['api_key_secret'] ?? '')) : '';
 
-  $fallback_user = (string)($connection_credentials['piwigo_user'] ?? '');
-  $fallback_password = (string)($connection_credentials['piwigo_password'] ?? '');
-
-  $api_error = null;
-  if ($api['key_id'] !== '' && $api['key_secret'] !== '')
+  if ($api_key_id !== '' && $api_key_secret !== '')
   {
     try
     {
       $headers = array(
-        'X-PIWIGO-API: '.$api['key_id'].':'.$api['key_secret'],
-        'Accept: application/json, text/xml;q=0.9',
+        'X-PIWIGO-API: '.$api_key_id.':'.$api_key_secret,
+        'Accept: application/json',
         'Content-Type: application/x-www-form-urlencoded',
       );
-      decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id), $headers));
-      $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), $headers));
-      // Entfernt alte technische bratonien-webdav-N Wrapper aus Site 1,
-      // nachdem deren generierte Verzeichnisse beim Reconcile entfernt wurden.
-      if ($site_id !== 1)
-      {
-        decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), $headers));
-      }
-      $added = (int)($orphan['added_orphans'] ?? 0);
-      $deleted = (int)($orphan['deleted_orphans'] ?? 0);
-      echo "Piwigo-Synchronisierung per API erfolgreich (Site $site_id)\n";
-      echo "Piwigo-Orphans synchronisiert: +$added / -$deleted\n";
+      decode_ws(http_request(
+        $base_url.'/ws.php?format=json',
+        array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id),
+        $headers
+      ));
+      echo "Piwigo-Synchronisierung per API erfolgreich (Piwigo-Core, Site $site_id)\n";
       exit(0);
     }
     catch (Throwable $e)
     {
-      $api_error = $e->getMessage();
-      fwrite(STDERR, "Piwigo-API nicht nutzbar: ".$api_error."\n");
+      fwrite(STDERR, 'Piwigo-API nicht nutzbar: '.$e->getMessage()."\n");
     }
   }
   else
   {
-    $api_error = $connection_scoped ? 'Fuer diese Verbindung ist keine API konfiguriert.' : 'Keine gespeicherten API-Zugangsdaten.';
-    fwrite(STDERR, "Piwigo-API nicht nutzbar: ".$api_error."\n");
+    fwrite(STDERR, "Piwigo-API nicht nutzbar: Fuer diese Verbindung ist keine API konfiguriert.\n");
   }
 
+  $fallback_user = trim((string)($credentials['piwigo_user'] ?? ''));
+  $fallback_password = (string)($credentials['piwigo_password'] ?? '');
   if ($fallback_user === '' || $fallback_password === '') fail_sync('Kein gespeicherter Benutzername/Passwort-Fallback fuer diese Verbindung vorhanden.');
 
   $cookie_file = tempnam(sys_get_temp_dir(), 'br-nc-sync-');
@@ -283,22 +184,30 @@ try
 
   try
   {
-    decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'pwg.session.login', 'username'=>$fallback_user, 'password'=>$fallback_password), array(), $cookie_file));
+    decode_ws(http_request(
+      $base_url.'/ws.php?format=json',
+      array('method'=>'pwg.session.login', 'username'=>$fallback_user, 'password'=>$fallback_password),
+      array(),
+      $cookie_file
+    ));
+
     http_request(
       $base_url.'/admin.php?page=site_update&site='.$site_id,
-      array('sync'=>'files','display_info'=>1,'privacy_level'=>0,'sync_meta'=>1,'simulate'=>0,'subcats-included'=>1,'bratonien_connector'=>1,'submit'=>1),
+      array(
+        'sync'=>'files',
+        'display_info'=>1,
+        'privacy_level'=>0,
+        'sync_meta'=>1,
+        'simulate'=>0,
+        'subcats-included'=>1,
+        'bratonien_connector'=>1,
+        'submit'=>1,
+      ),
       array(),
       $cookie_file
     );
-    $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), array(), $cookie_file));
-    if ($site_id !== 1)
-    {
-      decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), array(), $cookie_file));
-    }
-    $added = (int)($orphan['added_orphans'] ?? 0);
-    $deleted = (int)($orphan['deleted_orphans'] ?? 0);
-    echo "Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich (Site $site_id)\n";
-    echo "Piwigo-Orphans synchronisiert: +$added / -$deleted\n";
+
+    echo "Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich (Piwigo-Core, Site $site_id)\n";
   }
   finally
   {
@@ -307,6 +216,6 @@ try
 }
 catch (Throwable $e)
 {
-  fwrite(STDERR, $e->getMessage()."\n");
+  fwrite(STDERR, 'Piwigo-Synchronisierung fehlgeschlagen: '.$e->getMessage()."\n");
   exit(1);
 }
