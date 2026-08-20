@@ -66,10 +66,12 @@ compact_output() {
 failure() {
     local code="$1" command="$2" line="$3"
     trap - ERR
-    write_status error "WebDAV-Shadow-Tree fehlgeschlagen" "Exit-Code: $code; Zeile: $line; Befehl: $command"
+    write_status error "WebDAV-Synchronisierung fehlgeschlagen" "Exit-Code: $code; Zeile: $line; Befehl: $command"
     exit "$code"
 }
 trap 'failure $? "$BASH_COMMAND" "$LINENO"' ERR
+
+write_status running "WebDAV-Synchronisierung läuft"
 
 ROOT_ARGS=()
 while IFS= read -r line; do
@@ -96,28 +98,6 @@ python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --state "$SHADOW_MAP_FILE"
 
 trap - ERR
-PREVIEW_CACHE="$PIWIGO_ROOT/_data/bratonien-tools/nc-webdav-preview/connection-$CONNECTION_ID"
-PREVIEW_OUTPUT=""
-PREVIEW_EXIT=0
-if PREVIEW_OUTPUT="$(php "$SCRIPT_DIR/lib/precache-webdav-previews.php" \
-    --mapping="$WEBDAV_MAPPING_FILE" \
-    --base-url="$WEBDAV_BASE_URL" \
-    --user="$WEBDAV_USER" \
-    --password-file="$WEBDAV_PASSWORD_FILE" \
-    --cache-dir="$PREVIEW_CACHE" 2>&1)"; then
-    PREVIEW_EXIT=0
-else
-    PREVIEW_EXIT=$?
-fi
-[[ -z "$PREVIEW_OUTPUT" ]] || printf '%s\n' "$PREVIEW_OUTPUT"
-if [[ "$PREVIEW_EXIT" -ne 0 ]]; then
-    DETAIL="Exit-Code: $PREVIEW_EXIT"
-    if [[ -n "$PREVIEW_OUTPUT" ]]; then
-        DETAIL+="; Ausgabe: $(printf '%s\n' "$PREVIEW_OUTPUT" | compact_output)"
-    fi
-    write_status error "WebDAV-Vorschaubilder konnten beim Einlesen nicht erzeugt werden" "$DETAIL"
-    exit "$PREVIEW_EXIT"
-fi
 
 if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
     PIWIGO_OUTPUT=""
@@ -178,32 +158,13 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         if [[ -n "$METADATA_OUTPUT" ]]; then
             DETAIL+="; Ausgabe: $(printf '%s\n' "$METADATA_OUTPUT" | compact_output)"
         fi
-        write_status error "Piwigo-Bildabmessungen konnten nicht mit den WebDAV-Originalen abgeglichen werden" "$DETAIL"
+        write_status error "Piwigo-Bildabmessungen konnten nicht mit den WebDAV-Metadaten abgeglichen werden" "$DETAIL"
         exit "$METADATA_EXIT"
-    fi
-
-    DERIVATIVE_OUTPUT=""
-    DERIVATIVE_EXIT=0
-    if DERIVATIVE_OUTPUT="$(php "$SCRIPT_DIR/lib/build-webdav-derivatives.php" \
-        --piwigo-root="$PIWIGO_ROOT" \
-        --connection-id="$CONNECTION_ID" 2>&1)"; then
-        DERIVATIVE_EXIT=0
-    else
-        DERIVATIVE_EXIT=$?
-    fi
-    [[ -z "$DERIVATIVE_OUTPUT" ]] || printf '%s\n' "$DERIVATIVE_OUTPUT"
-    if [[ "$DERIVATIVE_EXIT" -ne 0 ]]; then
-        DETAIL="Exit-Code: $DERIVATIVE_EXIT"
-        if [[ -n "$DERIVATIVE_OUTPUT" ]]; then
-            DETAIL+="; Ausgabe: $(printf '%s\n' "$DERIVATIVE_OUTPUT" | compact_output)"
-        fi
-        write_status error "Piwigo-Derivate für WebDAV-Bilder konnten nicht erzeugt werden" "$DETAIL"
-        exit "$DERIVATIVE_EXIT"
     fi
 
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt" \
+            "WebDAV eingelesen und Piwigo synchronisiert" \
             "" \
             "api" \
             "ok" \
@@ -212,7 +173,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "Fallback wurde nicht benötigt"
     elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen, Piwigo über Fallback synchronisiert und Derivate erzeugt" \
+            "WebDAV eingelesen und Piwigo über Fallback synchronisiert" \
             "" \
             "fallback" \
             "not_used" \
@@ -220,8 +181,8 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "ok" \
             "Benutzername/Passwort-Fallback erfolgreich"
     else
-        write_status ok "WebDAV eingelesen, Piwigo synchronisiert und Derivate erzeugt"
+        write_status ok "WebDAV eingelesen und Piwigo synchronisiert"
     fi
 else
-    write_status ok "WebDAV eingelesen und Vorschaubilder erzeugt; Registrierung erfolgt über den bestehenden produktiven Piwigo-Sync"
+    write_status ok "WebDAV eingelesen; Registrierung erfolgt über den bestehenden produktiven Piwigo-Sync"
 fi
