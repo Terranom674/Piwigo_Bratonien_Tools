@@ -32,6 +32,22 @@ function bratonien_tools_webdav_derivative_abort($status, $message)
   exit;
 }
 
+function bratonien_tools_webdav_derivative_send($target_path, $after_url='')
+{
+  if (isset($_GET['ajaxload']) && (string)$_GET['ajaxload'] === 'true')
+  {
+    if ($after_url === '') bratonien_tools_webdav_derivative_abort(400, 'Lazyload-Ziel fehlt.');
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(array('url'=>$after_url), JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  header('Content-Type: '.(function_exists('get_mimetype') ? get_mimetype($target_path) : 'image/jpeg'));
+  readfile($target_path);
+  exit;
+}
+
 function bratonien_tools_webdav_derivative_decrypt_secret($blob, $hex_key)
 {
   $hex_key = trim((string)$hex_key);
@@ -380,9 +396,7 @@ $derivative_size = $real_derivative->get_size();
 if ($target_path !== '' && is_file($target_path) && is_readable($target_path))
 {
   bratonien_tools_webdav_derivative_debug($request_id, 'target_exists', array('target'=>$target_path));
-  header('Content-Type: '.(function_exists('get_mimetype') ? get_mimetype($target_path) : 'image/jpeg'));
-  readfile($target_path);
-  exit;
+  bratonien_tools_webdav_derivative_send($target_path, $after_url);
 }
 
 $source_logical_path = (string)$image_row['path'];
@@ -406,9 +420,7 @@ if ($target_path !== '' && is_file($target_path) && is_readable($target_path))
   bratonien_tools_webdav_derivative_debug($request_id, 'target_created_while_waiting', array('target'=>$target_path));
   flock($lock_handle, LOCK_UN);
   fclose($lock_handle);
-  header('Content-Type: '.(function_exists('get_mimetype') ? get_mimetype($target_path) : 'image/jpeg'));
-  readfile($target_path);
-  exit;
+  bratonien_tools_webdav_derivative_send($target_path, $after_url);
 }
 
 $detail = '';
@@ -545,5 +557,4 @@ bratonien_tools_webdav_derivative_debug($request_id, 'serve', array(
   'height'=>(int)($final_size[1] ?? 0),
   'mode'=>$source_mode,
 ));
-header('Content-Type: '.(function_exists('get_mimetype') ? get_mimetype($target_path) : 'image/jpeg'));
-readfile($target_path);
+bratonien_tools_webdav_derivative_send($target_path, $after_url);
