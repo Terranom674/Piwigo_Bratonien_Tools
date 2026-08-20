@@ -75,6 +75,9 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
   $content_type = '';
   $size = 0;
   $etag = '';
+  $fileid = 0;
+  $width = 0;
+  $height = 0;
   $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
   if ($state_dir !== '')
   {
@@ -92,6 +95,9 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
           $content_type = (string)($entry['content_type'] ?? '');
           $size = (int)($entry['size'] ?? 0);
           $etag = (string)($entry['etag'] ?? '');
+          $fileid = (int)($entry['fileid'] ?? 0);
+          $width = (int)($entry['width'] ?? 0);
+          $height = (int)($entry['height'] ?? 0);
         }
       }
     }
@@ -106,6 +112,9 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
     'content_type'=>$content_type,
     'size'=>$size,
     'etag'=>$etag,
+    'fileid'=>$fileid,
+    'width'=>$width,
+    'height'=>$height,
     'coi'=>$row['coi'] ?? null,
   );
 }
