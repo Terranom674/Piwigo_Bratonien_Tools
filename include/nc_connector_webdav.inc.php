@@ -4,12 +4,6 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-/**
- * Create a disabled WebDAV-backed connector beside the existing local modes.
- *
- * This deliberately does not activate, migrate or modify any existing
- * connection. It only persists the data required for the parallel WebDAV path.
- */
 function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
 {
   $state = bratonien_tools_nc_wizard_state();
@@ -24,7 +18,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   $password = (string)($state['_password'] ?? '');
   if ($base_url === '' || $username === '' || $password === '')
   {
-    throw new RuntimeException('Für den WebDAV-Testpfad fehlen Nextcloud-Adresse oder Zugangsdaten.');
+    throw new RuntimeException('Für die WebDAV-Verbindung fehlen Nextcloud-Adresse oder Zugangsdaten.');
   }
 
   $selected = isset($state['directory_selected']) && is_array($state['directory_selected'])
@@ -34,7 +28,7 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     ? $state['directory_selected_fileids']
     : array();
   $selected = array_values(array_filter($selected, function($path) { return $path !== ''; }));
-  if (!$selected) throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis für den WebDAV-Testpfad auswählen.');
+  if (!$selected) throw new RuntimeException('Bitte mindestens ein Nextcloud-Verzeichnis auswählen.');
 
   $roots = array();
   foreach ($selected as $path)
@@ -70,10 +64,6 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
     'roots'=>$roots,
     'state_dir'=>'',
     'status_file'=>'',
-    'quiet_seconds'=>120,
-    'max_wait_seconds'=>900,
-    'full_sync_seconds'=>86400,
-    'parallel_test'=>true,
     'piwigo_auth'=>'connection-scoped',
     'api_enabled'=>$api_enabled,
   );
@@ -107,14 +97,14 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
 
   pwg_query("INSERT INTO `$table` (connection_key,name,adapter,enabled,takeover_state,config_json,secret_blob,created,updated) VALUES ('"
     .pwg_db_real_escape_string($connection_key)."','"
-    .pwg_db_real_escape_string($name)."','remote',0,'disabled','"
+    .pwg_db_real_escape_string($name)."','remote',1,'active','"
     .pwg_db_real_escape_string($config_json)."','"
     .pwg_db_real_escape_string($secret_blob)."','"
     .pwg_db_real_escape_string($now)."','"
     .pwg_db_real_escape_string($now)."')");
 
   $id = (int)pwg_db_insert_id();
-  if ($id < 1) throw new RuntimeException('Die WebDAV-Testverbindung konnte nicht eindeutig angelegt werden.');
+  if ($id < 1) throw new RuntimeException('Die WebDAV-Verbindung konnte nicht eindeutig angelegt werden.');
 
   $config['state_dir'] = '/var/lib/bratonien-tools/nc-connector/connection-'.$id;
   $config['status_file'] = $config['state_dir'].'/connector-status.json';
@@ -122,12 +112,12 @@ function bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard()
   if (!is_string($config_json))
   {
     pwg_query("DELETE FROM `$table` WHERE id=".$id." LIMIT 1");
-    throw new RuntimeException('Die WebDAV-Testverbindung konnte nach dem Anlegen nicht serialisiert werden.');
+    throw new RuntimeException('Die WebDAV-Verbindung konnte nach dem Anlegen nicht serialisiert werden.');
   }
   pwg_query("UPDATE `$table` SET config_json='".pwg_db_real_escape_string($config_json)."' WHERE id=".$id." LIMIT 1");
 
   return array(
     'connection_id'=>$id,
-    'message'=>'Parallele WebDAV-Testverbindung wurde deaktiviert angelegt. Bestehende Verbindungen blieben unverändert.',
+    'message'=>'WebDAV-Verbindung wurde angelegt.',
   );
 }
