@@ -4,6 +4,10 @@
 This creates only tiny placeholder files plus a metadata mapping; no Nextcloud
 original media is downloaded. The authenticated Nextcloud user is never used as
 an album name.
+
+The placeholder files carry the original image dimensions reported by
+Nextcloud. This lets Piwigo perform its normal filesystem synchronization
+without ever learning the artificial 1x1 dimensions of the placeholder.
 """
 
 from __future__ import annotations
@@ -27,7 +31,10 @@ from pathlib import Path, PurePosixPath
 
 DAV = "DAV:"
 OC = "http://owncloud.org/ns"
+NC = "http://nextcloud.org/ns"
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+# Valid transparent 1x1 GIF. Only the logical-screen width/height bytes are
+# replaced per file; the actual transparent image block remains 1x1 and tiny.
 PLACEHOLDER = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
 
 
@@ -52,6 +59,40 @@ def safe_local_name(name: str) -> str:
     if not name or name in {".", ".."} or "/" in name or "\x00" in name:
         raise ValueError(f"unsafe remote name: {name!r}")
     return name
+
+
+def parse_dimensions(prop: ET.Element) -> tuple[int, int]:
+    """Read the original image dimensions exposed by Nextcloud metadata."""
+    for property_name in ("file-metadata-size", "metadata-photos-size"):
+        raw = prop.findtext(f"{{{NC}}}{property_name}", default="").strip()
+        if not raw:
+            continue
+        try:
+            decoded = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(decoded, dict) and isinstance(decoded.get("value"), dict):
+            decoded = decoded["value"]
+        if not isinstance(decoded, dict):
+            continue
+        try:
+            width = int(decoded.get("width", 0) or 0)
+            height = int(decoded.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if width > 0 and height > 0:
+            return width, height
+    return 0, 0
+
+
+def placeholder_bytes(width: int, height: int) -> bytes:
+    """Return a tiny valid GIF whose logical dimensions match the real image."""
+    if not (1 <= width <= 65535 and 1 <= height <= 65535):
+        fail(f"unsupported image dimensions for placeholder: {width}x{height}")
+    data = bytearray(PLACEHOLDER)
+    data[6:8] = width.to_bytes(2, "little")
+    data[8:10] = height.to_bytes(2, "little")
+    return bytes(data)
 
 
 @contextmanager
@@ -105,9 +146,12 @@ class WebDavClient:
         url = self.collection_url(relative)
         body = (
             '<?xml version="1.0"?>'
-            '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">'
+            '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" '
+            'xmlns:nc="http://nextcloud.org/ns">'
             '<d:prop><d:displayname/><d:resourcetype/><d:getcontenttype/>'
-            '<d:getcontentlength/><d:getetag/><oc:fileid/></d:prop></d:propfind>'
+            '<d:getcontentlength/><d:getetag/><oc:fileid/>'
+            '<nc:file-metadata-size/><nc:metadata-photos-size/>'
+            '</d:prop></d:propfind>'
         ).encode("utf-8")
         request = urllib.request.Request(url, data=body, method="PROPFIND")
         request.add_header("Authorization", self.auth_header)
@@ -151,6 +195,7 @@ class WebDavClient:
             fileid_text = prop.findtext(f"{{{OC}}}fileid", default="").strip()
             resource_type = prop.find(f"{{{DAV}}}resourcetype")
             is_dir = resource_type is not None and resource_type.find(f"{{{DAV}}}collection") is not None
+            width, height = parse_dimensions(prop)
             item = {
                 "display_name": display,
                 "fileid": int(fileid_text) if fileid_text.isdigit() else 0,
@@ -158,6 +203,8 @@ class WebDavClient:
                 "content_type": prop.findtext(f"{{{DAV}}}getcontenttype", default=""),
                 "size": int(prop.findtext(f"{{{DAV}}}getcontentlength", default="0") or 0),
                 "etag": prop.findtext(f"{{{DAV}}}getetag", default="").strip('"'),
+                "width": width,
+                "height": height,
             }
             if href_path == base_path:
                 current = item
@@ -169,15 +216,13 @@ class WebDavClient:
         return current, children
 
 
-def link_placeholder(seed: Path, target: Path) -> None:
+def write_placeholder(target: Path, width: int, height: int) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.link(seed, target)
-    except OSError:
-        target.write_bytes(PLACEHOLDER)
+    target.write_bytes(placeholder_bytes(width, height))
+    os.chmod(target, 0o644)
 
 
-def build_root(client: WebDavClient, remote_root: str, local_root: Path, seed: Path, mapping: dict[str, dict[str, object]]) -> tuple[int, int, int]:
+def build_root(client: WebDavClient, remote_root: str, local_root: Path, mapping: dict[str, dict[str, object]]) -> tuple[int, int, int]:
     files = 0
     folders = 0
     skipped = 0
@@ -210,7 +255,16 @@ def build_root(client: WebDavClient, remote_root: str, local_root: Path, seed: P
             if extension not in SUPPORTED_IMAGE_EXTENSIONS:
                 skipped += 1
                 continue
-            link_placeholder(seed, child_local)
+
+            width = int(child.get("width", 0) or 0)
+            height = int(child.get("height", 0) or 0)
+            if width < 1 or height < 1:
+                fail(
+                    f"Nextcloud returned no original image dimensions for {child_remote}; "
+                    "the placeholder will not be exposed to Piwigo with false 1x1 dimensions"
+                )
+
+            write_placeholder(child_local, width, height)
             files += 1
             mapping[str(child_local)] = {
                 "kind": "file",
@@ -220,6 +274,8 @@ def build_root(client: WebDavClient, remote_root: str, local_root: Path, seed: P
                 "content_type": str(child.get("content_type", "")),
                 "size": int(child.get("size", 0)),
                 "etag": str(child.get("etag", "")),
+                "width": width,
+                "height": height,
             }
     return files, folders, skipped
 
@@ -265,10 +321,7 @@ def main() -> int:
         source_dir = args.source_dir.resolve()
         staging = source_dir.with_name(f".{source_dir.name}.next")
         previous = source_dir.with_name(f".{source_dir.name}.previous")
-        seed = source_dir.parent / ".bratonien-webdav-placeholder.gif"
         source_dir.parent.mkdir(parents=True, exist_ok=True)
-        seed.write_bytes(PLACEHOLDER)
-        os.chmod(seed, 0o644)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
@@ -288,7 +341,7 @@ def main() -> int:
             used_fileids.add(fileid)
             local_name = f"root-{fileid}"
             local_root = staging / local_name
-            files, folders, skipped = build_root(client, remote_root, local_root, seed, mapping)
+            files, folders, skipped = build_root(client, remote_root, local_root, mapping)
             total_files += files
             total_folders += folders
             total_skipped += skipped
@@ -333,7 +386,7 @@ def main() -> int:
 
         atomic_text(args.manifest, "\n".join(manifest) + "\n")
         atomic_json(args.mapping, {
-            "version": 1,
+            "version": 2,
             "base_url": args.base_url.rstrip("/"),
             "connect_ip": client.connect_ip,
             "user": args.user,
