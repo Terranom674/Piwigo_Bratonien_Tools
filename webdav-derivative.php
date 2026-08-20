@@ -385,14 +385,20 @@ if ($target_path !== '' && is_file($target_path) && is_readable($target_path))
   exit;
 }
 
+$source_logical_path = (string)$image_row['path'];
+if (strpos($source_logical_path, '/') !== 0)
+{
+  $source_logical_path = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $source_logical_path), '/');
+}
+
 $lock_dir = PHPWG_ROOT_PATH.'upload/bratonien-webdav-materialize';
 if (!is_dir($lock_dir)) @mkdir($lock_dir, 0755, true);
 $lock_path = $lock_dir.'/image-'.$image_id.'.lock';
 $lock_handle = fopen($lock_path, 'c');
 if (!$lock_handle) bratonien_tools_webdav_derivative_abort(500, 'Derivat-Lock konnte nicht geoeffnet werden.');
-bratonien_tools_webdav_derivative_debug($request_id, 'waiting_lock', array('lock'=>$lock_path, 'is_link'=>is_link($image_row['path'])));
+bratonien_tools_webdav_derivative_debug($request_id, 'waiting_lock', array('lock'=>$lock_path, 'is_link'=>is_link($source_logical_path)));
 flock($lock_handle, LOCK_EX);
-bratonien_tools_webdav_derivative_debug($request_id, 'lock_acquired', array('is_link'=>is_link($image_row['path'])));
+bratonien_tools_webdav_derivative_debug($request_id, 'lock_acquired', array('is_link'=>is_link($source_logical_path)));
 
 clearstatcache(true, $target_path);
 if ($target_path !== '' && is_file($target_path) && is_readable($target_path))
@@ -461,7 +467,7 @@ if ($source_mode !== 'preview')
   ));
 }
 
-$source_path = realpath($image_row['path']);
+$source_path = realpath($source_logical_path);
 if ($source_path === false || !is_file($source_path))
 {
   @unlink($temp_source);
@@ -471,7 +477,7 @@ if ($source_path === false || !is_file($source_path))
 }
 
 $placeholder_backup = $source_path.'.bratonien-placeholder-'.$request_id;
-$staging_path = $image_row['path'].'.bratonien-source-'.$request_id;
+$staging_path = $source_logical_path.'.bratonien-source-'.$request_id;
 @unlink($placeholder_backup);
 @unlink($staging_path);
 if (!@copy($temp_source, $staging_path))
@@ -493,7 +499,7 @@ try
     throw new RuntimeException('Temporaere Bildquelle konnte nicht eingesetzt werden.');
   }
   $swapped = true;
-  bratonien_tools_webdav_derivative_debug($request_id, 'swapped', array('is_link'=>is_link($image_row['path']), 'mode'=>$source_mode));
+  bratonien_tools_webdav_derivative_debug($request_id, 'swapped', array('is_link'=>is_link($source_logical_path), 'mode'=>$source_mode));
 
   $generate_start = microtime(true);
   bratonien_tools_webdav_derivative_debug($request_id, 'generate_start', array('target'=>$target_path, 'mode'=>$source_mode));
@@ -526,7 +532,7 @@ catch (Throwable $e)
 @unlink($source_path);
 @rename($placeholder_backup, $source_path);
 @unlink($temp_source);
-bratonien_tools_webdav_derivative_debug($request_id, 'restored', array('is_link'=>is_link($image_row['path'])));
+bratonien_tools_webdav_derivative_debug($request_id, 'restored', array('is_link'=>is_link($source_logical_path)));
 
 flock($lock_handle, LOCK_UN);
 fclose($lock_handle);
