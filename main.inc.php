@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.6.8.17
+Version: 0.9.6.8.18
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -34,6 +34,7 @@ add_event_handler('element_set_global_action', 'bratonien_tools_batch_titles_app
 add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EVENT_HANDLER_PRIORITY_NEUTRAL - 30);
 add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', EVENT_HANDLER_PRIORITY_NEUTRAL - 20);
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
+add_event_handler('init', 'bratonien_tools_preserve_connector_top_level_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 9);
 add_event_handler('init', 'bratonien_tools_album_shares_init');
 add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
@@ -83,6 +84,70 @@ function bratonien_tools_prepare_private_album_permissions()
   }
 
   bratonien_tools_grant_private_album_access($category_id, (int)$user['id']);
+}
+
+function bratonien_tools_preserve_connector_top_level_access()
+{
+  global $user;
+
+  if (
+    !defined('IN_ADMIN')
+    || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+    || (string)($_GET['page'] ?? '') !== 'site_update'
+    || (string)($_POST['bratonien_connector'] ?? '') !== '1'
+    || empty($user['id'])
+  )
+  {
+    return;
+  }
+
+  $site_id = (int)($_GET['site'] ?? 0);
+  $user_id = (int)$user['id'];
+  if ($site_id < 1 || $user_id < 1)
+  {
+    return;
+  }
+
+  register_shutdown_function(function () use ($site_id, $user_id) {
+    $query = '
+SELECT id
+  FROM '.CATEGORIES_TABLE.'
+  WHERE site_id = '.$site_id.'
+    AND dir IS NOT NULL
+    AND id_uppercat IS NULL
+    AND status = \'private\'
+;';
+    $result = pwg_query($query);
+    $changed = false;
+    while ($row = pwg_db_fetch_assoc($result))
+    {
+      $category_id = (int)$row['id'];
+      if ($category_id < 1)
+      {
+        continue;
+      }
+
+      $access_query = '
+SELECT 1
+  FROM '.USER_ACCESS_TABLE.'
+  WHERE user_id = '.$user_id.'
+    AND cat_id = '.$category_id.'
+  LIMIT 1
+;';
+      if (pwg_db_num_rows(pwg_query($access_query)) > 0)
+      {
+        continue;
+      }
+
+      bratonien_tools_grant_private_album_access($category_id, $user_id);
+      $changed = true;
+    }
+
+    if ($changed && function_exists('invalidate_user_cache'))
+    {
+      invalidate_user_cache(true);
+    }
+  });
 }
 
 function bratonien_tools_grant_private_album_access($category_id, $user_id)
