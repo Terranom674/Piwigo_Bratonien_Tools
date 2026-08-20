@@ -87,7 +87,18 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
       $mapping = json_decode((string)file_get_contents($mapping_file), true);
       if (is_array($mapping) && isset($mapping['files']) && is_array($mapping['files']))
       {
-        $entry = $mapping['files'][$resolved] ?? $mapping['files'][$normalized] ?? null;
+        $files = $mapping['files'];
+        $entry = $files[$resolved] ?? $files[$normalized] ?? null;
+        if (!is_array($entry))
+        {
+          foreach ($files as $candidate)
+          {
+            if (!is_array($candidate) || (string)($candidate['kind'] ?? '') !== 'file') continue;
+            if (trim((string)($candidate['webdav_path'] ?? ''), '/') !== $webdav_path) continue;
+            $entry = $candidate;
+            break;
+          }
+        }
         if (is_array($entry) && (string)($entry['kind'] ?? '') === 'file')
         {
           $mapped_path = trim((string)($entry['webdav_path'] ?? ''), '/');
