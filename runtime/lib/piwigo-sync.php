@@ -50,7 +50,7 @@ function http_request($url, array $fields, array $headers = array(), $cookie_fil
     CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_TIMEOUT => 900,
     CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_USERAGENT => 'Bratonien-NC-Connector',
+    CURLOPT_USERAGENT => 'Bratonien-NC-Connector-WebDAV',
   );
   if ($headers) $options[CURLOPT_HTTPHEADER] = $headers;
   if ($cookie_file !== null)
@@ -141,7 +141,10 @@ function decrypt_blob($blob, $hex_key)
 
 function ensure_webdav_site(mysqli $db, $prefixeTable, $piwigo_root, array $connection_config, $connection_id)
 {
-  if ((string)($connection_config['source_mode'] ?? '') !== 'webdav-placeholder') return 1;
+  if ((string)($connection_config['source_mode'] ?? '') !== 'webdav-placeholder')
+  {
+    fail_sync('Verbindung #'.$connection_id.' ist keine WebDAV-Verbindung.');
+  }
 
   $gallery_root = rtrim((string)($connection_config['parallel_gallery_root'] ?? ''), '/');
   if ($gallery_root === '') fail_sync('WebDAV-Galeriewurzel fehlt in der Verbindungskonfiguration.');
@@ -158,10 +161,7 @@ function ensure_webdav_site(mysqli $db, $prefixeTable, $piwigo_root, array $conn
   $escaped = $db->real_escape_string($site_url);
   $result = $db->query("SELECT id FROM `{$prefixeTable}sites` WHERE galleries_url='{$escaped}' LIMIT 1");
   if (!$result) fail_sync('Piwigo-Site konnte nicht gelesen werden: '.$db->error);
-  if ($result->num_rows)
-  {
-    return (int)$result->fetch_assoc()['id'];
-  }
+  if ($result->num_rows) return (int)$result->fetch_assoc()['id'];
 
   if (!$db->query("INSERT INTO `{$prefixeTable}sites` (galleries_url) VALUES ('{$escaped}')"))
   {
@@ -209,38 +209,15 @@ try
   $site_id = ensure_webdav_site($db, $prefixeTable, $piwigo_root, $connection_config, $connection_id);
 
   $api = array('key_id'=>'', 'key_secret'=>'');
-  $connection_scoped = (string)($connection_config['piwigo_auth'] ?? '') === 'connection-scoped' || array_key_exists('api_enabled', $connection_config);
-  if ($connection_scoped)
+  if (!empty($connection_config['api_enabled']))
   {
-    if (!empty($connection_config['api_enabled']))
-    {
-      $api['key_id'] = trim((string)($connection_credentials['api_key_id'] ?? ''));
-      $api['key_secret'] = trim((string)($connection_credentials['api_key_secret'] ?? ''));
-    }
-  }
-  else
-  {
-    $api_result = $db->query("SELECT value FROM `{$prefixeTable}config` WHERE param='bratonien_nc_piwigo_api' LIMIT 1");
-    if ($api_result && $api_result->num_rows)
-    {
-      $api_blob = (string)$api_result->fetch_assoc()['value'];
-      if ($api_blob !== '')
-      {
-        $api_plain = decrypt_blob($api_blob, $hex_key);
-        $api_decoded = json_decode($api_plain, true);
-        if (is_array($api_decoded))
-        {
-          $api['key_id'] = (string)($api_decoded['key_id'] ?? '');
-          $api['key_secret'] = (string)($api_decoded['key_secret'] ?? '');
-        }
-      }
-    }
+    $api['key_id'] = trim((string)($connection_credentials['api_key_id'] ?? ''));
+    $api['key_secret'] = trim((string)($connection_credentials['api_key_secret'] ?? ''));
   }
 
-  $fallback_user = (string)($connection_credentials['piwigo_user'] ?? '');
+  $fallback_user = trim((string)($connection_credentials['piwigo_user'] ?? ''));
   $fallback_password = (string)($connection_credentials['piwigo_password'] ?? '');
 
-  $api_error = null;
   if ($api['key_id'] !== '' && $api['key_secret'] !== '')
   {
     try
@@ -252,12 +229,6 @@ try
       );
       decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id), $headers));
       $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), $headers));
-      // Entfernt alte technische bratonien-webdav-N Wrapper aus Site 1,
-      // nachdem deren generierte Verzeichnisse beim Reconcile entfernt wurden.
-      if ($site_id !== 1)
-      {
-        decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), $headers));
-      }
       $added = (int)($orphan['added_orphans'] ?? 0);
       $deleted = (int)($orphan['deleted_orphans'] ?? 0);
       echo "Piwigo-Synchronisierung per API erfolgreich (Site $site_id)\n";
@@ -266,14 +237,12 @@ try
     }
     catch (Throwable $e)
     {
-      $api_error = $e->getMessage();
-      fwrite(STDERR, "Piwigo-API nicht nutzbar: ".$api_error."\n");
+      fwrite(STDERR, "Piwigo-API nicht nutzbar: ".$e->getMessage()."\n");
     }
   }
   else
   {
-    $api_error = $connection_scoped ? 'Fuer diese Verbindung ist keine API konfiguriert.' : 'Keine gespeicherten API-Zugangsdaten.';
-    fwrite(STDERR, "Piwigo-API nicht nutzbar: ".$api_error."\n");
+    fwrite(STDERR, "Piwigo-API nicht nutzbar: Fuer diese Verbindung ist keine API konfiguriert.\n");
   }
 
   if ($fallback_user === '' || $fallback_password === '') fail_sync('Kein gespeicherter Benutzername/Passwort-Fallback fuer diese Verbindung vorhanden.');
@@ -291,10 +260,6 @@ try
       $cookie_file
     );
     $orphan = decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>$site_id, 'simulate'=>0), array(), $cookie_file));
-    if ($site_id !== 1)
-    {
-      decode_ws(http_request($base_url.'/ws.php?format=json', array('method'=>'bratonien.nc.syncOrphans', 'site_id'=>1, 'simulate'=>0), array(), $cookie_file));
-    }
     $added = (int)($orphan['added_orphans'] ?? 0);
     $deleted = (int)($orphan['deleted_orphans'] ?? 0);
     echo "Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich (Site $site_id)\n";
