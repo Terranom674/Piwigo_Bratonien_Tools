@@ -220,7 +220,7 @@ try
       $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       if (!is_string($json)) fail_webdav_reconcile('WebDAV-Runtime-Konfiguration konnte nicht serialisiert werden.');
       $escaped = $db->real_escape_string($json);
-      if (!$db->query("UPDATE `{$table}` SET enabled=1, takeover_state='active', config_json='{$escaped}' WHERE id={$id} AND adapter='remote' LIMIT 1"))
+      if (!$db->query("UPDATE `{$table}` SET enabled=1, config_json='{$escaped}' WHERE id={$id} AND adapter='remote' LIMIT 1"))
       {
         fail_webdav_reconcile('WebDAV-Runtime-Status konnte nicht gespeichert werden: '.$db->error);
       }
