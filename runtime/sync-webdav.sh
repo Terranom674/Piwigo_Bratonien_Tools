@@ -162,6 +162,26 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         exit "$PIWIGO_EXIT"
     fi
 
+    METADATA_OUTPUT=""
+    METADATA_EXIT=0
+    if METADATA_OUTPUT="$(php "$SCRIPT_DIR/lib/sync-webdav-metadata.php" \
+        --piwigo-root="$PIWIGO_ROOT" \
+        --connection-id="$CONNECTION_ID" \
+        --mapping="$WEBDAV_MAPPING_FILE" 2>&1)"; then
+        METADATA_EXIT=0
+    else
+        METADATA_EXIT=$?
+    fi
+    [[ -z "$METADATA_OUTPUT" ]] || printf '%s\n' "$METADATA_OUTPUT"
+    if [[ "$METADATA_EXIT" -ne 0 ]]; then
+        DETAIL="Exit-Code: $METADATA_EXIT"
+        if [[ -n "$METADATA_OUTPUT" ]]; then
+            DETAIL+="; Ausgabe: $(printf '%s\n' "$METADATA_OUTPUT" | compact_output)"
+        fi
+        write_status error "Piwigo-Bildabmessungen konnten nicht mit den WebDAV-Originalen abgeglichen werden" "$DETAIL"
+        exit "$METADATA_EXIT"
+    fi
+
     DERIVATIVE_OUTPUT=""
     DERIVATIVE_EXIT=0
     if DERIVATIVE_OUTPUT="$(php "$SCRIPT_DIR/lib/build-webdav-derivatives.php" \
