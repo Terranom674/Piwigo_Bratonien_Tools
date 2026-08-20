@@ -73,17 +73,12 @@ function bratonien_tools_nc_wizard_scan_webdav_first()
     'display_name'=>(string)($user_data['display-name'] ?? $user_data['displayname'] ?? ''),
     'version'=>(string)($status_data['versionstring'] ?? $status_data['version'] ?? ''),
     'product'=>(string)($status_data['productname'] ?? 'Nextcloud'),
-    'users'=>array(),
-    'can_list_users'=>false,
-    'showcase_user'=>$resolved_username,
     'connection_name'=>$url_host !== '' ? $url_host : 'Nextcloud WebDAV',
     'scan_message'=>'Nextcloud und WebDAV-Zugriff wurden bestätigt.',
     '_password'=>$password,
     'source_mode'=>'webdav-placeholder',
     'transport'=>'webdav',
     'gallery_root'=>rtrim(PHPWG_ROOT_PATH, '/').'/galleries',
-    'storages'=>array(),
-    'storage_candidates'=>array(),
     'roots'=>array(),
     'technical_stage'=>'mounts',
     'technical_source'=>'WebDAV',
@@ -97,8 +92,6 @@ function bratonien_tools_nc_wizard_scan_webdav_first()
     'directory_fileids'=>array(),
     'directory_selected'=>array(),
     'directory_selected_fileids'=>array(),
-    'database_prompted'=>false,
-    'mount_prompted'=>false,
     'api_status'=>'pending',
     'api_username'=>'',
     'api_error'=>'',
@@ -115,7 +108,7 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
   $state = bratonien_tools_nc_wizard_state();
   if ((string)($state['source_mode'] ?? '') !== 'webdav-placeholder')
   {
-    return bratonien_tools_nc_wizard_save_mounts_server_side();
+    throw new RuntimeException('Der Assistent unterstützt ausschließlich WebDAV-Verbindungen.');
   }
 
   if ((int)($state['step'] ?? 0) !== 2 || empty($state['directory_selection_ready']))
@@ -158,7 +151,7 @@ function bratonien_tools_nc_wizard_save_sources_dispatch()
   $state['directory_selection_ready'] = false;
   bratonien_tools_nc_wizard_store($state);
 
-  return array('message'=>'WebDAV-Verzeichnisse wurden übernommen. Die Verbindung ist für den parallelen Testweg vorbereitet.');
+  return array('message'=>'WebDAV-Verzeichnisse wurden übernommen.');
 }
 
 function bratonien_tools_nc_wizard_finish_dispatch()
@@ -166,7 +159,7 @@ function bratonien_tools_nc_wizard_finish_dispatch()
   $state = bratonien_tools_nc_wizard_state();
   if ((string)($state['source_mode'] ?? '') !== 'webdav-placeholder')
   {
-    return bratonien_tools_nc_wizard_finish_generic_scope();
+    throw new RuntimeException('Der Assistent unterstützt ausschließlich WebDAV-Verbindungen.');
   }
 
   if ((int)($state['step'] ?? 0) !== 4 || empty($state['technical_complete']))
