@@ -2,7 +2,7 @@
 
 Modulares Piwigo-Plugin für Administration, Bildverarbeitung, geschützte Freigaben, Fotoauswahl und die Anbindung von Nextcloud an Piwigo.
 
-Aktuelle Plugin-Version: **0.9.6.8.25**
+Aktuelle Plugin-Version: **9.7.1.0**
 
 ## Grundprinzip
 
