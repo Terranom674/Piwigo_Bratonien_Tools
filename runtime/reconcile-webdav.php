@@ -180,7 +180,7 @@ try
       {
         $path = trim((string)($root['webdav_path'] ?? ''), '/');
         $display = trim((string)($root['display_name'] ?? ''));
-        if ($path === '' || $display === '' || preg_match('/[\t\r\n]/', $path.$display)) fail_webdav_reconcile('Eine gespeicherte WebDAV-Wurzel ist ungueltig.');
+        if ($display === '' || preg_match('/[\t\r\n]/', $path.$display)) fail_webdav_reconcile('Eine gespeicherte WebDAV-Wurzel ist ungueltig.');
         $rootLines[] = $path."\t".$display;
       }
       file_put_contents($rootsPath, implode("\n", $rootLines)."\n", LOCK_EX);
