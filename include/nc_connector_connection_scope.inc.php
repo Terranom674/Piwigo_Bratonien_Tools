@@ -21,7 +21,6 @@ function bratonien_tools_nc_connector_scoped_secret(array $connection)
 
   return array(
     'v'=>3,
-    'db_password'=>'',
     'piwigo_user'=>(string)($decoded['piwigo_user'] ?? ''),
     'piwigo_password'=>(string)($decoded['piwigo_password'] ?? ''),
     'api_key_id'=>(string)($decoded['api_key_id'] ?? ''),
@@ -44,7 +43,7 @@ function bratonien_tools_nc_connector_store_scoped_secret($id, array $connection
   }
 
   $credentials['v'] = 3;
-  $credentials['db_password'] = '';
+  unset($credentials['db_password']);
   $payload = json_encode($credentials, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (!is_string($payload)) throw new RuntimeException('Verbindungszugangsdaten konnten nicht serialisiert werden.');
   $blob = bratonien_tools_nc_connector_encrypt_secret($payload);
