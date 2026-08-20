@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.6.1
+Version: 0.9.6.2
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -21,7 +21,6 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/picture_navigation.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/batch_titles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_ws.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_orphan_ws.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_productive_ws.inc.php');
 
@@ -36,7 +35,6 @@ add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', E
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
 add_event_handler('init', 'bratonien_tools_album_shares_init');
 add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
-add_event_handler('ws_add_methods', 'bratonien_tools_register_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_productive_ws_methods');
 
