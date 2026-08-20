@@ -24,6 +24,7 @@ if (!function_exists('is_admin') || !is_admin())
   exit;
 }
 
+$requested_connection_id = isset($_GET['connection_id']) ? max(0, (int)$_GET['connection_id']) : 0;
 $dir = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-connector-status';
 $latest = array(
   'state'=>'idle',
@@ -41,11 +42,16 @@ $latest = array(
   'route_timestamp'=>0,
   'route_time_label'=>'Nicht verfügbar',
   'route_detail'=>'',
+  'connection_id'=>$requested_connection_id,
 );
 
 if (is_dir($dir))
 {
-  foreach (glob($dir.'/connection-*.json') ?: array() as $file)
+  $files = $requested_connection_id > 0
+    ? array($dir.'/connection-'.$requested_connection_id.'.json')
+    : (glob($dir.'/connection-*.json') ?: array());
+
+  foreach ($files as $file)
   {
     if (!is_readable($file))
     {
@@ -63,58 +69,56 @@ if (is_dir($dir))
     }
   }
 
-  $route_file = $dir.'/route-status.json';
-  if (is_readable($route_file))
+  if ($requested_connection_id === 0)
   {
-    $route = json_decode((string)@file_get_contents($route_file), true);
-    if (is_array($route))
+    $route_file = $dir.'/route-status.json';
+    if (is_readable($route_file))
     {
-      $route_name = (string)($route['route'] ?? '');
-      $route_timestamp = (int)($route['timestamp'] ?? 0);
-      $route_label = (string)($route['label'] ?? '');
+      $route = json_decode((string)@file_get_contents($route_file), true);
+      if (is_array($route))
+      {
+        $route_name = (string)($route['route'] ?? '');
+        $route_timestamp = (int)($route['timestamp'] ?? 0);
+        $route_label = (string)($route['label'] ?? '');
 
-      if ($route_name === 'webdav')
-      {
-        $route_label = 'WEBDAV PRIMÄR';
-      }
-      elseif ($route_name === 'legacy_fallback')
-      {
-        $route_label = 'LEGACY-FALLBACK AKTIV';
-      }
-      elseif ($route_name === 'failed')
-      {
-        $route_label = 'FEHLER - KEIN ERFOLGREICHER DATENWEG';
-      }
-      elseif ($route_label === '')
-      {
-        $route_label = 'UNBEKANNTER DATENWEG';
-      }
+        if ($route_name === 'webdav')
+        {
+          $route_label = 'WEBDAV PRIMÄR';
+        }
+        elseif ($route_name === 'legacy_fallback')
+        {
+          $route_label = 'LEGACY-FALLBACK AKTIV';
+        }
+        elseif ($route_name === 'failed')
+        {
+          $route_label = 'FEHLER - KEIN ERFOLGREICHER DATENWEG';
+        }
+        elseif ($route_label === '')
+        {
+          $route_label = 'UNBEKANNTER DATENWEG';
+        }
 
-      $route_detail = trim((string)($route['detail'] ?? ''));
-      $latest['route'] = $route_name;
-      $latest['route_label'] = $route_label;
-      $latest['route_timestamp'] = $route_timestamp;
-      $latest['route_time_label'] = $route_timestamp > 0 ? date('d.m.Y H:i:s', $route_timestamp) : 'Nicht verfügbar';
-      $latest['route_detail'] = $route_detail;
+        $route_detail = trim((string)($route['detail'] ?? ''));
+        $latest['route'] = $route_name;
+        $latest['route_label'] = $route_label;
+        $latest['route_timestamp'] = $route_timestamp;
+        $latest['route_time_label'] = $route_timestamp > 0 ? date('d.m.Y H:i:s', $route_timestamp) : 'Nicht verfügbar';
+        $latest['route_detail'] = $route_detail;
 
-      $base_message = trim((string)($latest['message'] ?? ''));
-      $message_parts = array($route_label);
-      if ($route_name !== 'webdav' && $route_detail !== '')
-      {
-        $message_parts[] = $route_detail;
+        $base_message = trim((string)($latest['message'] ?? ''));
+        $message_parts = array($route_label);
+        if ($route_name !== 'webdav' && $route_detail !== '')
+        {
+          $message_parts[] = $route_detail;
+        }
+        if ($base_message !== '')
+        {
+          $message_parts[] = $base_message;
+        }
+        $latest['message'] = implode(' · ', $message_parts);
       }
-      if ($base_message !== '')
-      {
-        $message_parts[] = $base_message;
-      }
-      $latest['message'] = implode(' · ', $message_parts);
     }
   }
-}
-
-if ((int)$latest['timestamp'] > 0)
-{
-  $latest['last_run_label'] = date('d.m.Y H:i:s', (int)$latest['timestamp']);
 }
 
 $system_file = BRATONIEN_TOOLS_PATH.'include/nc_connector_system.inc.php';
@@ -127,6 +131,29 @@ if (is_readable($system_file))
     $latest['next_run_timestamp'] = (int)($system['next_run_timestamp'] ?? 0);
     $latest['next_run_label'] = (string)($system['next_run_label'] ?? 'Nicht verfügbar');
   }
+}
+
+$scheduler_file = PHPWG_ROOT_PATH.'_data/bratonien-tools/nc-connector-scheduler/state.json';
+if ($requested_connection_id > 0 && is_readable($scheduler_file))
+{
+  $scheduler = json_decode((string)@file_get_contents($scheduler_file), true);
+  if (
+    is_array($scheduler)
+    && (int)($scheduler['connection_id'] ?? 0) === $requested_connection_id
+    && in_array((string)($scheduler['state'] ?? ''), array('queued','running'), true)
+    && (int)($scheduler['timestamp'] ?? 0) >= (int)($latest['timestamp'] ?? 0)
+  )
+  {
+    $latest['state'] = (string)$scheduler['state'];
+    $latest['message'] = (string)($scheduler['message'] ?? 'NC-Abgleich läuft.');
+    $latest['timestamp'] = (int)($scheduler['timestamp'] ?? time());
+    $latest['error_detail'] = '';
+  }
+}
+
+if ((int)$latest['timestamp'] > 0)
+{
+  $latest['last_run_label'] = date('d.m.Y H:i:s', (int)$latest['timestamp']);
 }
 
 echo json_encode($latest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
