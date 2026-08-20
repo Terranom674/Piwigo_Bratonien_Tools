@@ -94,6 +94,11 @@ python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --manifest "$MANIFEST" \
     --mapping "$WEBDAV_MAPPING_FILE"
 
+find "$WEBDAV_SOURCE_DIR" -type d -exec chgrp www-data -- {} +
+find "$WEBDAV_SOURCE_DIR" -type d -exec chmod 0775 -- {} +
+find "$WEBDAV_SOURCE_DIR" -type f -exec chgrp www-data -- {} +
+find "$WEBDAV_SOURCE_DIR" -type f -exec chmod 0664 -- {} +
+
 chgrp www-data -- "$WEBDAV_MAPPING_FILE"
 chmod 0640 -- "$WEBDAV_MAPPING_FILE"
 
