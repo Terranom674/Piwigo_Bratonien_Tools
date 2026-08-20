@@ -1,6 +1,40 @@
 (function () {
   'use strict';
 
+  function initNcConnectorRunNow() {
+    var section = document.getElementById('nc-connector');
+    if (!section || section.querySelector('[data-nc-run-now]')) return;
+
+    var statusCard = section.querySelector('.bratonien-card');
+    var token = section.querySelector('input[name="pwg_token"]');
+    if (!statusCard || !token) return;
+
+    var actions = document.createElement('div');
+    actions.className = 'bratonien-actions';
+    actions.style.marginTop = '1rem';
+    actions.setAttribute('data-nc-run-now', '1');
+
+    var form = document.createElement('form');
+    form.method = 'post';
+
+    var tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = 'pwg_token';
+    tokenInput.value = token.value;
+
+    var button = document.createElement('button');
+    button.className = 'buttonLike';
+    button.type = 'submit';
+    button.name = 'bratonien_tool';
+    button.value = 'nc_connector_run_now';
+    button.textContent = 'Jetzt abrufen';
+
+    form.appendChild(tokenInput);
+    form.appendChild(button);
+    actions.appendChild(form);
+    statusCard.appendChild(actions);
+  }
+
   function initBratonienTabs() {
     var admin = document.querySelector('.bratonien-admin');
     if (!admin) return;
@@ -113,9 +147,14 @@
     activate(initial, false);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBratonienTabs);
-  } else {
+  function init() {
     initBratonienTabs();
+    initNcConnectorRunNow();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();
