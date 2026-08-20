@@ -14,6 +14,10 @@
         <span class="bratonien-label">Nächster Lauf</span><strong data-nc-next-run>{if $nc_system_available}{$NC_CONNECTOR.system.next_run_label|escape:html}{else}Nicht verfügbar{/if}</strong>
       </div>
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_message}<p class="bratonien-base-note">Letztes Ergebnis: <strong>{$NC_CONNECTOR.system.last_run_message|escape:html}</strong></p>{/if}
+      <form method="post" class="bratonien-actions" style="margin-top:.75rem">
+        <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+        <button class="buttonLike" type="submit" name="bratonien_tool" value="nc_connector_run_now"{if $NC_CONNECTOR.connection_count < 1} disabled{/if}>Jetzt abrufen</button>
+      </form>
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_api_state == 'error'}<p class="bratonien-main-cache__warning"><strong>API:</strong> {$NC_CONNECTOR.system.last_run_api_message|escape:html}</p>{/if}
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_fallback_state == 'error'}<p class="bratonien-main-cache__warning"><strong>Fallback:</strong> {$NC_CONNECTOR.system.last_run_fallback_message|escape:html}</p>{/if}
       {if $nc_system_available && $NC_CONNECTOR.system.last_run_error_detail}<details><summary>Technische Fehlerdetails</summary><p class="bratonien-main-cache__warning">{$NC_CONNECTOR.system.last_run_error_detail|escape:html}</p></details>{/if}
