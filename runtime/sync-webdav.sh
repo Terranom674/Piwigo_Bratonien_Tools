@@ -72,8 +72,10 @@ failure() {
 trap 'failure $? "$BASH_COMMAND" "$LINENO"' ERR
 
 ROOT_ARGS=()
-while IFS=$'\t' read -r path display_name; do
-    [[ -z "$path" || "$path" == \#* ]] && continue
+while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *$'\t'* ]] || continue
+    path="${line%%$'\t'*}"
     ROOT_ARGS+=(--root "$path")
 done < "$WEBDAV_ROOTS_FILE"
 
