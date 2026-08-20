@@ -17,30 +17,28 @@ function bratonien_tools_nc_wizard_state()
     'display_name'=>'',
     'version'=>'',
     'product'=>'Nextcloud',
-    'users'=>array(),
-    'can_list_users'=>false,
-    'showcase_user'=>'',
     'connection_name'=>'',
     'scan_message'=>'',
-    'technical_stage'=>'auto_check',
-    'technical_source'=>'Noch nicht geprüft',
+    'source_mode'=>'webdav-placeholder',
+    'transport'=>'webdav',
+    'gallery_root'=>'',
+    'roots'=>array(),
+    'technical_stage'=>'mounts',
+    'technical_source'=>'WebDAV',
     'technical_error'=>'',
     'technical_complete'=>false,
-    'db_host'=>'',
-    'db_port'=>'5432',
-    'db_database'=>'nextcloud',
-    'db_user'=>'',
-    'db_password_set'=>false,
-    'source_view'=>'piwigo_showcase_sources',
-    'activity_view'=>'piwigo_showcase_activity',
-    'gallery_root'=>'',
-    'storages'=>array(),
-    'storage_candidates'=>array(),
+    'directory_selection_ready'=>false,
+    'directory_path'=>'',
+    'directory_parent'=>'',
+    'directory_children'=>array(),
+    'directory_current_fileid'=>0,
+    'directory_fileids'=>array(),
+    'directory_selected'=>array(),
+    'directory_selected_fileids'=>array(),
     'api_status'=>'pending',
     'api_username'=>'',
     'api_error'=>'',
     '_password'=>'',
-    '_db_password'=>'',
     '_api_key_id'=>'',
     '_api_key_secret'=>'',
     '_fallback_user'=>'',
@@ -102,7 +100,7 @@ function bratonien_tools_nc_wizard_http($url, $username = '', $password = '', ar
     CURLOPT_CONNECTTIMEOUT=>8,
     CURLOPT_TIMEOUT=>15,
     CURLOPT_HTTPHEADER=>array_merge(array('Accept: application/json'), $headers),
-    CURLOPT_USERAGENT=>'Bratonien-Tools-NC-Wizard/'.(function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : 'dev'),
+    CURLOPT_USERAGENT=>'Bratonien-Tools-NC-WebDAV/'.(function_exists('bratonien_tools_current_version') ? bratonien_tools_current_version() : 'dev'),
   );
 
   if ($username !== '')
@@ -141,352 +139,6 @@ function bratonien_tools_nc_wizard_ocs_data($body)
   return isset($decoded['ocs']['data']) && is_array($decoded['ocs']['data']) ? $decoded['ocs']['data'] : array();
 }
 
-function bratonien_tools_nc_wizard_fill_profile(array &$state)
-{
-  $url_host = strtolower((string)parse_url($state['base_url'], PHP_URL_HOST));
-
-  $state['db_host'] = $url_host;
-  $state['db_port'] = '5432';
-  $state['db_database'] = 'nextcloud';
-  $state['db_user'] = (string)$state['username'];
-  $state['_db_password'] = (string)$state['_password'];
-  $state['db_password_set'] = $state['_db_password'] !== '';
-  $state['source_view'] = 'piwigo_showcase_sources';
-  $state['activity_view'] = 'piwigo_showcase_activity';
-  $state['gallery_root'] = rtrim(PHPWG_ROOT_PATH, '/').'/galleries/nextcloud';
-  $state['storages'] = array();
-  $state['storage_candidates'] = array();
-  $state['technical_stage'] = 'auto_check';
-  $state['technical_source'] = 'Automatische Prüfung';
-  $state['technical_error'] = '';
-  $state['technical_complete'] = false;
-
-  foreach (bratonien_tools_nc_connector_connections() as $candidate)
-  {
-    $config = isset($candidate['config']) && is_array($candidate['config']) ? $candidate['config'] : array();
-    $candidate_url = trim((string)($config['nextcloud_url'] ?? ''));
-    $match = false;
-
-    if ($candidate_url !== '')
-    {
-      try
-      {
-        $match = bratonien_tools_nc_wizard_normalize_url($candidate_url) === $state['base_url'];
-      }
-      catch (Throwable $ignored)
-      {
-        $match = false;
-      }
-    }
-
-    if (!$match) continue;
-
-    $state['db_host'] = trim((string)($config['host'] ?? $state['db_host']));
-    $state['db_port'] = trim((string)($config['port'] ?? $state['db_port']));
-    $state['db_database'] = trim((string)($config['database'] ?? $state['db_database']));
-    $state['source_view'] = trim((string)($config['source_view'] ?? $state['source_view']));
-    $state['activity_view'] = trim((string)($config['activity_view'] ?? $state['activity_view']));
-    $state['gallery_root'] = trim((string)($config['gallery_root'] ?? $state['gallery_root']));
-    $state['storages'] = isset($config['storages']) && is_array($config['storages']) ? $config['storages'] : array();
-    $state['storage_candidates'] = $state['storages'];
-    $state['technical_source'] = 'Bekannte Verbindungswerte werden erneut geprüft';
-    break;
-  }
-}
-
-function bratonien_tools_nc_wizard_finish_data_access(array &$state)
-{
-  $config = array(
-    'host'=>$state['db_host'],
-    'port'=>$state['db_port'],
-    'database'=>$state['db_database'],
-    'user'=>$state['db_user'],
-  );
-  $password = (string)$state['_db_password'];
-
-  bratonien_tools_nc_connector_psql($config, $password, 'SELECT 1');
-
-  $source_view = bratonien_tools_nc_connector_view_name($state['source_view']);
-  $activity_view = bratonien_tools_nc_connector_view_name($state['activity_view']);
-  bratonien_tools_nc_connector_psql($config, $password, 'SELECT COUNT(*) FROM '.$source_view);
-  bratonien_tools_nc_connector_psql($config, $password, 'SELECT 1 FROM '.$activity_view.' LIMIT 1');
-
-  $rows = bratonien_tools_nc_connector_psql(
-    $config,
-    $password,
-    "SELECT DISTINCT storage_id::text || E'\\t' || COALESCE(source_path, '') FROM ".$source_view." ORDER BY 1"
-  );
-
-  $candidates = array();
-  foreach (preg_split('/\r\n|\r|\n/', trim($rows)) as $line)
-  {
-    if ($line === '') continue;
-
-    $parts = explode("\t", $line, 2);
-    if (count($parts) !== 2) continue;
-
-    $storage_id = trim($parts[0]);
-    $source_path = trim($parts[1], '/');
-    if ($storage_id === '') continue;
-
-    $prefix = $source_path;
-    if (strpos($source_path, '/') !== false) $prefix = substr($source_path, 0, strpos($source_path, '/'));
-
-    if (!isset($candidates[$storage_id]))
-    {
-      $candidates[$storage_id] = array(
-        'storage_id'=>$storage_id,
-        'source_prefix'=>$prefix,
-        'local_mount'=>'',
-      );
-    }
-  }
-
-  if (!$candidates) throw new RuntimeException('Die Verbindung zur Datenquelle funktioniert, aber es wurden noch keine freigegebenen Speicherorte gefunden.');
-
-  $known = array();
-  foreach (bratonien_tools_nc_connector_connections() as $connection)
-  {
-    foreach (($connection['config']['storages'] ?? array()) as $storage)
-    {
-      $key = (string)($storage['storage_id'] ?? '').'|'.trim((string)($storage['source_prefix'] ?? ''), '/');
-      if ($key !== '|') $known[$key] = (string)($storage['local_mount'] ?? '');
-    }
-  }
-
-  foreach ($candidates as &$candidate)
-  {
-    $key = $candidate['storage_id'].'|'.trim($candidate['source_prefix'], '/');
-    if (!empty($known[$key]) && is_dir($known[$key]) && is_readable($known[$key])) $candidate['local_mount'] = $known[$key];
-  }
-  unset($candidate);
-
-  $state['storage_candidates'] = array_values($candidates);
-  $state['storages'] = array_values(array_filter($state['storage_candidates'], function($storage) {
-    return trim((string)($storage['local_mount'] ?? '')) !== '';
-  }));
-  $state['technical_error'] = '';
-  $state['technical_source'] = 'Datenzugriff erfolgreich geprüft';
-  $state['technical_complete'] = count($state['storages']) === count($state['storage_candidates']);
-  $state['technical_stage'] = $state['technical_complete'] ? 'ready' : 'mounts';
-}
-
-function bratonien_tools_nc_wizard_scan()
-{
-  $state = bratonien_tools_nc_wizard_state();
-  $host_input = trim((string)($_POST['nc_wizard_host'] ?? $state['host_input']));
-  $username = trim((string)($_POST['nc_wizard_user'] ?? $state['username']));
-  $password = array_key_exists('nc_wizard_password', $_POST) ? (string)$_POST['nc_wizard_password'] : (string)$state['_password'];
-
-  $state['step'] = 1;
-  $state['host_input'] = $host_input;
-  $state['username'] = $username;
-  $state['_password'] = $password;
-  bratonien_tools_nc_wizard_store($state);
-
-  if ($username === '' || $password === '') throw new RuntimeException('Nextcloud-Benutzer und Passwort werden für den Scan benötigt.');
-
-  $base_url = '';
-  $status_data = null;
-  foreach (bratonien_tools_nc_wizard_candidate_urls($host_input) as $candidate_url)
-  {
-    try
-    {
-      $response = bratonien_tools_nc_wizard_http($candidate_url.'/status.php');
-      if ($response['status'] < 200 || $response['status'] >= 300) continue;
-
-      $candidate_status = json_decode($response['body'], true);
-      if (!is_array($candidate_status) || empty($candidate_status['installed'])) continue;
-
-      $base_url = $candidate_url;
-      $status_data = $candidate_status;
-      break;
-    }
-    catch (Throwable $ignored)
-    {
-    }
-  }
-
-  if ($base_url === '' || !is_array($status_data)) throw new RuntimeException('Unter dieser Adresse konnte keine Nextcloud erreicht werden. HTTP und HTTPS wurden automatisch geprüft.');
-
-  $user_response = bratonien_tools_nc_wizard_http(
-    $base_url.'/ocs/v2.php/cloud/user?format=json',
-    $username,
-    $password,
-    array('OCS-APIRequest: true')
-  );
-
-  if ($user_response['status'] === 401 || $user_response['status'] === 403) throw new RuntimeException('Nextcloud hat Benutzername oder Passwort abgelehnt.');
-  if ($user_response['status'] < 200 || $user_response['status'] >= 300) throw new RuntimeException('Nextcloud ist erreichbar, aber die Anmeldung konnte nicht geprüft werden.');
-
-  $user_data = bratonien_tools_nc_wizard_ocs_data($user_response['body']);
-
-  $users = array();
-  $can_list_users = false;
-  try
-  {
-    $users_response = bratonien_tools_nc_wizard_http(
-      $base_url.'/ocs/v2.php/cloud/users?format=json',
-      $username,
-      $password,
-      array('OCS-APIRequest: true')
-    );
-
-    if ($users_response['status'] >= 200 && $users_response['status'] < 300)
-    {
-      $users_data = bratonien_tools_nc_wizard_ocs_data($users_response['body']);
-      if (isset($users_data['users']) && is_array($users_data['users']))
-      {
-        $users = array_values(array_filter(array_map('strval', $users_data['users'])));
-        sort($users, SORT_NATURAL | SORT_FLAG_CASE);
-        $can_list_users = true;
-      }
-    }
-  }
-  catch (Throwable $ignored)
-  {
-  }
-
-  $resolved_username = trim((string)($user_data['id'] ?? $username));
-  if ($resolved_username === '') $resolved_username = $username;
-  $url_host = (string)parse_url($base_url, PHP_URL_HOST);
-
-  $state = array_merge($state, array(
-    'step'=>2,
-    'scan_ok'=>true,
-    'base_url'=>$base_url,
-    'host_input'=>$host_input,
-    'username'=>$resolved_username,
-    'display_name'=>(string)($user_data['display-name'] ?? $user_data['displayname'] ?? ''),
-    'version'=>(string)($status_data['versionstring'] ?? $status_data['version'] ?? ''),
-    'product'=>(string)($status_data['productname'] ?? 'Nextcloud'),
-    'users'=>$users,
-    'can_list_users'=>$can_list_users,
-    'showcase_user'=>'',
-    'connection_name'=>$url_host !== '' ? $url_host : 'Nextcloud',
-    'scan_message'=>'Nextcloud wurde erkannt und der Benutzerzugriff wurde bestätigt.',
-    '_password'=>$password,
-    'api_status'=>'pending',
-    'api_username'=>'',
-    'api_error'=>'',
-  ));
-
-  bratonien_tools_nc_wizard_fill_profile($state);
-
-  try
-  {
-    bratonien_tools_nc_wizard_finish_data_access($state);
-  }
-  catch (Throwable $e)
-  {
-    $state['technical_complete'] = false;
-    $state['technical_stage'] = 'database_details';
-    $state['technical_error'] = $e->getMessage();
-  }
-
-  bratonien_tools_nc_wizard_store($state);
-
-  if ($state['technical_stage'] === 'database_details')
-  {
-    return array('message'=>'Nextcloud wurde gefunden. Die Datenbank-Adresse muss noch bestätigt werden.');
-  }
-  if ($state['technical_stage'] === 'mounts')
-  {
-    return array('message'=>'Nextcloud und Datenzugriff wurden bestätigt. Ein Speicherort muss noch zugeordnet werden.');
-  }
-
-  return array('message'=>'Nextcloud und Datenzugriff wurden erfolgreich bestätigt.');
-}
-
-function bratonien_tools_nc_wizard_save_technical()
-{
-  $state = bratonien_tools_nc_wizard_state();
-  if (empty($state['scan_ok'])) throw new RuntimeException('Bitte zuerst Nextcloud erfolgreich scannen.');
-  if ((string)$state['username'] === '' || (string)$state['_password'] === '') throw new RuntimeException('Die Zugangsdaten aus dem ersten Schritt sind nicht mehr verfügbar. Bitte den Assistenten neu starten.');
-
-  $state['db_user'] = (string)$state['username'];
-  $state['_db_password'] = (string)$state['_password'];
-  $state['db_password_set'] = true;
-  $state['db_host'] = trim((string)($_POST['nc_wizard_db_host'] ?? $state['db_host']));
-  $state['db_port'] = (string)max(1, min(65535, (int)($_POST['nc_wizard_db_port'] ?? $state['db_port'])));
-  $state['db_database'] = trim((string)($_POST['nc_wizard_db_database'] ?? $state['db_database']));
-  $state['technical_stage'] = 'database_details';
-  bratonien_tools_nc_wizard_store($state);
-
-  if ($state['db_host'] === '' || $state['db_database'] === '') throw new RuntimeException('Die Adresse der Datenbank ist noch unvollständig.');
-
-  try
-  {
-    bratonien_tools_nc_wizard_finish_data_access($state);
-    bratonien_tools_nc_wizard_store($state);
-
-    return array(
-      'message'=>$state['technical_complete']
-        ? 'Datenzugriff wurde erfolgreich geprüft.'
-        : 'Datenzugriff funktioniert. Ein Speicherort muss noch bestätigt werden.'
-    );
-  }
-  catch (Throwable $e)
-  {
-    $state['technical_error'] = $e->getMessage();
-    $state['technical_stage'] = 'database_details';
-    bratonien_tools_nc_wizard_store($state);
-    throw $e;
-  }
-}
-
-function bratonien_tools_nc_wizard_save_mounts()
-{
-  $state = bratonien_tools_nc_wizard_state();
-  $candidates = is_array($state['storage_candidates']) ? $state['storage_candidates'] : array();
-  $mounts = isset($_POST['nc_wizard_storage_mount']) && is_array($_POST['nc_wizard_storage_mount']) ? $_POST['nc_wizard_storage_mount'] : array();
-
-  if (!$candidates) throw new RuntimeException('Es wurden noch keine Speicherorte erkannt.');
-
-  $storages = array();
-  foreach ($candidates as $index=>$candidate)
-  {
-    $mount = trim((string)($candidate['local_mount'] ?? ''));
-    if ($mount === '') $mount = trim((string)($mounts[$index] ?? ''));
-    if ($mount === '' || $mount[0] !== '/') throw new RuntimeException('Für einen Speicherort fehlt ein gültiger lokaler Pfad.');
-
-    $mount = rtrim($mount, '/');
-    if (!is_dir($mount) || !is_readable($mount)) throw new RuntimeException('Der angegebene Speicherort ist nicht vorhanden oder nicht lesbar: '.$mount);
-
-    $candidate['local_mount'] = $mount;
-    $storages[] = $candidate;
-  }
-
-  $state['storages'] = $storages;
-  $state['storage_candidates'] = $storages;
-  $state['technical_complete'] = true;
-  $state['technical_stage'] = 'ready';
-  $state['technical_error'] = '';
-  bratonien_tools_nc_wizard_store($state);
-
-  return array('message'=>'Speicherzuordnung wurde erfolgreich geprüft.');
-}
-
-function bratonien_tools_nc_wizard_select_user()
-{
-  $state = bratonien_tools_nc_wizard_state();
-  if (empty($state['scan_ok'])) throw new RuntimeException('Bitte zuerst Nextcloud erfolgreich scannen.');
-  if (empty($state['technical_complete'])) throw new RuntimeException('Die Verbindung ist noch nicht vollständig geprüft.');
-
-  $showcase_user = trim((string)($_POST['nc_wizard_showcase_user'] ?? ''));
-  $connection_name = trim((string)($_POST['nc_wizard_connection_name'] ?? $state['connection_name']));
-  if ($showcase_user === '') throw new RuntimeException('Bitte den Benutzer auswählen, der die Showcase-Freigaben bereitstellt.');
-  if ($connection_name === '') throw new RuntimeException('Bitte einen Namen für die Verbindung angeben.');
-
-  $state['connection_name'] = $connection_name;
-  $state['showcase_user'] = $showcase_user;
-  $state['step'] = 3;
-  $state['api_error'] = '';
-  bratonien_tools_nc_wizard_store($state);
-
-  return array('message'=>'Showcase-Benutzer übernommen. Jetzt folgt der Piwigo-API-Zugang.');
-}
-
 function bratonien_tools_nc_wizard_api_test()
 {
   $state = bratonien_tools_nc_wizard_state();
@@ -500,14 +152,6 @@ function bratonien_tools_nc_wizard_api_test()
 
   $key_id = trim((string)$state['_api_key_id']);
   $secret = trim((string)$state['_api_key_secret']);
-
-  if ($key_id === '' && $secret === '')
-  {
-    $stored = bratonien_tools_nc_api_credentials();
-    $key_id = trim((string)($stored['key_id'] ?? ''));
-    $secret = trim((string)($stored['key_secret'] ?? ''));
-  }
-
   if ($key_id === '' || $secret === '') throw new RuntimeException('API-Schlüssel-ID und API-Geheimnis fehlen.');
 
   try
@@ -554,72 +198,6 @@ function bratonien_tools_nc_wizard_api_skip()
   return array('message'=>'Piwigo-API wurde übersprungen. Für diese Verbindung ist deshalb ein Fallback-Zugang erforderlich.');
 }
 
-function bratonien_tools_nc_wizard_finish()
-{
-  $state = bratonien_tools_nc_wizard_state();
-  if ((int)$state['step'] !== 4 || empty($state['technical_complete']) || trim((string)$state['showcase_user']) === '') throw new RuntimeException('Der Assistent ist noch nicht vollständig.');
-
-  if (array_key_exists('nc_wizard_fallback_user', $_POST)) $state['_fallback_user'] = trim((string)$_POST['nc_wizard_fallback_user']);
-  if (array_key_exists('nc_wizard_fallback_password', $_POST)) $state['_fallback_password'] = (string)$_POST['nc_wizard_fallback_password'];
-  bratonien_tools_nc_wizard_store($state);
-
-  $fallback_user = trim((string)$state['_fallback_user']);
-  $fallback_password = (string)$state['_fallback_password'];
-  if (($fallback_user === '') !== ($fallback_password === '')) throw new RuntimeException('Fallback-Benutzer und Fallback-Passwort müssen entweder beide angegeben oder beide leer gelassen werden.');
-  if ($state['api_status'] !== 'ok' && $fallback_user === '') throw new RuntimeException('Da die Piwigo-API übersprungen wurde, ist ein Fallback-Zugang erforderlich.');
-
-  $storage_lines = array();
-  foreach ($state['storages'] as $storage)
-  {
-    $storage_lines[] = (string)$storage['storage_id'].' | '.trim((string)$storage['source_prefix'], '/').' | '.(string)$storage['local_mount'];
-  }
-
-  $_POST['nc_name'] = (string)$state['connection_name'];
-  $_POST['nc_host'] = (string)$state['db_host'];
-  $_POST['nc_port'] = (string)$state['db_port'];
-  $_POST['nc_database'] = (string)$state['db_database'];
-  $_POST['nc_user'] = (string)$state['db_user'];
-  $_POST['nc_db_password'] = (string)$state['_db_password'];
-  $_POST['nc_source_view'] = (string)$state['source_view'];
-  $_POST['nc_activity_view'] = (string)$state['activity_view'];
-  $_POST['nc_gallery_root'] = (string)$state['gallery_root'];
-  $_POST['nc_storages'] = implode("\n", $storage_lines);
-  $_POST['nc_quiet_seconds'] = '120';
-  $_POST['nc_max_wait_seconds'] = '900';
-  $_POST['nc_full_sync_seconds'] = '86400';
-  $_POST['nc_piwigo_user'] = $fallback_user;
-  $_POST['nc_piwigo_password'] = $fallback_password;
-  $_POST['nc_nextcloud_url'] = (string)$state['base_url'];
-  $_POST['nc_showcase_user'] = (string)$state['showcase_user'];
-  $_POST['nc_access_user'] = (string)$state['username'];
-  $_POST['nc_product'] = (string)$state['product'];
-  $_POST['nc_version'] = (string)$state['version'];
-  $_POST['nc_api_validated'] = $state['api_status'] === 'ok' ? '1' : '0';
-
-  $result = bratonien_tools_nc_connector_create_local_api_first();
-  $connection_id = (int)($result['connection_id'] ?? 0);
-
-  try
-  {
-    if ($state['api_status'] === 'ok') bratonien_tools_nc_api_credentials_store((string)$state['_api_key_id'], (string)$state['_api_key_secret']);
-  }
-  catch (Throwable $e)
-  {
-    if ($connection_id > 0)
-    {
-      $table = bratonien_tools_nc_connector_table();
-      pwg_query("DELETE FROM `$table` WHERE id=".$connection_id." LIMIT 1");
-    }
-    throw new RuntimeException('Die Verbindung wurde nicht übernommen, weil der geprüfte API-Zugang nicht gespeichert werden konnte: '.$e->getMessage());
-  }
-
-  unset($_SESSION['bratonien_nc_wizard']);
-  unset($result['connection_id']);
-  $result['message'] = 'Verbindung wurde vollständig durch den Assistenten angelegt. '.$result['message'];
-
-  return $result;
-}
-
 function bratonien_tools_nc_connector_update_name()
 {
   $id = (int)($_POST['connection_id'] ?? 0);
@@ -628,56 +206,14 @@ function bratonien_tools_nc_connector_update_name()
 
   $connection = bratonien_tools_nc_connector_connection($id, false);
   if (!$connection) throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
+  if ((string)($connection['adapter'] ?? '') !== 'remote' || (string)($connection['config']['source_mode'] ?? '') !== 'webdav-placeholder')
+  {
+    throw new RuntimeException('Es können nur WebDAV-Verbindungen bearbeitet werden.');
+  }
 
   $table = bratonien_tools_nc_connector_table();
   $now = date('Y-m-d H:i:s');
   pwg_query("UPDATE `$table` SET name='".pwg_db_real_escape_string($name)."', updated='".pwg_db_real_escape_string($now)."' WHERE id=".$id." LIMIT 1");
 
   return array('message'=>'Verbindungsname wurde aktualisiert.');
-}
-
-function bratonien_tools_nc_connector_update_technical()
-{
-  $id = (int)($_POST['connection_id'] ?? 0);
-  $connection = bratonien_tools_nc_connector_connection($id, true);
-  if (!$connection) throw new RuntimeException('Connector-Verbindung wurde nicht gefunden.');
-  if (!empty($connection['enabled']) || (string)$connection['takeover_state'] === 'active') throw new RuntimeException('Technische Einstellungen einer aktiven Verbindung können nicht geändert werden. Bitte zuerst deaktivieren.');
-
-  $config = $connection['config'];
-  $port = (int)($_POST['nc_port'] ?? ($config['port'] ?? 5432));
-  if ($port < 1 || $port > 65535) throw new RuntimeException('Ungültiger PostgreSQL-Port.');
-
-  $gallery_root = rtrim(trim((string)($_POST['nc_gallery_root'] ?? ($config['gallery_root'] ?? ''))), '/');
-  if ($gallery_root === '' || $gallery_root[0] !== '/') throw new RuntimeException('Der Galerie-Pfad muss ein absoluter Pfad sein.');
-
-  $config['host'] = trim((string)($_POST['nc_host'] ?? ($config['host'] ?? '')));
-  $config['port'] = (string)$port;
-  $config['database'] = trim((string)($_POST['nc_database'] ?? ($config['database'] ?? '')));
-  $config['user'] = trim((string)($_POST['nc_user'] ?? ($config['user'] ?? '')));
-  $config['source_view'] = trim((string)($_POST['nc_source_view'] ?? ($config['source_view'] ?? '')));
-  $config['activity_view'] = trim((string)($_POST['nc_activity_view'] ?? ($config['activity_view'] ?? '')));
-  $config['gallery_root'] = $gallery_root;
-  $config['quiet_seconds'] = max(0, (int)($_POST['nc_quiet_seconds'] ?? ($config['quiet_seconds'] ?? 120)));
-  $config['max_wait_seconds'] = max(60, (int)($_POST['nc_max_wait_seconds'] ?? ($config['max_wait_seconds'] ?? 900)));
-  $config['full_sync_seconds'] = max(300, (int)($_POST['nc_full_sync_seconds'] ?? ($config['full_sync_seconds'] ?? 86400)));
-  $config['storages'] = bratonien_tools_nc_connector_parse_storages($_POST['nc_storages'] ?? '');
-  unset($config['verification']);
-
-  bratonien_tools_nc_connector_view_name($config['source_view']);
-  bratonien_tools_nc_connector_view_name($config['activity_view']);
-
-  $credentials = bratonien_tools_nc_connector_credentials_from_blob($connection['secret_blob'] ?? '');
-  $db_password = (string)($_POST['nc_db_password'] ?? '');
-  if ($db_password === '') $db_password = $credentials['db_password'];
-  if ($db_password === '') throw new RuntimeException('Datenbankpasswort fehlt.');
-
-  $secret_blob = bratonien_tools_nc_connector_encrypt_credentials($db_password, $credentials['piwigo_user'], $credentials['piwigo_password']);
-  $config_json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($config_json)) throw new RuntimeException('Connector-Konfiguration konnte nicht serialisiert werden.');
-
-  $table = bratonien_tools_nc_connector_table();
-  $now = date('Y-m-d H:i:s');
-  pwg_query("UPDATE `$table` SET takeover_state='disabled', enabled=0, config_json='".pwg_db_real_escape_string($config_json)."', secret_blob='".pwg_db_real_escape_string($secret_blob)."', updated='".pwg_db_real_escape_string($now)."' WHERE id=".$id." LIMIT 1");
-
-  return array('message'=>'Technische Verbindungseinstellungen wurden gespeichert. Die Verbindung muss erneut geprüft werden.');
 }

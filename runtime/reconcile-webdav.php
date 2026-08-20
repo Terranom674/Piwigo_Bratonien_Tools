@@ -82,7 +82,6 @@ $configDir = '/etc/bratonien-tools/nc-connector';
 $stateRoot = '/var/lib/bratonien-tools/nc-connector';
 $publicSourceRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-source';
 $publicGalleryRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-gallery';
-$legacyGalleryRoot = rtrim($piwigoRoot, '/').'/galleries';
 
 try
 {
@@ -104,14 +103,15 @@ try
   $hexKey = trim((string)$keyResult->fetch_assoc()['value']);
 
   $table = $prefixeTable.'bratonien_tools_nc_connections';
-  $rows = $db->query("SELECT id,name,adapter,config_json,secret_blob FROM `{$table}` ORDER BY id DESC");
-  if (!$rows) fail_webdav_reconcile('Connector-Verbindungen konnten nicht gelesen werden: '.$db->error);
+  $rows = $db->query("SELECT id,name,adapter,config_json,secret_blob FROM `{$table}` WHERE adapter='remote' ORDER BY id DESC");
+  if (!$rows) fail_webdav_reconcile('WebDAV-Verbindungen konnten nicht gelesen werden: '.$db->error);
 
-  foreach (array($configDir=>$configDir, $publicSourceRoot=>$publicSourceRoot, $publicGalleryRoot=>$publicGalleryRoot) as $dir=>$unused)
+  foreach (array($configDir, $stateRoot, $publicSourceRoot, $publicGalleryRoot) as $dir)
   {
-    if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0755, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
+    if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0750, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
   }
   @chmod($configDir, 0700);
+  @chmod($stateRoot, 0750);
   @chmod($publicSourceRoot, 0755);
   @chmod($publicGalleryRoot, 0755);
 
@@ -123,9 +123,7 @@ try
     $id = (int)$row['id'];
     $config = json_decode((string)$row['config_json'], true);
     if (!is_array($config)) $config = array();
-    if ((string)$row['adapter'] !== 'remote') continue;
     if ((string)($config['source_mode'] ?? '') !== 'webdav-placeholder') continue;
-    if (empty($config['parallel_test'])) continue;
 
     try
     {
@@ -144,7 +142,6 @@ try
       {
         fwrite(STDERR, "NC WebDAV #{$id}: identische Quelle bereits durch Verbindung #".$seenFingerprints[$fingerprint]." abgedeckt; doppelte Runtime wird unterdrueckt.\n");
         foreach (glob($configDir.'/webdav-connection-'.$id.'.*') ?: array() as $stale) @unlink($stale);
-        webdav_remove_generated_tree($legacyGalleryRoot.'/bratonien-webdav-'.$id, $legacyGalleryRoot);
         webdav_remove_generated_tree($publicGalleryRoot.'/connection-'.$id, $publicGalleryRoot);
         continue;
       }
@@ -156,17 +153,11 @@ try
       if (!is_dir($stateDir) && !mkdir($stateDir, 0750, true)) fail_webdav_reconcile('State-Verzeichnis konnte nicht angelegt werden.');
       @chmod($stateDir, 0750);
 
-      $legacyDefault = $legacyGalleryRoot.'/bratonien-webdav-'.$id;
       $galleryRoot = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
-      if ($galleryRoot === '' || $galleryRoot === $legacyDefault || strpos($galleryRoot, $legacyGalleryRoot.'/bratonien-webdav-') === 0)
-      {
-        $galleryRoot = $publicGalleryRoot.'/connection-'.$id;
-      }
+      $expectedGalleryRoot = $publicGalleryRoot.'/connection-'.$id;
+      if ($galleryRoot === '' || strpos($galleryRoot, $publicGalleryRoot.'/') !== 0) $galleryRoot = $expectedGalleryRoot;
       if (!is_dir($galleryRoot) && !mkdir($galleryRoot, 0755, true)) fail_webdav_reconcile('WebDAV-Galeriebereich konnte nicht angelegt werden.');
       @chmod($galleryRoot, 0755);
-
-      // Alte technische Wrapper unter ./galleries duerfen nicht als Piwigo-Alben auftauchen.
-      webdav_remove_generated_tree($legacyDefault, $legacyGalleryRoot);
 
       $sourceDir = $publicSourceRoot.'/connection-'.$id;
       if (!is_dir($sourceDir) && !mkdir($sourceDir, 0755, true)) fail_webdav_reconcile('WebDAV-Platzhalterquelle konnte nicht angelegt werden.');
@@ -215,21 +206,23 @@ try
       file_put_contents($configPath, implode("\n", $lines)."\n", LOCK_EX);
       @chmod($configPath, 0600);
 
+      unset($config['parallel_test']);
       $config['state_dir'] = $stateDir;
       $config['status_file'] = $statusFile;
       $config['parallel_gallery_root'] = $galleryRoot;
       $config['source_fingerprint'] = $fingerprint;
       $config['runtime'] = array(
-        'mode'=>'parallel-webdav',
+        'mode'=>'webdav',
         'config'=>$configPath,
         'piwigo_sync_enabled'=>true,
         'reconciled_at'=>date('Y-m-d H:i:s'),
       );
       $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-      if (is_string($json))
+      if (!is_string($json)) fail_webdav_reconcile('WebDAV-Runtime-Konfiguration konnte nicht serialisiert werden.');
+      $escaped = $db->real_escape_string($json);
+      if (!$db->query("UPDATE `{$table}` SET enabled=1, config_json='{$escaped}' WHERE id={$id} AND adapter='remote' LIMIT 1"))
       {
-        $escaped = $db->real_escape_string($json);
-        $db->query("UPDATE `{$table}` SET config_json='{$escaped}' WHERE id={$id} LIMIT 1");
+        fail_webdav_reconcile('WebDAV-Runtime-Status konnte nicht gespeichert werden: '.$db->error);
       }
     }
     catch (Throwable $e)

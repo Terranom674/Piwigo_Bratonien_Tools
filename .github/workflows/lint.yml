@@ -5,8 +5,13 @@ on:
   pull_request:
 
 jobs:
-  syntax:
+  php-syntax:
+    name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
@@ -14,7 +19,7 @@ jobs:
       - name: PHP installieren
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: ${{ matrix.php }}
           coverage: none
 
       - name: PHP Syntax pruefen
@@ -24,6 +29,43 @@ jobs:
           while IFS= read -r -d '' file; do
             php -l "$file"
           done < <(find . -type f -name '*.php' -print0)
+
+      - name: Doppelte Bratonien-Funktionen pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          found = {}
+          for path in pathlib.Path('.').rglob('*.php'):
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              for name in re.findall(r'\bfunction\s+(bratonien_tools_[A-Za-z0-9_]+)\s*\(', text):
+                  found.setdefault(name, []).append(str(path))
+
+          duplicates = {name: paths for name, paths in found.items() if len(paths) > 1}
+          if duplicates:
+              for name, paths in sorted(duplicates.items()):
+                  print(f'{name}: {", ".join(paths)}', file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  script-syntax:
+    name: JavaScript, Python, Shell
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: JavaScript Syntax pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find . -type f -name '*.js' -print0)
 
       - name: Python Syntax pruefen
         shell: bash
