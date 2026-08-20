@@ -4,9 +4,14 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_nc_connector_systemctl_value(array $args)
+function bratonien_tools_nc_connector_systemctl_run(array $args)
 {
-  if (!function_exists('proc_open')) return '';
+  $result = array('exit'=>-1, 'stdout'=>'', 'stderr'=>'');
+  if (!function_exists('proc_open'))
+  {
+    $result['stderr'] = 'proc_open ist in PHP nicht verfügbar.';
+    return $result;
+  }
 
   $command = array_merge(array('/usr/bin/systemctl'), $args);
   $spec = array(
@@ -16,13 +21,38 @@ function bratonien_tools_nc_connector_systemctl_value(array $args)
   );
   $environment = array_merge($_ENV, array('LC_ALL'=>'C','LANG'=>'C'));
   $process = @proc_open($command, $spec, $pipes, null, $environment);
-  if (!is_resource($process)) return '';
-  $stdout = stream_get_contents($pipes[1]);
-  stream_get_contents($pipes[2]);
+  if (!is_resource($process))
+  {
+    $result['stderr'] = 'systemctl konnte nicht gestartet werden.';
+    return $result;
+  }
+
+  $result['stdout'] = trim((string)stream_get_contents($pipes[1]));
+  $result['stderr'] = trim((string)stream_get_contents($pipes[2]));
   fclose($pipes[1]);
   fclose($pipes[2]);
-  $exit = proc_close($process);
-  return $exit === 0 ? trim((string)$stdout) : '';
+  $result['exit'] = (int)proc_close($process);
+  return $result;
+}
+
+function bratonien_tools_nc_connector_systemctl_value(array $args)
+{
+  $result = bratonien_tools_nc_connector_systemctl_run($args);
+  return $result['exit'] === 0 ? $result['stdout'] : '';
+}
+
+function bratonien_tools_nc_connector_run_now()
+{
+  $service = 'bratonien-nc-connector.service';
+  $result = bratonien_tools_nc_connector_systemctl_run(array('start','--no-block',$service));
+  if ($result['exit'] !== 0)
+  {
+    $detail = $result['stderr'] !== '' ? $result['stderr'] : $result['stdout'];
+    if ($detail === '') $detail = 'systemctl Exit-Code '.$result['exit'];
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: '.$detail);
+  }
+
+  return array('message'=>'WebDAV-Abgleich wurde gestartet.');
 }
 
 function bratonien_tools_nc_connector_parse_systemd_time($value)
@@ -112,6 +142,15 @@ function bratonien_tools_nc_connector_last_status(array $connections)
   return $latest;
 }
 
+function bratonien_tools_nc_connector_status_message(array $last)
+{
+  if ((string)($last['state'] ?? '') === 'ok')
+  {
+    return 'WebDAV eingelesen und Piwigo synchronisiert';
+  }
+  return (string)($last['message'] ?? '');
+}
+
 function bratonien_tools_nc_connector_system_status(array $connections = array())
 {
   $timer = 'bratonien-nc-connector.timer';
@@ -143,7 +182,7 @@ function bratonien_tools_nc_connector_system_status(array $connections = array()
     'last_run_timestamp'=>(int)$last['timestamp'],
     'last_run_label'=>$last['timestamp'] > 0 ? date('d.m.Y H:i:s', (int)$last['timestamp']) : 'Nicht verfügbar',
     'last_run_state'=>(string)$last['state'],
-    'last_run_message'=>(string)$last['message'],
+    'last_run_message'=>bratonien_tools_nc_connector_status_message($last),
     'last_run_auth_mode'=>(string)$last['auth_mode'],
     'last_run_api_state'=>(string)$last['api_state'],
     'last_run_api_message'=>(string)$last['api_message'],
