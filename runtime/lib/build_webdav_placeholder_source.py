@@ -56,8 +56,30 @@ def safe_local_name(name: str) -> str:
 
 
 def parse_image_dimensions(prop: ET.Element) -> tuple[int, int]:
-    for property_name in ("file-metadata-size", "metadata-photos-size"):
-        raw = prop.findtext(f"{{{NC}}}{property_name}", default="").strip()
+    for property_name in ("metadata-photos-size", "file-metadata-size"):
+        element = prop.find(f"{{{NC}}}{property_name}")
+        if element is None:
+            continue
+
+        width = 0
+        height = 0
+        for child in list(element):
+            local_name = child.tag.rsplit("}", 1)[-1]
+            text = (child.text or "").strip()
+            if not text:
+                continue
+            try:
+                value = int(text)
+            except ValueError:
+                continue
+            if local_name == "width":
+                width = value
+            elif local_name == "height":
+                height = value
+        if width > 0 and height > 0:
+            return width, height
+
+        raw = (element.text or "").strip()
         if not raw:
             continue
         try:
