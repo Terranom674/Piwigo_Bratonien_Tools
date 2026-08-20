@@ -6,7 +6,7 @@ if (PHP_SAPI !== 'cli')
   exit(1);
 }
 
-const BRATONIEN_WEBDAV_PREVIEW_VERSION = 2;
+const BRATONIEN_WEBDAV_PREVIEW_VERSION = 3;
 const BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE = 4096;
 const BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY = 88;
 
@@ -32,7 +32,7 @@ function fetch_remote_blob($url, $user, $password)
     CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
     CURLOPT_USERPWD => $user.':'.$password,
     CURLOPT_FAILONERROR => false,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.6.1',
+    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Precache/0.9.6.8.20',
   ));
   $body = curl_exec($ch);
   $errno = curl_errno($ch);
@@ -46,14 +46,41 @@ function fetch_remote_blob($url, $user, $password)
   return (string)$body;
 }
 
+function original_dimensions($blob)
+{
+  if (class_exists('Imagick'))
+  {
+    $image = new Imagick();
+    try
+    {
+      $image->readImageBlob($blob);
+      $image->setIteratorIndex(0);
+      if (method_exists($image, 'autoOrientImage')) @$image->autoOrientImage();
+      $width = (int)$image->getImageWidth();
+      $height = (int)$image->getImageHeight();
+      if ($width > 0 && $height > 0) return array($width, $height);
+    }
+    finally
+    {
+      $image->clear();
+      $image->destroy();
+    }
+  }
+
+  $size = function_exists('getimagesizefromstring') ? @getimagesizefromstring($blob) : false;
+  if (is_array($size) && !empty($size[0]) && !empty($size[1]))
+  {
+    return array((int)$size[0], (int)$size[1]);
+  }
+
+  fail_preview('Originalabmessungen konnten nicht ermittelt werden.');
+}
+
 function preview_extension_for_entry(array $entry)
 {
   $content_type = strtolower(trim((string)($entry['content_type'] ?? '')));
   $path = strtolower((string)($entry['webdav_path'] ?? ''));
-  if ($content_type === 'image/png' || preg_match('/\.png$/', $path))
-  {
-    return 'png';
-  }
+  if ($content_type === 'image/png' || preg_match('/\.png$/', $path)) return 'png';
   return 'jpg';
 }
 
@@ -81,7 +108,6 @@ function write_preview_imagick($blob, $target, $extension)
     $image->setIteratorIndex(0);
     $image->thumbnailImage(BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE, BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE, true, true);
     $image->stripImage();
-
     if ($extension === 'png')
     {
       $image->setImageFormat('png');
@@ -89,16 +115,12 @@ function write_preview_imagick($blob, $target, $extension)
     else
     {
       $image->setImageBackgroundColor('white');
-      if (method_exists($image, 'mergeImageLayers'))
-      {
-        $image = $image->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
-      }
+      if (method_exists($image, 'mergeImageLayers')) $image = $image->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
       $image->setImageFormat('jpeg');
       $image->setImageCompression(Imagick::COMPRESSION_JPEG);
       $image->setImageCompressionQuality(BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY);
       $image->setInterlaceScheme(Imagick::INTERLACE_PLANE);
     }
-
     if (!$image->writeImage($target)) fail_preview('Imagick konnte das Preview nicht schreiben.');
   }
   finally
@@ -112,19 +134,16 @@ function write_preview_gd($blob, $target, $extension)
 {
   $source = @imagecreatefromstring($blob);
   if (!$source) fail_preview('GD konnte das Bild nicht dekodieren.');
-
   try
   {
     $width = imagesx($source);
     $height = imagesy($source);
     if ($width < 1 || $height < 1) fail_preview('Bildabmessungen sind ungültig.');
-
     $scale = min(1, BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE / $width, BRATONIEN_WEBDAV_PREVIEW_MAX_EDGE / $height);
     $target_width = max(1, (int)round($width * $scale));
     $target_height = max(1, (int)round($height * $scale));
     $preview = imagecreatetruecolor($target_width, $target_height);
     if (!$preview) fail_preview('GD konnte die Preview-Arbeitsfläche nicht anlegen.');
-
     try
     {
       if ($extension === 'png')
@@ -139,15 +158,8 @@ function write_preview_gd($blob, $target, $extension)
         $white = imagecolorallocate($preview, 255, 255, 255);
         imagefilledrectangle($preview, 0, 0, $target_width, $target_height, $white);
       }
-
-      if (!imagecopyresampled($preview, $source, 0, 0, 0, 0, $target_width, $target_height, $width, $height))
-      {
-        fail_preview('GD konnte das Preview nicht skalieren.');
-      }
-
-      $written = $extension === 'png'
-        ? imagepng($preview, $target, 6)
-        : imagejpeg($preview, $target, BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY);
+      if (!imagecopyresampled($preview, $source, 0, 0, 0, 0, $target_width, $target_height, $width, $height)) fail_preview('GD konnte das Preview nicht skalieren.');
+      $written = $extension === 'png' ? imagepng($preview, $target, 6) : imagejpeg($preview, $target, BRATONIEN_WEBDAV_PREVIEW_JPEG_QUALITY);
       if (!$written) fail_preview('GD konnte das Preview nicht schreiben.');
     }
     finally
@@ -165,19 +177,9 @@ function write_preview($blob, $target, $extension)
 {
   $dir = dirname($target);
   if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) fail_preview('Preview-Verzeichnis konnte nicht angelegt werden.');
-
-  if (class_exists('Imagick'))
-  {
-    write_preview_imagick($blob, $target, $extension);
-  }
-  elseif (function_exists('imagecreatefromstring') && function_exists('imagejpeg') && function_exists('imagepng'))
-  {
-    write_preview_gd($blob, $target, $extension);
-  }
-  else
-  {
-    fail_preview('Weder Imagick noch GD ist für die Preview-Erzeugung verfügbar.');
-  }
+  if (class_exists('Imagick')) write_preview_imagick($blob, $target, $extension);
+  elseif (function_exists('imagecreatefromstring') && function_exists('imagejpeg') && function_exists('imagepng')) write_preview_gd($blob, $target, $extension);
+  else fail_preview('Weder Imagick noch GD ist für die Preview-Erzeugung verfügbar.');
 
   clearstatcache(true, $target);
   $size = @getimagesize($target);
@@ -224,7 +226,7 @@ try
   $cached = 0;
   $errors = 0;
 
-  foreach ($mapping['files'] as $entry)
+  foreach ($mapping['files'] as &$entry)
   {
     if (!is_array($entry) || (string)($entry['kind'] ?? '') !== 'file') continue;
     $webdav_path = trim((string)($entry['webdav_path'] ?? ''), '/');
@@ -234,22 +236,23 @@ try
     $key = sha1($webdav_path);
     $target = preview_target_for_entry($cache_dir, $key, $entry);
     $extension = pathinfo($target, PATHINFO_EXTENSION);
-    $new_state[$key] = array(
-      'path' => $webdav_path,
-      'etag' => $etag,
-      'format' => $extension,
-      'version' => BRATONIEN_WEBDAV_PREVIEW_VERSION,
-    );
-
     $old = $old_state[$key] ?? null;
+
     if (
       is_file($target)
       && is_array($old)
       && (string)($old['etag'] ?? '') === $etag
       && (string)($old['format'] ?? '') === $extension
       && (int)($old['version'] ?? 0) === BRATONIEN_WEBDAV_PREVIEW_VERSION
+      && (int)($old['width'] ?? 0) > 0
+      && (int)($old['height'] ?? 0) > 0
     )
     {
+      $width = (int)$old['width'];
+      $height = (int)$old['height'];
+      $entry['width'] = $width;
+      $entry['height'] = $height;
+      $new_state[$key] = array('path'=>$webdav_path, 'etag'=>$etag, 'format'=>$extension, 'version'=>BRATONIEN_WEBDAV_PREVIEW_VERSION, 'width'=>$width, 'height'=>$height);
       $cached++;
       continue;
     }
@@ -258,6 +261,10 @@ try
     {
       $url = $base_url.'/remote.php/dav/files/'.rawurlencode($user).'/'.quote_webdav_path($webdav_path);
       $blob = fetch_remote_blob($url, $user, $password);
+      list($width, $height) = original_dimensions($blob);
+      $entry['width'] = $width;
+      $entry['height'] = $height;
+      $new_state[$key] = array('path'=>$webdav_path, 'etag'=>$etag, 'format'=>$extension, 'version'=>BRATONIEN_WEBDAV_PREVIEW_VERSION, 'width'=>$width, 'height'=>$height);
       write_preview($blob, $target, $extension);
       remove_other_preview_format($cache_dir, $key, $target);
       $generated++;
@@ -268,6 +275,7 @@ try
       fwrite(STDERR, $webdav_path.': '.$e->getMessage()."\n");
     }
   }
+  unset($entry);
 
   foreach (glob($cache_dir.'/*') ?: array() as $file)
   {
@@ -277,6 +285,8 @@ try
     if (!isset($new_state[$m[1]])) @unlink($file);
   }
 
+  file_put_contents($mapping_file, json_encode($mapping, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n", LOCK_EX);
+  @chmod($mapping_file, 0644);
   file_put_contents($state_file, json_encode($new_state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n", LOCK_EX);
   @chmod($state_file, 0644);
 
