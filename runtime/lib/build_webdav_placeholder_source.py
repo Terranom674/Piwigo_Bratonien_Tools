@@ -2,12 +2,12 @@
 """Build a placeholder-backed local source tree from Nextcloud WebDAV.
 
 This creates only tiny placeholder files plus a metadata mapping; no Nextcloud
-original media is downloaded. The authenticated Nextcloud user is never used as
-an album name.
+original media is stored locally. The authenticated Nextcloud user is never used
+as an album name.
 
-The placeholder files carry the original image dimensions reported by
-Nextcloud. This lets Piwigo perform its normal filesystem synchronization
-without ever learning the artificial 1x1 dimensions of the placeholder.
+Each placeholder carries the original image dimensions. Dimensions are read
+from Nextcloud metadata first. If those metadata are unavailable, only the
+beginning of the original file is read through WebDAV and parsed locally.
 """
 
 from __future__ import annotations
@@ -33,9 +33,8 @@ DAV = "DAV:"
 OC = "http://owncloud.org/ns"
 NC = "http://nextcloud.org/ns"
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-# Valid transparent 1x1 GIF. Only the logical-screen width/height bytes are
-# replaced per file; the actual transparent image block remains 1x1 and tiny.
 PLACEHOLDER = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
+DIMENSION_PROBE_BYTES = 4 * 1024 * 1024
 
 
 def fail(message: str) -> None:
@@ -62,7 +61,6 @@ def safe_local_name(name: str) -> str:
 
 
 def parse_dimensions(prop: ET.Element) -> tuple[int, int]:
-    """Read the original image dimensions exposed by Nextcloud metadata."""
     for property_name in ("file-metadata-size", "metadata-photos-size"):
         raw = prop.findtext(f"{{{NC}}}{property_name}", default="").strip()
         if not raw:
@@ -85,8 +83,70 @@ def parse_dimensions(prop: ET.Element) -> tuple[int, int]:
     return 0, 0
 
 
+def parse_image_header_dimensions(data: bytes) -> tuple[int, int]:
+    if len(data) >= 24 and data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+    if len(data) >= 10 and data[:6] in (b"GIF87a", b"GIF89a"):
+        return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
+
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8X" and len(data) >= 30:
+            width = 1 + int.from_bytes(data[24:27], "little")
+            height = 1 + int.from_bytes(data[27:30], "little")
+            return width, height
+        if chunk == b"VP8 " and len(data) >= 30:
+            payload = 20
+            if data[payload + 3:payload + 6] == b"\x9d\x01\x2a":
+                width = int.from_bytes(data[payload + 6:payload + 8], "little") & 0x3FFF
+                height = int.from_bytes(data[payload + 8:payload + 10], "little") & 0x3FFF
+                return width, height
+        if chunk == b"VP8L" and len(data) >= 25 and data[20] == 0x2F:
+            b1, b2, b3, b4 = data[21:25]
+            width = 1 + b1 + ((b2 & 0x3F) << 8)
+            height = 1 + ((b2 & 0xC0) >> 6) + (b3 << 2) + ((b4 & 0x0F) << 10)
+            return width, height
+
+    if len(data) >= 4 and data[:2] == b"\xff\xd8":
+        sof_markers = {
+            0xC0, 0xC1, 0xC2, 0xC3,
+            0xC5, 0xC6, 0xC7,
+            0xC9, 0xCA, 0xCB,
+            0xCD, 0xCE, 0xCF,
+        }
+        pos = 2
+        while pos + 4 <= len(data):
+            if data[pos] != 0xFF:
+                pos += 1
+                continue
+            while pos < len(data) and data[pos] == 0xFF:
+                pos += 1
+            if pos >= len(data):
+                break
+            marker = data[pos]
+            pos += 1
+            if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
+                continue
+            if marker == 0xDA:
+                break
+            if pos + 2 > len(data):
+                break
+            segment_length = int.from_bytes(data[pos:pos + 2], "big")
+            if segment_length < 2:
+                break
+            if marker in sof_markers:
+                if pos + 7 > len(data):
+                    break
+                height = int.from_bytes(data[pos + 3:pos + 5], "big")
+                width = int.from_bytes(data[pos + 5:pos + 7], "big")
+                return width, height
+            pos += segment_length
+
+    return 0, 0
+
+
 def placeholder_bytes(width: int, height: int) -> bytes:
-    """Return a tiny valid GIF whose logical dimensions match the real image."""
     if not (1 <= width <= 65535 and 1 <= height <= 65535):
         fail(f"unsupported image dimensions for placeholder: {width}x{height}")
     data = bytearray(PLACEHOLDER)
@@ -133,13 +193,38 @@ class WebDavClient:
         self.auth_header = f"Basic {token}"
         self.context = ssl.create_default_context()
 
-    def collection_url(self, relative: str) -> str:
+    def file_url(self, relative: str) -> str:
         user = urllib.parse.quote(self.user, safe="")
         suffix = quote_path(relative)
-        url = f"{self.base_url}/remote.php/dav/files/{user}/"
-        if suffix:
-            url += suffix + "/"
+        return f"{self.base_url}/remote.php/dav/files/{user}/{suffix}"
+
+    def collection_url(self, relative: str) -> str:
+        url = self.file_url(relative)
+        if not url.endswith("/"):
+            url += "/"
         return url
+
+    def probe_dimensions(self, relative: str) -> tuple[int, int]:
+        request = urllib.request.Request(self.file_url(relative), method="GET")
+        request.add_header("Authorization", self.auth_header)
+        request.add_header("Range", f"bytes=0-{DIMENSION_PROBE_BYTES - 1}")
+        try:
+            with pinned_resolution(self.host, self.connect_ip):
+                with urllib.request.urlopen(request, timeout=self.timeout, context=self.context) as response:
+                    if response.status not in (200, 206):
+                        fail(f"Nextcloud image header returned HTTP {response.status}")
+                    data = response.read(DIMENSION_PROBE_BYTES)
+        except urllib.error.HTTPError as error:
+            if error.code in {401, 403}:
+                fail("Nextcloud rejected the WebDAV credentials or file access")
+            fail(f"Nextcloud image header request failed with HTTP {error.code}")
+        except urllib.error.URLError as error:
+            fail(f"Nextcloud WebDAV is unreachable while reading image dimensions: {error.reason}")
+
+        width, height = parse_image_header_dimensions(data)
+        if width < 1 or height < 1:
+            fail(f"original image dimensions could not be read from Nextcloud file header: {relative}")
+        return width, height
 
     def list_collection(self, relative: str) -> tuple[dict[str, object], list[dict[str, object]]]:
         relative = validate_relative(relative)
@@ -222,10 +307,11 @@ def write_placeholder(target: Path, width: int, height: int) -> None:
     os.chmod(target, 0o644)
 
 
-def build_root(client: WebDavClient, remote_root: str, local_root: Path, mapping: dict[str, dict[str, object]]) -> tuple[int, int, int]:
+def build_root(client: WebDavClient, remote_root: str, local_root: Path, mapping: dict[str, dict[str, object]]) -> tuple[int, int, int, int]:
     files = 0
     folders = 0
     skipped = 0
+    probed = 0
     stack: list[tuple[str, Path]] = [(validate_relative(remote_root), local_root)]
     visited: set[str] = set()
 
@@ -258,11 +344,11 @@ def build_root(client: WebDavClient, remote_root: str, local_root: Path, mapping
 
             width = int(child.get("width", 0) or 0)
             height = int(child.get("height", 0) or 0)
+            dimension_source = "metadata"
             if width < 1 or height < 1:
-                fail(
-                    f"Nextcloud returned no original image dimensions for {child_remote}; "
-                    "the placeholder will not be exposed to Piwigo with false 1x1 dimensions"
-                )
+                width, height = client.probe_dimensions(child_remote)
+                dimension_source = "header"
+                probed += 1
 
             write_placeholder(child_local, width, height)
             files += 1
@@ -276,8 +362,9 @@ def build_root(client: WebDavClient, remote_root: str, local_root: Path, mapping
                 "etag": str(child.get("etag", "")),
                 "width": width,
                 "height": height,
+                "dimension_source": dimension_source,
             }
-    return files, folders, skipped
+    return files, folders, skipped, probed
 
 
 def atomic_json(path: Path, payload: object) -> None:
@@ -329,7 +416,7 @@ def main() -> int:
         client = WebDavClient(args.base_url, args.user, password, max(1, args.timeout), args.connect_ip)
         mapping: dict[str, dict[str, object]] = {}
         manifest: list[str] = []
-        total_files = total_folders = total_skipped = 0
+        total_files = total_folders = total_skipped = total_probed = 0
         used_fileids: set[int] = set()
 
         for remote_root_raw in args.root:
@@ -341,10 +428,11 @@ def main() -> int:
             used_fileids.add(fileid)
             local_name = f"root-{fileid}"
             local_root = staging / local_name
-            files, folders, skipped = build_root(client, remote_root, local_root, mapping)
+            files, folders, skipped, probed = build_root(client, remote_root, local_root, mapping)
             total_files += files
             total_folders += folders
             total_skipped += skipped
+            total_probed += probed
 
             if remote_root == "":
                 for child in sorted(root_children, key=lambda item: str(item.get("display_name", "")).casefold()):
@@ -386,7 +474,7 @@ def main() -> int:
 
         atomic_text(args.manifest, "\n".join(manifest) + "\n")
         atomic_json(args.mapping, {
-            "version": 2,
+            "version": 3,
             "base_url": args.base_url.rstrip("/"),
             "connect_ip": client.connect_ip,
             "user": args.user,
@@ -397,6 +485,7 @@ def main() -> int:
             "files": total_files,
             "folders": total_folders,
             "skipped": total_skipped,
+            "dimension_header_probes": total_probed,
             "connect_ip": client.connect_ip,
             "source_dir": str(source_dir),
             "manifest": str(args.manifest),
