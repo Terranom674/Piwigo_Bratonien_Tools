@@ -216,11 +216,104 @@
     resizeTimer = window.setTimeout(updateMap, 60);
   }
 
+  function isWebdavThumbnail(image) {
+    if (!image || image.id === 'theMainImage') {
+      return false;
+    }
+
+    var src = image.getAttribute('src') || '';
+    var dataSrc = image.getAttribute('data-src') || '';
+    return src.indexOf('plugins/bratonien_tools/webdav-derivative.php') !== -1 ||
+      dataSrc.indexOf('plugins/bratonien_tools/webdav-derivative.php') !== -1 ||
+      image.getAttribute('data-bratonien-webdav-thumbnail') === '1';
+  }
+
+  function setThumbnailPlaceholder(image) {
+    var parent = image.parentElement;
+    if (!parent || parent.getAttribute('data-bratonien-placeholder-active') === '1') {
+      return;
+    }
+
+    parent.setAttribute('data-bratonien-placeholder-active', '1');
+    parent.setAttribute('data-bratonien-placeholder-background-image', parent.style.backgroundImage || '');
+    parent.setAttribute('data-bratonien-placeholder-background-repeat', parent.style.backgroundRepeat || '');
+    parent.setAttribute('data-bratonien-placeholder-background-position', parent.style.backgroundPosition || '');
+    parent.setAttribute('data-bratonien-placeholder-background-size', parent.style.backgroundSize || '');
+    parent.style.backgroundImage = 'url("' + absoluteUrl('themes/default/icon/img_small.png') + '")';
+    parent.style.backgroundRepeat = 'no-repeat';
+    parent.style.backgroundPosition = 'center';
+    parent.style.backgroundSize = 'auto';
+  }
+
+  function clearThumbnailPlaceholder(image) {
+    var parent = image.parentElement;
+    if (!parent || parent.getAttribute('data-bratonien-placeholder-active') !== '1') {
+      return;
+    }
+
+    parent.style.backgroundImage = parent.getAttribute('data-bratonien-placeholder-background-image') || '';
+    parent.style.backgroundRepeat = parent.getAttribute('data-bratonien-placeholder-background-repeat') || '';
+    parent.style.backgroundPosition = parent.getAttribute('data-bratonien-placeholder-background-position') || '';
+    parent.style.backgroundSize = parent.getAttribute('data-bratonien-placeholder-background-size') || '';
+    parent.removeAttribute('data-bratonien-placeholder-active');
+    parent.removeAttribute('data-bratonien-placeholder-background-image');
+    parent.removeAttribute('data-bratonien-placeholder-background-repeat');
+    parent.removeAttribute('data-bratonien-placeholder-background-position');
+    parent.removeAttribute('data-bratonien-placeholder-background-size');
+  }
+
+  function markThumbnailPending(image) {
+    image.setAttribute('data-bratonien-webdav-thumbnail', '1');
+    image.classList.remove('bratonien-webdav-thumbnail-ready');
+    image.classList.add('bratonien-webdav-thumbnail-pending');
+    setThumbnailPlaceholder(image);
+  }
+
+  function markThumbnailReady(image) {
+    image.classList.remove('bratonien-webdav-thumbnail-pending');
+    image.classList.add('bratonien-webdav-thumbnail-ready');
+    clearThumbnailPlaceholder(image);
+  }
+
+  function protectWebdavThumbnail(image) {
+    if (!isWebdavThumbnail(image)) {
+      return;
+    }
+
+    if (image.getAttribute('data-bratonien-thumbnail-bound') !== '1') {
+      image.setAttribute('data-bratonien-thumbnail-bound', '1');
+      image.addEventListener('load', function () {
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          markThumbnailReady(image);
+        }
+      });
+      image.addEventListener('error', function () {
+        markThumbnailPending(image);
+      });
+    }
+
+    if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      markThumbnailReady(image);
+    } else {
+      markThumbnailPending(image);
+    }
+  }
+
+  function protectWebdavThumbnails(root) {
+    var scope = root || document;
+    var images = scope.querySelectorAll ? scope.querySelectorAll('img') : [];
+    for (var i = 0; i < images.length; i += 1) {
+      protectWebdavThumbnail(images[i]);
+    }
+  }
+
   $(function () {
     var image = document.getElementById('theMainImage');
     if (!image) {
       return;
     }
+
+    protectWebdavThumbnails(document.getElementById('theImageAndInfos') || document);
 
     if (image.complete) {
       updateMap();
@@ -241,6 +334,35 @@
         attributes: true,
         attributeFilter: ['src', 'srcset', 'usemap', 'class', 'style']
       });
+
+      var thumbnailRoot = document.getElementById('theImageAndInfos');
+      if (thumbnailRoot) {
+        var thumbnailObserver = new MutationObserver(function (mutations) {
+          mutations.forEach(function (mutation) {
+            if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
+              protectWebdavThumbnail(mutation.target);
+              return;
+            }
+
+            for (var i = 0; i < mutation.addedNodes.length; i += 1) {
+              var node = mutation.addedNodes[i];
+              if (node.nodeType !== 1) {
+                continue;
+              }
+              if (node.tagName === 'IMG') {
+                protectWebdavThumbnail(node);
+              }
+              protectWebdavThumbnails(node);
+            }
+          });
+        });
+        thumbnailObserver.observe(thumbnailRoot, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['src', 'data-src']
+        });
+      }
     }
   });
 })(jQuery);
