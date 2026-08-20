@@ -17,16 +17,11 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_lock.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_manage.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_takeover.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_auth.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_create_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_piwigo_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_db_bridge.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_user_scope.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_flow.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_connection_scope.inc.php');
-require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_generic_scope.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_delete_safe.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_webdav.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_webdav_flow.inc.php');
@@ -54,13 +49,11 @@ function bratonien_tools_get_tools()
     'album_share_create' => array('handler' => 'bratonien_tools_create_album_share'),
     'album_share_regenerate_link' => array('handler' => 'bratonien_tools_regenerate_album_share_link'),
     'album_share_revoke' => array('handler' => 'bratonien_tools_revoke_album_share'),
-    'nc_connector_create_local' => array('handler' => 'bratonien_tools_nc_connector_create_local_api_first'),
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_safe'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
     'nc_connector_update_technical' => array('handler' => 'bratonien_tools_nc_connector_update_technical'),
     'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan_webdav_first'),
-    'nc_connector_wizard_save_technical' => array('handler' => 'bratonien_tools_nc_wizard_save_technical_flow'),
     'nc_connector_wizard_directory_browse' => array('handler' => 'bratonien_tools_nc_wizard_directory_browse'),
     'nc_connector_wizard_directory_add' => array('handler' => 'bratonien_tools_nc_wizard_directory_add'),
     'nc_connector_wizard_directory_remove' => array('handler' => 'bratonien_tools_nc_wizard_directory_remove'),
@@ -71,10 +64,7 @@ function bratonien_tools_get_tools()
     'nc_connector_wizard_finish' => array('handler' => 'bratonien_tools_nc_wizard_finish_dispatch'),
     'nc_connector_wizard_back' => array('handler' => 'bratonien_tools_nc_wizard_back'),
     'nc_connector_wizard_reset' => array('handler' => 'bratonien_tools_nc_wizard_reset'),
-    'nc_connector_import_legacy' => array('handler' => 'bratonien_tools_nc_connector_import_legacy'),
     'nc_connector_verify' => array('handler' => 'bratonien_tools_nc_connector_verify_connection_scoped'),
-    'nc_connector_prepare_takeover' => array('handler' => 'bratonien_tools_nc_connector_prepare_takeover'),
-    'nc_connector_cancel_takeover' => array('handler' => 'bratonien_tools_nc_connector_cancel_takeover'),
     'nc_connector_piwigo_api_test' => array('handler' => 'bratonien_tools_nc_connector_piwigo_api_test'),
     'nc_connector_piwigo_api_delete' => array('handler' => 'bratonien_tools_nc_connector_api_delete'),
     'nc_connector_fallback_save' => array('handler' => 'bratonien_tools_nc_connector_fallback_save_scoped'),
