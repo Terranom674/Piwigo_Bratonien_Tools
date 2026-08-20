@@ -50,6 +50,7 @@ function bratonien_tools_get_tools()
     'nc_connector_create_webdav_parallel' => array('handler' => 'bratonien_tools_nc_connector_create_webdav_placeholder_from_wizard'),
     'nc_connector_delete' => array('handler' => 'bratonien_tools_nc_connector_delete_safe'),
     'nc_connector_update_name' => array('handler' => 'bratonien_tools_nc_connector_update_name'),
+    'nc_connector_run_now' => array('handler' => 'bratonien_tools_nc_connector_run_now'),
     'nc_connector_wizard_scan' => array('handler' => 'bratonien_tools_nc_wizard_scan_webdav_first'),
     'nc_connector_wizard_directory_browse' => array('handler' => 'bratonien_tools_nc_wizard_directory_browse'),
     'nc_connector_wizard_directory_add' => array('handler' => 'bratonien_tools_nc_wizard_directory_add'),
