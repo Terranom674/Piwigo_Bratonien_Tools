@@ -43,16 +43,43 @@ function bratonien_tools_nc_connector_systemctl_value(array $args)
 
 function bratonien_tools_nc_connector_run_now()
 {
-  $service = 'bratonien-nc-connector.service';
-  $result = bratonien_tools_nc_connector_systemctl_run(array('start','--no-block',$service));
-  if ($result['exit'] !== 0)
+  if (!function_exists('proc_open'))
   {
-    $detail = $result['stderr'] !== '' ? $result['stderr'] : $result['stdout'];
-    if ($detail === '') $detail = 'systemctl Exit-Code '.$result['exit'];
-    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: '.$detail);
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: proc_open ist in PHP nicht verfügbar.');
   }
 
-  return array('message'=>'WebDAV-Abgleich wurde gestartet.');
+  $script = BRATONIEN_TOOLS_PATH.'runtime/run-all.sh';
+  if (!is_file($script) || !is_readable($script))
+  {
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: runtime/run-all.sh ist nicht lesbar.');
+  }
+
+  $spec = array(
+    0=>array('file','/dev/null','r'),
+    1=>array('pipe','w'),
+    2=>array('pipe','w'),
+  );
+  $environment = array_merge($_ENV, array('LC_ALL'=>'C','LANG'=>'C'));
+  $process = @proc_open(array('/usr/bin/env','bash',$script), $spec, $pipes, BRATONIEN_TOOLS_PATH.'runtime', $environment);
+  if (!is_resource($process))
+  {
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: Connector-Prozess konnte nicht geöffnet werden.');
+  }
+
+  $stdout = trim((string)stream_get_contents($pipes[1]));
+  $stderr = trim((string)stream_get_contents($pipes[2]));
+  fclose($pipes[1]);
+  fclose($pipes[2]);
+  $exit = (int)proc_close($process);
+
+  if ($exit !== 0)
+  {
+    $detail = $stderr !== '' ? $stderr : $stdout;
+    if ($detail === '') $detail = 'Exit-Code '.$exit;
+    throw new RuntimeException('WebDAV-Abgleich fehlgeschlagen: '.$detail);
+  }
+
+  return array('message'=>'WebDAV-Abgleich wurde ausgeführt.');
 }
 
 function bratonien_tools_nc_connector_parse_systemd_time($value)
