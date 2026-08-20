@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.7.19
+Version: 0.9.7.20
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -29,6 +29,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_scheduler.inc.php');
 add_event_handler('get_admin_plugin_menu_links', 'bratonien_tools_admin_menu');
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL, 4);
 add_event_handler('get_src_image_url', 'bratonien_tools_filter_webdav_src_url', EVENT_HANDLER_PRIORITY_NEUTRAL + 50, 2);
+add_event_handler('get_derivative_url', 'bratonien_tools_filter_webdav_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL + 50, 4);
 add_event_handler('loc_end_element_set_global', 'bratonien_tools_batch_titles_register_action');
 add_event_handler('element_set_global_action', 'bratonien_tools_batch_titles_apply', EVENT_HANDLER_PRIORITY_NEUTRAL, 2);
 add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EVENT_HANDLER_PRIORITY_NEUTRAL - 30);

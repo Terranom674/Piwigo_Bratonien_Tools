@@ -7,9 +7,6 @@ if (!defined('PHPWG_ROOT_PATH'))
 function bratonien_tools_webdav_image_source_info($image_id)
 {
   static $cache = array();
-  static $connection_cache = array();
-  static $mapping_cache = array();
-
   $image_id = (int)$image_id;
   if ($image_id < 1) return null;
   if (array_key_exists($image_id, $cache)) return $cache[$image_id];
@@ -23,12 +20,12 @@ function bratonien_tools_webdav_image_source_info($image_id)
   $absolute = $path;
   if (strpos($absolute, '/') !== 0)
   {
-    $absolute = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\\./#', '', $absolute), '/');
+    $absolute = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $absolute), '/');
   }
   $resolved = realpath($absolute);
   if ($resolved === false) return $cache[$image_id] = null;
 
-  $normalized = str_replace('\\\\', '/', $resolved);
+  $normalized = str_replace('\\', '/', $resolved);
   if (!preg_match('#/nc-webdav-source/connection-([0-9]+)/root-([0-9]+)/(.*)$#', $normalized, $match))
   {
     return $cache[$image_id] = null;
@@ -39,82 +36,60 @@ function bratonien_tools_webdav_image_source_info($image_id)
   $relative_path = trim((string)$match[3], '/');
   if ($relative_path === '') return $cache[$image_id] = null;
 
-  if (!array_key_exists($connection_id, $connection_cache))
-  {
-    $table = defined('BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE')
-      ? BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE
-      : $GLOBALS['prefixeTable'].'bratonien_tools_nc_connections';
-    $connection_result = pwg_query('SELECT config_json FROM `'.$table.'` WHERE id='.$connection_id.' LIMIT 1');
-    if (!pwg_db_num_rows($connection_result))
-    {
-      $connection_cache[$connection_id] = null;
-    }
-    else
-    {
-      $connection_row = pwg_db_fetch_assoc($connection_result);
-      $decoded = json_decode((string)$connection_row['config_json'], true);
-      $connection_cache[$connection_id] = is_array($decoded) ? $decoded : null;
-    }
-  }
-
-  $config = $connection_cache[$connection_id];
+  $table = defined('BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE')
+    ? BRATONIEN_TOOLS_NC_CONNECTIONS_TABLE
+    : $GLOBALS['prefixeTable'].'bratonien_tools_nc_connections';
+  $connection_result = pwg_query('SELECT config_json FROM `'.$table.'` WHERE id='.$connection_id.' LIMIT 1');
+  if (!pwg_db_num_rows($connection_result)) return $cache[$image_id] = null;
+  $connection_row = pwg_db_fetch_assoc($connection_result);
+  $config = json_decode((string)$connection_row['config_json'], true);
   if (!is_array($config) || (string)($config['source_mode'] ?? '') !== 'webdav-placeholder')
   {
     return $cache[$image_id] = null;
   }
 
   $root_path = '';
-  $root_found = false;
   $roots = isset($config['roots']) && is_array($config['roots']) ? $config['roots'] : array();
   foreach ($roots as $root)
   {
     if ((int)($root['fileid'] ?? 0) === $root_fileid)
     {
       $root_path = trim((string)($root['webdav_path'] ?? ''), '/');
-      $root_found = true;
       break;
     }
   }
-  if (!$root_found) return $cache[$image_id] = null;
+  if ($root_path === '') return $cache[$image_id] = null;
 
-  $root_is_base = $root_path === '';
-  $webdav_path = $root_is_base ? $relative_path : $root_path.'/'.$relative_path;
+  $webdav_path = $root_path.'/'.$relative_path;
   $content_type = '';
   $size = 0;
   $etag = '';
 
-  if (!array_key_exists($connection_id, $mapping_cache))
+  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+  if ($state_dir !== '')
   {
-    $mapping_cache[$connection_id] = array();
-    $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
-    if ($state_dir !== '')
+    $mapping_file = $state_dir.'/webdav-map.json';
+    if (is_readable($mapping_file))
     {
-      $mapping_file = $state_dir.'/webdav-map.json';
-      if (is_readable($mapping_file))
+      $mapping = json_decode((string)file_get_contents($mapping_file), true);
+      if (is_array($mapping) && isset($mapping['files']) && is_array($mapping['files']))
       {
-        $mapping = json_decode((string)file_get_contents($mapping_file), true);
-        if (is_array($mapping) && isset($mapping['files']) && is_array($mapping['files']))
+        $entry = $mapping['files'][$resolved] ?? $mapping['files'][$normalized] ?? null;
+        if (is_array($entry) && (string)($entry['kind'] ?? '') === 'file')
         {
-          $mapping_cache[$connection_id] = $mapping['files'];
+          $webdav_path = trim((string)($entry['webdav_path'] ?? $webdav_path), '/');
+          $content_type = (string)($entry['content_type'] ?? '');
+          $size = (int)($entry['size'] ?? 0);
+          $etag = (string)($entry['etag'] ?? '');
         }
       }
     }
-  }
-
-  $entry = $mapping_cache[$connection_id][$resolved] ?? $mapping_cache[$connection_id][$normalized] ?? null;
-  if (is_array($entry) && (string)($entry['kind'] ?? '') === 'file')
-  {
-    $webdav_path = trim((string)($entry['webdav_path'] ?? $webdav_path), '/');
-    $content_type = (string)($entry['content_type'] ?? '');
-    $size = (int)($entry['size'] ?? 0);
-    $etag = (string)($entry['etag'] ?? '');
   }
 
   return $cache[$image_id] = array(
     'image_id'=>$image_id,
     'connection_id'=>$connection_id,
     'webdav_path'=>$webdav_path,
-    'root_is_base'=>$root_is_base,
     'content_type'=>$content_type,
     'size'=>$size,
     'etag'=>$etag,
@@ -437,16 +412,8 @@ function bratonien_tools_filter_webdav_src_url($url, $src_image)
 function bratonien_tools_filter_webdav_derivative_url($url, $params, $src_image, $rel_url)
 {
   if (!is_object($src_image) || empty($src_image->id)) return $url;
-
-  // Hotpath: Bei einem bereits vorbereiteten WebDAV-Derivat keinerlei
-  // Connection-DB oder Mapping-Datei mehr anfassen. Der reale Quellpfad
-  // reicht aus, um Connector-Bilder sicher zu erkennen.
-  $source_path = $src_image->get_path();
-  $resolved_source = $source_path !== '' ? realpath($source_path) : false;
-  if ($resolved_source === false || !preg_match('#/nc-webdav-source/connection-[0-9]+/root-[0-9]+/#', str_replace('\\\\', '/', $resolved_source)))
-  {
-    return $url;
-  }
+  $info = bratonien_tools_webdav_image_source_info((int)$src_image->id);
+  if (!$info) return $url;
 
   try
   {

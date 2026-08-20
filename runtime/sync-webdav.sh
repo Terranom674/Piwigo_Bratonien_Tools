@@ -138,33 +138,9 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         exit "$PIWIGO_EXIT"
     fi
 
-    if [[ "${BRATONIEN_NC_NATIVE:-0}" == "1" ]]; then
-        if command -v timeout >/dev/null 2>&1; then
-            if ! timeout 30m env PIWIGO_CONFIG="$CONFIG_FILE" bash "$SCRIPT_DIR/build-webdav-media.sh"; then
-                write_status error "Bildaufbereitung ist fehlgeschlagen oder hat das 30-Minuten-Limit erreicht"
-                exit 1
-            fi
-        elif ! env PIWIGO_CONFIG="$CONFIG_FILE" bash "$SCRIPT_DIR/build-webdav-media.sh"; then
-            write_status error "Bildaufbereitung ist fehlgeschlagen"
-            exit 1
-        fi
-    else
-        MEDIA_UNIT="bratonien-nc-media-${CONNECTION_ID}-$(date +%s)"
-        if ! systemd-run \
-            --quiet \
-            --collect \
-            --unit="$MEDIA_UNIT" \
-            --property=RuntimeMaxSec=30min \
-            --setenv="PIWIGO_CONFIG=$CONFIG_FILE" \
-            /usr/bin/env bash "$SCRIPT_DIR/build-webdav-media.sh"; then
-            write_status error "Bildaufbereitung konnte nicht im Hintergrund gestartet werden"
-            exit 1
-        fi
-    fi
-
     if grep -q 'Piwigo-Synchronisierung per API erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen und Piwigo synchronisiert; Bildaufbereitung abgeschlossen" \
+            "WebDAV eingelesen und Piwigo synchronisiert" \
             "" \
             "api" \
             "ok" \
@@ -173,7 +149,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "Fallback wurde nicht benötigt"
     elif grep -q 'Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich' <<<"$PIWIGO_OUTPUT"; then
         write_status ok \
-            "WebDAV eingelesen und Piwigo über Fallback synchronisiert; Bildaufbereitung abgeschlossen" \
+            "WebDAV eingelesen und Piwigo über Fallback synchronisiert" \
             "" \
             "fallback" \
             "not_used" \
@@ -181,7 +157,7 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
             "ok" \
             "Benutzername/Passwort-Fallback erfolgreich"
     else
-        write_status ok "WebDAV eingelesen und Piwigo synchronisiert; Bildaufbereitung abgeschlossen"
+        write_status ok "WebDAV eingelesen und Piwigo synchronisiert"
     fi
 else
     write_status ok "WebDAV eingelesen; Piwigo-Synchronisierung ist für diese Verbindung deaktiviert"
