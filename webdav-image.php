@@ -52,6 +52,18 @@ if (!pwg_db_num_rows($access_result)) bratonien_tools_webdav_image_abort(403, 'K
 $source = bratonien_tools_webdav_image_source_info($image_id);
 if (!$source) bratonien_tools_webdav_image_abort(404, 'Keine WebDAV-Quelle für dieses Bild gefunden.');
 
+if (!empty($_GET['ajaxload']))
+{
+  $preview = !empty($_GET['preview']);
+  $final_url = bratonien_tools_webdav_image_url($image_id, $preview);
+  if (!$final_url) bratonien_tools_webdav_image_abort(404, 'Keine WebDAV-Bild-URL verfügbar.');
+
+  header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
+  echo json_encode(array('url'=>$final_url), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 if (!empty($_GET['preview']))
 {
   $preview = bratonien_tools_webdav_preview_path($source);
@@ -121,7 +133,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.7.16',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.7.24',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
