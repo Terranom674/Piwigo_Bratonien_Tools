@@ -78,7 +78,9 @@ done < "$WEBDAV_ROOTS_FILE"
 WEBDAV_CONNECT_IP="$(php "$SCRIPT_DIR/lib/resolve-nextcloud-target.php" "$WEBDAV_BASE_URL")"
 [[ -n "$WEBDAV_CONNECT_IP" ]] || { write_status error "Nextcloud-Zieladresse konnte nicht ermittelt werden"; exit 1; }
 
-python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
+PLACEHOLDER_OUTPUT=""
+PLACEHOLDER_EXIT=0
+if PLACEHOLDER_OUTPUT="$(python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --base-url "$WEBDAV_BASE_URL" \
     --connect-ip "$WEBDAV_CONNECT_IP" \
     --user "$WEBDAV_USER" \
@@ -86,12 +88,42 @@ python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     "${ROOT_ARGS[@]}" \
     --source-dir "$WEBDAV_SOURCE_DIR" \
     --manifest "$MANIFEST" \
-    --mapping "$WEBDAV_MAPPING_FILE"
+    --mapping "$WEBDAV_MAPPING_FILE" 2>&1)"; then
+    PLACEHOLDER_EXIT=0
+else
+    PLACEHOLDER_EXIT=$?
+fi
+[[ -z "$PLACEHOLDER_OUTPUT" ]] || printf '%s\n' "$PLACEHOLDER_OUTPUT"
+if [[ "$PLACEHOLDER_EXIT" -ne 0 ]]; then
+    DETAIL="Exit-Code: $PLACEHOLDER_EXIT"
+    if [[ -n "$PLACEHOLDER_OUTPUT" ]]; then
+        DETAIL+="; Ausgabe: $(printf '%s\n' "$PLACEHOLDER_OUTPUT" | tail -n 20 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//')"
+    fi
+    trap - ERR
+    write_status error "WebDAV-Shadow-Tree fehlgeschlagen" "$DETAIL"
+    exit "$PLACEHOLDER_EXIT"
+fi
 
-python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
+SHADOW_OUTPUT=""
+SHADOW_EXIT=0
+if SHADOW_OUTPUT="$(python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" \
     --destination "$GALLERY_ROOT" \
-    --state "$SHADOW_MAP_FILE"
+    --state "$SHADOW_MAP_FILE" 2>&1)"; then
+    SHADOW_EXIT=0
+else
+    SHADOW_EXIT=$?
+fi
+[[ -z "$SHADOW_OUTPUT" ]] || printf '%s\n' "$SHADOW_OUTPUT"
+if [[ "$SHADOW_EXIT" -ne 0 ]]; then
+    DETAIL="Exit-Code: $SHADOW_EXIT"
+    if [[ -n "$SHADOW_OUTPUT" ]]; then
+        DETAIL+="; Ausgabe: $(printf '%s\n' "$SHADOW_OUTPUT" | tail -n 20 | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]//; s/[[:space:]]$//')"
+    fi
+    trap - ERR
+    write_status error "WebDAV-Shadow-Tree fehlgeschlagen" "$DETAIL"
+    exit "$SHADOW_EXIT"
+fi
 
 trap - ERR
 
