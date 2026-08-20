@@ -12,6 +12,7 @@ from pathlib import Path
 
 ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
 GERMAN = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss", "ẞ": "SS"})
+SHADOW_DIR_MODE = 0o777
 
 
 def safe_name(name: str) -> str:
@@ -79,8 +80,13 @@ def preferred_target(source_key: str, raw_name: str, parent_target: Path, old_ma
     return safe_name(raw_name)
 
 
+def ensure_shadow_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(SHADOW_DIR_MODE)
+
+
 def mirror_directory(source: Path, target: Path, source_key: str, target_key: Path, old_map: dict[str, str], new_map: dict[str, str]) -> None:
-    target.mkdir(parents=True, exist_ok=True)
+    ensure_shadow_directory(target)
     used: set[str] = set()
     for child in sorted(source.iterdir(), key=lambda item: (item.name.casefold(), item.name)):
         if child.is_symlink():
@@ -116,7 +122,7 @@ def build(manifest: Path, destination: Path, state_file: Path) -> None:
     remove_tree(previous)
     if state_staging.exists():
         state_staging.unlink()
-    staging.mkdir(parents=True)
+    ensure_shadow_directory(staging)
 
     try:
         used_roots: set[str] = set()
