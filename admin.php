@@ -119,25 +119,9 @@ foreach ($nc_connector['connections'] as &$nc_connection)
 {
   $nc_connection['last_sync'] = bratonien_tools_nc_connector_connection_last_status($nc_connection);
   $nc_connection['display_name'] = $nc_connection['name'];
-
-  $storage_lines = array();
-  $storages = isset($nc_connection['config']['storages']) && is_array($nc_connection['config']['storages'])
-    ? $nc_connection['config']['storages']
-    : array();
-  foreach ($storages as $storage)
-  {
-    $storage_lines[] = (string)($storage['storage_id'] ?? '').' | '.(string)($storage['source_prefix'] ?? '').' | '.(string)($storage['local_mount'] ?? '');
-  }
-  $nc_connection['storage_text'] = implode("\n", $storage_lines);
-
   if (!empty($nc_connection['fallback_stored']))
   {
     $nc_connection['display_name'] .= ' · Fallback gespeichert';
-    $nc_connection['verification_checks'][] = array(
-      'name' => 'Piwigo-Fallback',
-      'ok' => true,
-      'detail' => 'Benutzername/Passwort verschluesselt gespeichert',
-    );
   }
 }
 unset($nc_connection);
@@ -159,10 +143,6 @@ $nc_system_defaults = array(
   'last_run_error_detail' => '',
   'next_run_timestamp' => 0,
   'next_run_label' => 'Nicht verfügbar',
-  'legacy_runtime_exists' => false,
-  'legacy_config_exists' => false,
-  'legacy_service_exists' => false,
-  'legacy_timer_exists' => false,
 );
 $nc_connector['system'] = array_merge(
   $nc_system_defaults,
