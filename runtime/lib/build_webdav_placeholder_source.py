@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 
 DAV = "DAV:"
 OC = "http://owncloud.org/ns"
+NC = "http://nextcloud.org/ns"
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 # 1x1 transparent GIF, 34 bytes. The filename keeps the remote extension;
 # the placeholder exists only so Piwigo can discover the logical image entry.
@@ -54,6 +55,27 @@ def safe_local_name(name: str) -> str:
     return name
 
 
+def parse_image_dimensions(prop: ET.Element) -> tuple[int, int]:
+    for property_name in ("file-metadata-size", "metadata-photos-size"):
+        raw = prop.findtext(f"{{{NC}}}{property_name}", default="").strip()
+        if not raw:
+            continue
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        try:
+            width = int(value.get("width", 0) or 0)
+            height = int(value.get("height", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if width > 0 and height > 0:
+            return width, height
+    return 0, 0
+
+
 class WebDavClient:
     def __init__(self, base_url: str, user: str, password: str, timeout: int = 30) -> None:
         self.base_url = base_url.rstrip("/")
@@ -77,9 +99,11 @@ class WebDavClient:
         url = self.collection_url(relative)
         body = (
             '<?xml version="1.0"?>'
-            '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">'
+            '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">'
             '<d:prop><d:displayname/><d:resourcetype/><d:getcontenttype/>'
-            '<d:getcontentlength/><d:getetag/><oc:fileid/></d:prop></d:propfind>'
+            '<d:getcontentlength/><d:getetag/><oc:fileid/>'
+            '<nc:file-metadata-size/><nc:metadata-photos-size/>'
+            '</d:prop></d:propfind>'
         ).encode("utf-8")
         request = urllib.request.Request(url, data=body, method="PROPFIND")
         request.add_header("Authorization", self.auth_header)
@@ -122,6 +146,7 @@ class WebDavClient:
             fileid_text = prop.findtext(f"{{{OC}}}fileid", default="").strip()
             resource_type = prop.find(f"{{{DAV}}}resourcetype")
             is_dir = resource_type is not None and resource_type.find(f"{{{DAV}}}collection") is not None
+            width, height = parse_image_dimensions(prop)
             item = {
                 "display_name": display,
                 "fileid": int(fileid_text) if fileid_text.isdigit() else 0,
@@ -129,6 +154,8 @@ class WebDavClient:
                 "content_type": prop.findtext(f"{{{DAV}}}getcontenttype", default=""),
                 "size": int(prop.findtext(f"{{{DAV}}}getcontentlength", default="0") or 0),
                 "etag": prop.findtext(f"{{{DAV}}}getetag", default="").strip('"'),
+                "width": width,
+                "height": height,
             }
             if href_path == base_path:
                 current = item
@@ -197,6 +224,8 @@ def build_root(
                 "content_type": str(child.get("content_type", "")),
                 "size": int(child.get("size", 0)),
                 "etag": str(child.get("etag", "")),
+                "width": int(child.get("width", 0) or 0),
+                "height": int(child.get("height", 0) or 0),
             }
     return files, folders, skipped
 
