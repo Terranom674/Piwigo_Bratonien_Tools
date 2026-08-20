@@ -191,21 +191,12 @@ try
       $cookie_file
     ));
 
-    http_request(
-      $base_url.'/admin.php?page=site_update&site='.$site_id,
-      array(
-        'sync'=>'files',
-        'display_info'=>1,
-        'privacy_level'=>0,
-        'sync_meta'=>1,
-        'simulate'=>0,
-        'subcats-included'=>1,
-        'bratonien_connector'=>1,
-        'submit'=>1,
-      ),
-      array(),
+    decode_ws(http_request(
+      $base_url.'/ws.php?format=json',
+      array('method'=>'bratonien.nc.syncProductive', 'site_id'=>$site_id),
+      array('Accept: application/json', 'Content-Type: application/x-www-form-urlencoded'),
       $cookie_file
-    );
+    ));
 
     echo "Piwigo-Datenbanksynchronisierung per Benutzername/Passwort-Fallback erfolgreich (Piwigo-Core, Site $site_id)\n";
   }
