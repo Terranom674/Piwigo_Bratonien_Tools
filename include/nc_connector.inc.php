@@ -21,9 +21,8 @@ function bratonien_tools_nc_connector_ensure_table()
     id int(11) NOT NULL AUTO_INCREMENT,
     connection_key varchar(64) NOT NULL,
     name varchar(255) NOT NULL,
-    adapter enum('local','remote') NOT NULL DEFAULT 'remote',
-    enabled tinyint(1) NOT NULL DEFAULT 0,
-    takeover_state enum('imported','verified','active','disabled') NOT NULL DEFAULT 'disabled',
+    adapter enum('remote') NOT NULL DEFAULT 'remote',
+    enabled tinyint(1) NOT NULL DEFAULT 1,
     config_json mediumtext NOT NULL,
     secret_blob mediumtext DEFAULT NULL,
     created datetime NOT NULL,
@@ -101,7 +100,7 @@ function bratonien_tools_nc_connector_connections()
 {
   bratonien_tools_nc_connector_ensure_table();
   $table = bratonien_tools_nc_connector_table();
-  $result = pwg_query("SELECT id, connection_key, name, adapter, enabled, takeover_state, config_json, secret_blob, created, updated FROM `$table` WHERE adapter='remote' ORDER BY id");
+  $result = pwg_query("SELECT id, connection_key, name, adapter, enabled, config_json, secret_blob, created, updated FROM `$table` WHERE adapter='remote' ORDER BY id");
   $connections = array();
 
   while ($row = pwg_db_fetch_assoc($result))
@@ -128,17 +127,9 @@ function bratonien_tools_nc_connector_connections()
     $row['id'] = (int)$row['id'];
     $row['enabled'] = (bool)$row['enabled'];
     $row['config'] = $config;
-    $row['host'] = (string)($config['nextcloud_url'] ?? '');
-    $row['database'] = '';
     $row['user'] = (string)($config['nextcloud_access_user'] ?? $config['access_user'] ?? '');
-    $row['source_view'] = 'WebDAV';
     $row['storage_count'] = isset($config['roots']) && is_array($config['roots']) ? count($config['roots']) : 0;
     $row['fallback_stored'] = $has_fallback;
-    $row['verification'] = array();
-    $row['verified_ok'] = true;
-    $row['verified_at'] = '';
-    $row['source_count'] = $row['storage_count'];
-    $row['verification_checks'] = array();
     $connections[] = $row;
   }
 
@@ -152,7 +143,7 @@ function bratonien_tools_nc_connector_connection($id, $with_secret = false)
   $id = (int)$id;
   if ($id <= 0) return null;
 
-  $columns = 'id, connection_key, name, adapter, enabled, takeover_state, config_json, created, updated';
+  $columns = 'id, connection_key, name, adapter, enabled, config_json, created, updated';
   if ($with_secret) $columns .= ', secret_blob';
   $result = pwg_query("SELECT $columns FROM `$table` WHERE id = $id AND adapter='remote' LIMIT 1");
   if (!pwg_db_num_rows($result)) return null;
@@ -168,10 +159,16 @@ function bratonien_tools_nc_connector_connection($id, $with_secret = false)
 function bratonien_tools_nc_connector_status()
 {
   $connections = bratonien_tools_nc_connector_connections();
+  $active_count = 0;
+  foreach ($connections as $connection)
+  {
+    if (!empty($connection['enabled'])) $active_count++;
+  }
+
   return array(
     'phase'=>'webdav',
     'connections'=>$connections,
     'connection_count'=>count($connections),
-    'active_count'=>count($connections),
+    'active_count'=>$active_count,
   );
 }
