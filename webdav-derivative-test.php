@@ -48,13 +48,13 @@ function bratonien_tools_webdav_derivative_test_source_info($image_id, array $im
   $absolute = $path;
   if (strpos($absolute, '/') !== 0)
   {
-    $absolute = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $absolute), '/');
+    $absolute = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\\./#', '', $absolute), '/');
   }
 
   $resolved = realpath($absolute);
   if ($resolved === false) return null;
 
-  $normalized = str_replace('\\', '/', $resolved);
+  $normalized = str_replace('\\\\', '/', $resolved);
   if (!preg_match('#/nc-webdav-source/connection-([0-9]+)/root-([0-9]+)/(.*)$#', $normalized, $match))
   {
     return null;
@@ -300,14 +300,15 @@ if (!$source)
   bratonien_tools_webdav_derivative_test_abort(404, 'Keine WebDAV-Quelle fuer dieses Bild gefunden.');
 }
 
-$test_root = PHPWG_ROOT_PATH.'_data/bratonien-tools/webdav-derivative-test';
+$test_rel_dir = trim(PWG_DERIVATIVE_DIR, '/').'/bratonien-webdav-test';
+$test_root = PHPWG_ROOT_PATH.$test_rel_dir;
 if (!is_dir($test_root) && !@mkdir($test_root, 0755, true))
 {
-  bratonien_tools_webdav_derivative_test_abort(500, 'Paralleler Testbereich konnte nicht angelegt werden.');
+  bratonien_tools_webdav_derivative_test_abort(500, 'Paralleler Testbereich konnte nicht angelegt werden: '.$test_root);
 }
 if (!is_writable($test_root))
 {
-  bratonien_tools_webdav_derivative_test_abort(500, 'Paralleler Testbereich ist fuer PHP nicht beschreibbar.');
+  bratonien_tools_webdav_derivative_test_abort(500, 'Paralleler Testbereich ist fuer PHP nicht beschreibbar: '.$test_root);
 }
 
 $lock_path = $test_root.'/image-'.$image_id.'.lock';
@@ -327,7 +328,7 @@ if (!in_array($extension, array('jpg', 'jpeg', 'png', 'gif', 'webp'), true))
 $token = getmypid().'-'.bin2hex(random_bytes(6));
 $source_filename = 'source-'.$image_id.'-'.$token.'.'.$extension;
 $source_path = $test_root.'/'.$source_filename;
-$source_rel = './_data/bratonien-tools/webdav-derivative-test/'.$source_filename;
+$source_rel = './'.$test_rel_dir.'/'.$source_filename;
 $temp_image_id = 0;
 $derivative_path = '';
 $cleaned = false;
