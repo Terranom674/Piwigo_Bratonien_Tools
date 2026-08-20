@@ -269,7 +269,20 @@ def main() -> int:
             total_files += files
             total_folders += folders
             total_skipped += skipped
-            manifest.append(f"webdav:{fileid}\tfolder\t{display}\t{source_dir / local_name}")
+
+            if remote_root == "":
+                for child in sorted(local_root.iterdir(), key=lambda item: (item.name.casefold(), item.name)):
+                    child_data = mapping.get(str(child))
+                    if not child_data:
+                        continue
+                    child_fileid = int(child_data.get("fileid", 0))
+                    child_display = str(child_data.get("display_name", "")).strip() or child.name
+                    child_type = "folder" if child.is_dir() else "file"
+                    manifest.append(
+                        f"webdav:{child_fileid}\t{child_type}\t{child_display}\t{source_dir / local_name / child.name}"
+                    )
+            else:
+                manifest.append(f"webdav:{fileid}\tfolder\t{display}\t{source_dir / local_name}")
 
         if previous.exists():
             shutil.rmtree(previous)
