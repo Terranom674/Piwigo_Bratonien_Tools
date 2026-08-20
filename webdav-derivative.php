@@ -113,38 +113,155 @@ function bratonien_tools_webdav_derivative_download(array $source, $destination,
   return true;
 }
 
-function bratonien_tools_webdav_derivative_inner_url($derivative_path)
+function bratonien_tools_webdav_derivative_make_dir($dir)
 {
-  $derivative_root = PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR;
-  if (strpos($derivative_path, $derivative_root) !== 0) return null;
-  $location = ltrim(substr($derivative_path, strlen($derivative_root)), '/');
-  if ($location === '') return null;
-  $segments = array_map('rawurlencode', explode('/', $location));
-  return rtrim(get_absolute_root_url(), '/').'/i.php?/'.implode('/', $segments);
+  global $conf;
+  if (!is_dir($dir))
+  {
+    $mode = isset($conf['chmod_value']) ? (int)$conf['chmod_value'] : 0755;
+    $umask = umask(0);
+    $ok = @mkdir($dir, $mode, true);
+    umask($umask);
+    if (!$ok && !is_dir($dir)) return false;
+  }
+  if (!is_writable($dir)) return false;
+  $index = rtrim($dir, '/').'/index.htm';
+  if (!file_exists($index)) @file_put_contents($index, 'Not allowed!');
+  return true;
 }
 
-function bratonien_tools_webdav_derivative_call_i($url, &$status, &$detail=null)
+function bratonien_tools_webdav_derivative_generate($source_path, $target_path, $params, array $image_row, &$detail=null)
 {
+  global $conf;
   $detail = '';
-  $status = 500;
-  $ch = curl_init($url);
-  curl_setopt_array($ch, array(
-    CURLOPT_FOLLOWLOCATION => false,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 180,
-    CURLOPT_RETURNTRANSFER => false,
-    CURLOPT_FAILONERROR => false,
-    CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Materialize-Gate',
-    CURLOPT_WRITEFUNCTION => function($ch, $data) { return strlen($data); },
-  ));
-  $ok = curl_exec($ch);
-  $errno = curl_errno($ch);
-  $error = curl_error($ch);
-  $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if ($ok === false || $errno !== 0) { $detail = 'Interner i.php-Aufruf fehlgeschlagen (cURL '.$errno.($error !== '' ? ': '.$error : '').').'; return false; }
-  if ($status < 200 || $status >= 400) { $detail = 'i.php antwortete mit HTTP '.$status.'.'; return false; }
-  return true;
+  include_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
+
+  if (!is_object($params)) { $detail = 'Piwigo-Derivatparameter fehlen.'; return false; }
+  if (!is_file($source_path) || !is_readable($source_path)) { $detail = 'Materialisiertes Original ist nicht lesbar.'; return false; }
+  if (!bratonien_tools_webdav_derivative_make_dir(dirname($target_path))) { $detail = 'Piwigo-Derivatverzeichnis konnte nicht angelegt werden.'; return false; }
+
+  $rotation_angle = isset($image_row['rotation'])
+    ? pwg_image::get_rotation_angle_from_code($image_row['rotation'])
+    : pwg_image::get_rotation_angle($source_path);
+  $coi = $image_row['coi'] ?? null;
+
+  if (($params->type ?? '') === IMG_CUSTOM)
+  {
+    $defined = ImageStdParams::get_defined_type_map();
+    if (count($defined) > 0)
+    {
+      $sharpen = 0;
+      foreach ($defined as $std_params) $sharpen += $std_params->sharpen;
+      $params->sharpen = round($sharpen / count($defined));
+    }
+  }
+
+  $image = null;
+  $wm_image = null;
+  try
+  {
+    $image = new pwg_image($source_path);
+    $changes = 0;
+
+    if (0 != $rotation_angle)
+    {
+      $image->rotate($rotation_angle);
+      $changes++;
+    }
+
+    $o_size = $d_size = array($image->get_width(), $image->get_height());
+    $crop_rect = null;
+    $scaled_size = null;
+    $params->sizing->compute($o_size, $coi, $crop_rect, $scaled_size);
+    if ($crop_rect)
+    {
+      $image->crop($crop_rect->width(), $crop_rect->height(), $crop_rect->l, $crop_rect->t);
+      $changes++;
+    }
+    if ($scaled_size)
+    {
+      $image->resize($scaled_size[0], $scaled_size[1]);
+      $d_size = $scaled_size;
+      $changes++;
+    }
+    if ($params->sharpen)
+    {
+      $changes += $image->sharpen($params->sharpen);
+    }
+
+    if ($params->will_watermark($d_size))
+    {
+      $wm = ImageStdParams::get_watermark();
+      $wm_image = new pwg_image(PHPWG_ROOT_PATH.$wm->file);
+      $wm_size = array($wm_image->get_width(), $wm_image->get_height());
+      if ($d_size[0] < $wm_size[0] || $d_size[1] < $wm_size[1])
+      {
+        $wm_scaling_params = SizingParams::classic($d_size[0], $d_size[1]);
+        $tmp = null;
+        $wm_scaled_size = null;
+        $wm_scaling_params->compute($wm_size, null, $tmp, $wm_scaled_size);
+        $wm_size = $wm_scaled_size;
+        $wm_image->resize($wm_scaled_size[0], $wm_scaled_size[1]);
+      }
+      $x = round(($wm->xpos / 100) * ($d_size[0] - $wm_size[0]));
+      $y = round(($wm->ypos / 100) * ($d_size[1] - $wm_size[1]));
+      if ($image->compose($wm_image, $x, $y, $wm->opacity))
+      {
+        $changes++;
+        if ($wm->xrepeat || $wm->yrepeat)
+        {
+          $xpad = $wm_size[0] + max(30, round($wm_size[0] / 4));
+          $ypad = $wm_size[1] + max(30, round($wm_size[1] / 4));
+          for ($i = -$wm->xrepeat; $i <= $wm->xrepeat; $i++)
+          {
+            for ($j = -$wm->yrepeat; $j <= $wm->yrepeat; $j++)
+            {
+              if (!$i && !$j) continue;
+              $x2 = $x + $i * $xpad;
+              $y2 = $y + $j * $ypad;
+              if ($x2 >= 0 && $x2 + $wm_size[0] < $d_size[0] && $y2 >= 0 && $y2 + $wm_size[1] < $d_size[1])
+              {
+                if (!$image->compose($wm_image, $x2, $y2, $wm->opacity)) break;
+              }
+            }
+          }
+        }
+      }
+      $wm_image->destroy();
+      $wm_image = null;
+    }
+
+    if (!$changes)
+    {
+      $detail = 'Piwigo-Derivat benoetigt keine Bildaenderung.';
+      return false;
+    }
+
+    if ($d_size[0] * $d_size[1] < ($conf['derivatives_strip_metadata_threshold'] ?? PHP_INT_MAX))
+    {
+      $image->strip();
+    }
+
+    $image->write($target_path);
+    @chmod($target_path, 0644);
+    clearstatcache(true, $target_path);
+    if (!is_file($target_path) || !is_readable($target_path) || @getimagesize($target_path) === false)
+    {
+      $detail = 'Piwigo hat kein gueltiges finales Derivat erzeugt.';
+      return false;
+    }
+    return true;
+  }
+  catch (Throwable $e)
+  {
+    $detail = 'Piwigo-Derivaterzeugung fehlgeschlagen: '.$e->getMessage();
+    return false;
+  }
+  finally
+  {
+    if ($wm_image) $wm_image->destroy();
+    if ($image) $image->destroy();
+  }
 }
 
 function bratonien_tools_webdav_derivative_after_url($encoded)
@@ -344,14 +461,11 @@ try
   bratonien_tools_webdav_derivative_debug($request_id, 'swapped', array('is_link'=>is_link($shadow_path), 'realpath'=>realpath($shadow_path) ?: 'FALSE'));
   if (!is_file($shadow_path) || is_link($shadow_path) || @getimagesize($shadow_path) === false) bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Quellpfad enthaelt nach Materialisierung kein gueltiges Original.');
 
-  $inner_url = bratonien_tools_webdav_derivative_inner_url($target_path);
-  if ($inner_url === null) bratonien_tools_webdav_derivative_abort(500, 'Piwigo-i.php-URL konnte nicht bestimmt werden.');
-  $inner_status = 500;
-  $i_start = microtime(true);
-  bratonien_tools_webdav_derivative_debug($request_id, 'i_start', array('url'=>$inner_url));
-  $i_ok = bratonien_tools_webdav_derivative_call_i($inner_url, $inner_status, $detail);
-  bratonien_tools_webdav_derivative_debug($request_id, 'i_done', array('status'=>$inner_status, 'ok'=>$i_ok, 'ms'=>round((microtime(true)-$i_start)*1000, 1), 'detail'=>$detail));
-  if (!$i_ok) bratonien_tools_webdav_derivative_abort(502, $detail);
+  $generate_start = microtime(true);
+  bratonien_tools_webdav_derivative_debug($request_id, 'generate_start', array('target'=>$target_path));
+  $generate_ok = bratonien_tools_webdav_derivative_generate($shadow_path, $target_path, $params, $image_row, $detail);
+  bratonien_tools_webdav_derivative_debug($request_id, 'generate_done', array('ok'=>$generate_ok, 'ms'=>round((microtime(true)-$generate_start)*1000, 1), 'detail'=>$detail));
+  if (!$generate_ok) bratonien_tools_webdav_derivative_abort(500, $detail);
 
   clearstatcache(true, $target_path);
   $final_size = @getimagesize($target_path);
