@@ -274,6 +274,14 @@ if (!isset($user['status']) || !in_array($user['status'], array('admin', 'webmas
   bratonien_tools_webdav_derivative_test_abort(403, 'Dieser Test-Endpunkt ist nur fuer Administratoren verfuegbar.');
 }
 
+$metrics_requested = isset($_GET['metrics']) && (string)$_GET['metrics'] === '1';
+$metrics_started_at = microtime(true);
+$memory_start = memory_get_usage(true);
+if (function_exists('memory_reset_peak_usage'))
+{
+  memory_reset_peak_usage();
+}
+
 $image_id = (int)($_GET['id'] ?? 0);
 if ($image_id < 1)
 {
@@ -368,6 +376,8 @@ try
     bratonien_tools_webdav_derivative_test_abort(502, $detail);
   }
 
+  $source_bytes = (int)filesize($source_path);
+
   $dimensions = @getimagesize($source_path);
   if (!is_array($dimensions) || empty($dimensions[0]) || empty($dimensions[1]))
   {
@@ -441,10 +451,36 @@ try
 
   $generated_width = (int)$derivative_size[0];
   $generated_height = (int)$derivative_size[1];
+  $derivative_bytes = (int)filesize($derivative_path);
 
   $cleanup();
 
+  $elapsed_ms = round((microtime(true) - $metrics_started_at) * 1000, 2);
+  $memory_peak = memory_get_peak_usage(true);
+  $memory_delta_peak = max(0, $memory_peak - $memory_start);
+
+  if ($metrics_requested)
+  {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(array(
+      'source_bytes'=>$source_bytes,
+      'derivative_bytes'=>$derivative_bytes,
+      'elapsed_ms'=>$elapsed_ms,
+      'memory_start_bytes'=>$memory_start,
+      'memory_peak_bytes'=>$memory_peak,
+      'memory_delta_peak_bytes'=>$memory_delta_peak,
+    ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
   header('X-Bratonien-WebDAV-Test: parallel-i.php-success');
+  header('X-Bratonien-Resource-Source-Bytes: '.$source_bytes);
+  header('X-Bratonien-Resource-Derivative-Bytes: '.$derivative_bytes);
+  header('X-Bratonien-Resource-Elapsed-Ms: '.$elapsed_ms);
+  header('X-Bratonien-Resource-Memory-Start-Bytes: '.$memory_start);
+  header('X-Bratonien-Resource-Memory-Peak-Bytes: '.$memory_peak);
+  header('X-Bratonien-Resource-Memory-Delta-Peak-Bytes: '.$memory_delta_peak);
   header('X-Bratonien-WebDAV-Test-Size: '.$generated_width.'x'.$generated_height);
   header('Content-Type: '.$content_type);
   header('Content-Length: '.strlen($body));
