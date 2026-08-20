@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.6.8.16
+Version: 0.9.6.8.17
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -83,82 +83,6 @@ function bratonien_tools_prepare_private_album_permissions()
   }
 
   bratonien_tools_grant_private_album_access($category_id, (int)$user['id']);
-}
-
-function bratonien_tools_preserve_private_album_access()
-{
-  global $user;
-
-  if (
-    !defined('IN_ADMIN')
-    || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
-    || (string)($_GET['page'] ?? '') !== 'site_update'
-    || (string)($_POST['bratonien_connector'] ?? '') !== '1'
-    || empty($user['id'])
-  )
-  {
-    return;
-  }
-
-  $site_id = (int)($_GET['site'] ?? 0);
-  $user_id = (int)$user['id'];
-  if ($site_id < 1 || $user_id < 1)
-  {
-    return;
-  }
-
-  bratonien_tools_grant_connector_top_level_access($site_id, $user_id);
-  register_shutdown_function('bratonien_tools_grant_connector_top_level_access', $site_id, $user_id);
-}
-
-function bratonien_tools_grant_connector_top_level_access($site_id, $user_id)
-{
-  $site_id = (int)$site_id;
-  $user_id = (int)$user_id;
-  if ($site_id < 1 || $user_id < 1)
-  {
-    return;
-  }
-
-  $query = '
-SELECT id
-  FROM '.CATEGORIES_TABLE.'
-  WHERE site_id = '.$site_id.'
-    AND dir IS NOT NULL
-    AND id_uppercat IS NULL
-    AND status = \'private\'
-;';
-  $result = pwg_query($query);
-  $changed = false;
-  while ($row = pwg_db_fetch_assoc($result))
-  {
-    $category_id = (int)$row['id'];
-    if ($category_id < 1)
-    {
-      continue;
-    }
-
-    $access_query = '
-SELECT 1
-  FROM '.USER_ACCESS_TABLE.'
-  WHERE user_id = '.$user_id.'
-    AND cat_id = '.$category_id.'
-  LIMIT 1
-;';
-    $access_result = pwg_query($access_query);
-    if (pwg_db_num_rows($access_result) > 0)
-    {
-      continue;
-    }
-
-    bratonien_tools_grant_private_album_access($category_id, $user_id);
-    $changed = true;
-  }
-
-  if ($changed && function_exists('invalidate_user_cache'))
-  {
-    invalidate_user_cache(true);
-  }
 }
 
 function bratonien_tools_grant_private_album_access($category_id, $user_id)
