@@ -20,6 +20,7 @@ function decrypt_webdav_credentials($blob, $hexKey)
   $iv = base64_decode((string)($payload['iv'] ?? ''), true);
   $tag = base64_decode((string)($payload['tag'] ?? ''), true);
   $cipher = base64_decode((string)($payload['data'] ?? ''), true);
+  if (!is_string($iv) || !is_string($tag) || !is_string($cipher)) fail_webdav_reconcile('Connector-Zugangsdaten sind unvollstaendig.');
   $plain = openssl_decrypt($cipher, 'aes-256-gcm', hex2bin($hexKey), OPENSSL_RAW_DATA, $iv, $tag);
   if ($plain === false || $plain === '') fail_webdav_reconcile('Connector-Zugangsdaten konnten nicht entschluesselt werden.');
   $decoded = json_decode($plain, true);
@@ -75,11 +76,19 @@ function webdav_source_fingerprint($baseUrl, $user, array $roots)
   return hash('sha256', strtolower(rtrim((string)$baseUrl, '/'))."\n".strtolower(trim((string)$user))."\n".json_encode($normalized));
 }
 
+function webdav_set_runtime_dir_permissions($dir)
+{
+  if (!is_dir($dir)) return false;
+  if (!@chgrp($dir, 'www-data')) return false;
+  return @chmod($dir, 0750);
+}
+
 $pluginRoot = dirname(__DIR__);
 $piwigoRoot = dirname($pluginRoot, 2);
 $dbConfig = $piwigoRoot.'/local/config/database.inc.php';
 $configDir = '/etc/bratonien-tools/nc-connector';
-$stateRoot = '/var/lib/bratonien-tools/nc-connector';
+$stateBase = '/var/lib/bratonien-tools';
+$stateRoot = $stateBase.'/nc-connector';
 $publicSourceRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-source';
 $publicGalleryRoot = rtrim($piwigoRoot, '/').'/_data/bratonien-tools/nc-webdav-gallery';
 
@@ -111,7 +120,8 @@ try
     if (!is_dir($dir) && !mkdir($dir, $dir === $configDir ? 0700 : 0750, true)) fail_webdav_reconcile('Runtime-Verzeichnis konnte nicht angelegt werden: '.$dir);
   }
   @chmod($configDir, 0700);
-  @chmod($stateRoot, 0750);
+  if (!webdav_set_runtime_dir_permissions($stateBase)) fail_webdav_reconcile('Runtime-State-Basis konnte nicht fuer den Webserver freigegeben werden.');
+  if (!webdav_set_runtime_dir_permissions($stateRoot)) fail_webdav_reconcile('Runtime-State-Verzeichnis konnte nicht fuer den Webserver freigegeben werden.');
   @chmod($publicSourceRoot, 0755);
   @chmod($publicGalleryRoot, 0755);
 
@@ -151,7 +161,7 @@ try
       $stateDir = rtrim((string)($config['state_dir'] ?? ''), '/');
       if ($stateDir === '') $stateDir = $stateRoot.'/connection-'.$id;
       if (!is_dir($stateDir) && !mkdir($stateDir, 0750, true)) fail_webdav_reconcile('State-Verzeichnis konnte nicht angelegt werden.');
-      @chmod($stateDir, 0750);
+      if (!webdav_set_runtime_dir_permissions($stateDir)) fail_webdav_reconcile('State-Verzeichnis konnte nicht fuer den Webserver freigegeben werden.');
 
       $galleryRoot = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
       $expectedGalleryRoot = $publicGalleryRoot.'/connection-'.$id;
