@@ -8,6 +8,7 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
   define('BRATONIEN_TOOLS_PATH', PHPWG_ROOT_PATH.'plugins/'.BRATONIEN_TOOLS_ID.'/');
 }
 require_once(BRATONIEN_TOOLS_PATH.'include/webdav_image_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'include/webdav_materialize_runtime.inc.php');
 
 function bratonien_tools_webdav_image_abort($status, $message)
 {
@@ -48,7 +49,7 @@ $permission_condition = get_sql_condition_FandF(array('forbidden_categories'=>'c
 $access_result = pwg_query('SELECT 1 FROM '.IMAGE_CATEGORY_TABLE.' WHERE image_id='.$image_id.' AND '.$permission_condition.' LIMIT 1');
 if (!pwg_db_num_rows($access_result)) bratonien_tools_webdav_image_abort(403, 'Kein Zugriff auf dieses Bild.');
 
-$source = bratonien_tools_webdav_image_source_info($image_id);
+$source = bratonien_tools_webdav_materialize_source_info($image_id);
 if (!$source) bratonien_tools_webdav_image_abort(404, 'Keine WebDAV-Quelle für dieses Bild gefunden.');
 
 if (!empty($_GET['preview']))
@@ -120,7 +121,7 @@ $options = array(
   CURLOPT_USERPWD => $user.':'.$password,
   CURLOPT_RETURNTRANSFER => false,
   CURLOPT_FAILONERROR => false,
-  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.6.1',
+  CURLOPT_USERAGENT => 'Bratonien-Tools-WebDAV-Image/0.9.6.8.6',
   CURLOPT_HEADERFUNCTION => function($ch, $line)
   {
     $length = strlen($line);
