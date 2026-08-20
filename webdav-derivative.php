@@ -214,6 +214,13 @@ function bratonien_tools_webdav_derivative_after_url($encoded)
   return $url;
 }
 
+function bratonien_tools_webdav_derivative_needs_after_redirect($url)
+{
+  if (!is_string($url) || $url === '') return false;
+  return strpos($url, '/plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php') !== false
+    || strpos($url, 'plugins/'.BRATONIEN_TOOLS_ID.'/watermark.php') === 0;
+}
+
 function bratonien_tools_webdav_derivative_serve($path)
 {
   clearstatcache(true, $path);
@@ -245,6 +252,7 @@ if ($after_url !== null)
   $expected_sig = bratonien_tools_webdav_materialize_after_signature($image_id, $variant, $after_url);
   if ($after_sig === '' || !hash_equals($expected_sig, $after_sig)) $after_url = null;
 }
+$redirect_after = bratonien_tools_webdav_derivative_needs_after_redirect($after_url) ? $after_url : null;
 
 $permission_condition = get_sql_condition_FandF(array('forbidden_categories'=>'category_id'), null, true);
 $access_result = pwg_query('SELECT 1 FROM '.IMAGE_CATEGORY_TABLE.' WHERE image_id='.$image_id.' AND '.$permission_condition.' LIMIT 1');
@@ -278,12 +286,47 @@ if ($target_path === '' || strpos($target_path, $derivative_root) !== 0)
 }
 if (is_file($target_path) && is_readable($target_path))
 {
-  if ($after_url !== null)
+  if ($redirect_after !== null)
   {
-    header('Location: '.$after_url, true, 302);
+    header('Location: '.$redirect_after, true, 302);
     exit;
   }
   bratonien_tools_webdav_derivative_serve($target_path);
+}
+
+$shadow_path = (string)($image_row['path'] ?? '');
+if ($shadow_path === '') bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Quellpfad fehlt.');
+if (strpos($shadow_path, '/') !== 0)
+{
+  $shadow_path = PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $shadow_path), '/');
+}
+$shadow_normalized = str_replace('\\', '/', $shadow_path);
+if (!preg_match('#/_data/bratonien-tools/nc-webdav-gallery/connection-'.(int)$source['connection_id'].'/#', $shadow_normalized))
+{
+  bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Quellpfad liegt nicht im WebDAV-Shadow-Baum.');
+}
+if (!is_link($shadow_path))
+{
+  bratonien_tools_webdav_derivative_abort(500, 'WebDAV-Shadow-Quelle ist kein Placeholder-Symlink.');
+}
+
+$placeholder_target = realpath($shadow_path);
+$placeholder_normalized = $placeholder_target === false ? '' : str_replace('\\', '/', $placeholder_target);
+if (
+  $placeholder_target === false
+  || !preg_match(
+    '#/nc-webdav-source/connection-'.(int)$source['connection_id'].'/root-'.(int)$source['root_fileid'].'/#',
+    $placeholder_normalized
+  )
+)
+{
+  bratonien_tools_webdav_derivative_abort(500, 'WebDAV-Placeholder-Ziel ist ungueltig.');
+}
+
+$shadow_dir = dirname($shadow_path);
+if (!is_dir($shadow_dir) || !is_writable($shadow_dir))
+{
+  bratonien_tools_webdav_derivative_abort(500, 'WebDAV-Shadow-Verzeichnis ist fuer PHP nicht beschreibbar.');
 }
 
 $upload_dir = rtrim((string)($GLOBALS['conf']['upload_dir'] ?? './upload'), '/');
@@ -298,7 +341,7 @@ if (!is_writable($work_root))
   bratonien_tools_webdav_derivative_abort(500, 'WebDAV-Materialisierungsbereich ist fuer PHP nicht beschreibbar.');
 }
 
-$lock_path = $work_root.'/image-'.$image_id.'-'.sha1($variant).'.lock';
+$lock_path = $work_root.'/image-'.$image_id.'.lock';
 $lock = @fopen($lock_path, 'c');
 if (!$lock || !flock($lock, LOCK_EX))
 {
@@ -311,40 +354,35 @@ if (is_file($target_path) && is_readable($target_path))
 {
   @flock($lock, LOCK_UN);
   @fclose($lock);
-  if ($after_url !== null)
+  if ($redirect_after !== null)
   {
-    header('Location: '.$after_url, true, 302);
+    header('Location: '.$redirect_after, true, 302);
     exit;
   }
   bratonien_tools_webdav_derivative_serve($target_path);
 }
 
-$extension = strtolower(pathinfo((string)($image_row['path'] ?? ''), PATHINFO_EXTENSION));
-if (!in_array($extension, array('jpg', 'jpeg', 'png', 'gif', 'webp'), true)) $extension = 'jpg';
-
 $token = getmypid().'-'.bin2hex(random_bytes(6));
-$source_filename = 'source-'.$image_id.'-'.$token.'.'.$extension;
-$source_path = $work_root.'/'.$source_filename;
-$source_rel = $work_rel_dir.'/'.$source_filename;
-$temp_image_id = 0;
-$temp_derivative_path = '';
-$staging_target = '';
+$download_path = $work_root.'/source-'.$image_id.'-'.$token.'.tmp';
+$staging_path = $shadow_path.'.bratonien-'.$token.'.tmp';
+$placeholder_backup = $shadow_path.'.bratonien-placeholder';
+$swapped = false;
 $cleaned = false;
 
-$cleanup = function() use (&$cleaned, &$temp_image_id, &$temp_derivative_path, &$staging_target, $source_path, $lock)
+$cleanup = function() use (&$cleaned, &$swapped, $shadow_path, $staging_path, $placeholder_backup, $download_path, $lock)
 {
   if ($cleaned) return;
   $cleaned = true;
 
-  if ($temp_image_id > 0)
+  if ($swapped)
   {
-    @pwg_query('DELETE FROM '.IMAGES_TABLE.' WHERE id='.(int)$temp_image_id.' LIMIT 1');
-    $temp_image_id = 0;
+    if (is_file($shadow_path) && !is_link($shadow_path)) @unlink($shadow_path);
+    if (is_link($placeholder_backup)) @rename($placeholder_backup, $shadow_path);
+    $swapped = false;
   }
 
-  if ($temp_derivative_path !== '' && is_file($temp_derivative_path)) @unlink($temp_derivative_path);
-  if ($staging_target !== '' && is_file($staging_target)) @unlink($staging_target);
-  if (is_file($source_path)) @unlink($source_path);
+  if (is_file($staging_path) || is_link($staging_path)) @unlink($staging_path);
+  if (is_file($download_path)) @unlink($download_path);
 
   @flock($lock, LOCK_UN);
   @fclose($lock);
@@ -353,48 +391,45 @@ register_shutdown_function($cleanup);
 
 try
 {
+  if (is_link($placeholder_backup))
+  {
+    bratonien_tools_webdav_derivative_abort(503, 'WebDAV-Placeholder-Backup existiert bereits; vorheriger Materialisierungslauf ist nicht sauber abgeschlossen.');
+  }
+
   $detail = '';
-  if (!bratonien_tools_webdav_derivative_download($source, $source_path, $detail))
+  if (!bratonien_tools_webdav_derivative_download($source, $download_path, $detail))
   {
     bratonien_tools_webdav_derivative_abort(502, $detail);
   }
 
-  $dimensions = @getimagesize($source_path);
-  if (!is_array($dimensions) || empty($dimensions[0]) || empty($dimensions[1]))
+  if (!@copy($download_path, $staging_path))
   {
-    bratonien_tools_webdav_derivative_abort(500, 'Materialisiertes Original besitzt keine gueltigen Bildabmessungen.');
+    bratonien_tools_webdav_derivative_abort(500, 'Original konnte nicht in den WebDAV-Shadow-Baum kopiert werden.');
+  }
+  @chmod($staging_path, 0644);
+  if (@getimagesize($staging_path) === false)
+  {
+    bratonien_tools_webdav_derivative_abort(500, 'Materialisierte Shadow-Quelle ist kein gueltiges Bild.');
   }
 
-  $temp_row = $image_row;
-  unset($temp_row['id']);
-  $temp_row['path'] = $source_rel;
-  $temp_row['file'] = $source_filename;
-  if (array_key_exists('width', $temp_row)) $temp_row['width'] = (int)$dimensions[0];
-  if (array_key_exists('height', $temp_row)) $temp_row['height'] = (int)$dimensions[1];
-
-  single_insert(IMAGES_TABLE, $temp_row);
-  $temp_image_id = (int)pwg_db_insert_id();
-  if ($temp_image_id < 1)
+  if (!@rename($shadow_path, $placeholder_backup))
   {
-    bratonien_tools_webdav_derivative_abort(500, 'Temporaerer Piwigo-Materialisierungseintrag konnte nicht angelegt werden.');
+    bratonien_tools_webdav_derivative_abort(500, 'WebDAV-Placeholder konnte nicht temporaer gesichert werden.');
+  }
+  if (!@rename($staging_path, $shadow_path))
+  {
+    @rename($placeholder_backup, $shadow_path);
+    bratonien_tools_webdav_derivative_abort(500, 'Materialisiertes Original konnte nicht am Piwigo-Quellpfad aktiviert werden.');
+  }
+  $swapped = true;
+
+  clearstatcache(true, $shadow_path);
+  if (!is_file($shadow_path) || is_link($shadow_path) || @getimagesize($shadow_path) === false)
+  {
+    bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Quellpfad enthaelt nach Materialisierung kein gueltiges Original.');
   }
 
-  $temp_row['id'] = $temp_image_id;
-  $temp_src = new SrcImage($temp_row);
-  $temp_derivative = new DerivativeImage($params, $temp_src);
-  if ($temp_derivative->same_as_source())
-  {
-    bratonien_tools_webdav_derivative_abort(500, 'Temporaeres Piwigo-Derivat ist unerwartet identisch mit der Quelle.');
-  }
-
-  $temp_derivative_path = $temp_derivative->get_path();
-  if ($temp_derivative_path === '' || strpos($temp_derivative_path, $derivative_root) !== 0)
-  {
-    bratonien_tools_webdav_derivative_abort(500, 'Temporaerer Piwigo-Derivatpfad ist ungueltig.');
-  }
-  if (is_file($temp_derivative_path)) @unlink($temp_derivative_path);
-
-  $inner_url = bratonien_tools_webdav_derivative_inner_url($temp_derivative_path);
+  $inner_url = bratonien_tools_webdav_derivative_inner_url($target_path);
   if ($inner_url === null)
   {
     bratonien_tools_webdav_derivative_abort(500, 'Piwigo-i.php-URL konnte nicht bestimmt werden.');
@@ -406,58 +441,17 @@ try
     bratonien_tools_webdav_derivative_abort(502, $detail);
   }
 
-  clearstatcache(true, $temp_derivative_path);
-  $temp_size = @getimagesize($temp_derivative_path);
-  if (!is_file($temp_derivative_path) || !is_readable($temp_derivative_path) || !is_array($temp_size))
-  {
-    bratonien_tools_webdav_derivative_abort(500, 'Piwigo hat kein gueltiges temporaeres Derivat erzeugt.');
-  }
-
-  clearstatcache(true, $target_path);
-  if (!is_file($target_path))
-  {
-    $target_dir = dirname($target_path);
-    $mode = $GLOBALS['conf']['chmod_value'] ?? 0755;
-    if (!is_dir($target_dir) && !@mkdir($target_dir, $mode, true))
-    {
-      bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Derivatverzeichnis konnte nicht angelegt werden.');
-    }
-    if (!is_writable($target_dir))
-    {
-      bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Derivatverzeichnis ist nicht beschreibbar.');
-    }
-
-    $staging_target = $target_path.'.bratonien-'.$token.'.tmp';
-    if (!@copy($temp_derivative_path, $staging_target))
-    {
-      bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Derivat konnte nicht in den Zielbereich uebertragen werden.');
-    }
-    @chmod($staging_target, 0644);
-
-    if (!@rename($staging_target, $target_path))
-    {
-      @unlink($staging_target);
-      $staging_target = '';
-      clearstatcache(true, $target_path);
-      if (!is_file($target_path))
-      {
-        bratonien_tools_webdav_derivative_abort(500, 'Piwigo-Derivat konnte nicht atomar aktiviert werden.');
-      }
-    }
-    $staging_target = '';
-  }
-
   clearstatcache(true, $target_path);
   $final_size = @getimagesize($target_path);
   if (!is_file($target_path) || !is_readable($target_path) || !is_array($final_size))
   {
-    bratonien_tools_webdav_derivative_abort(500, 'Finales Piwigo-Derivat ist nicht gueltig.');
+    bratonien_tools_webdav_derivative_abort(500, 'Piwigo hat kein gueltiges finales Derivat erzeugt.');
   }
 
   $cleanup();
-  if ($after_url !== null)
+  if ($redirect_after !== null)
   {
-    header('Location: '.$after_url, true, 302);
+    header('Location: '.$redirect_after, true, 302);
     exit;
   }
   bratonien_tools_webdav_derivative_serve($target_path);
