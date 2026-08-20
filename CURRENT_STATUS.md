@@ -2,7 +2,7 @@
 
 ## Version
 
-**Bratonien Tools 0.9.6.8.19**
+**Bratonien Tools 0.9.6.8.25**
 
 Zielplattform der produktiven NC-Connector-Synchronisierung ist derzeit **Piwigo 16.4.0**.
 
@@ -40,9 +40,11 @@ Die verbindungsspezifischen Runtime-Konfigurationen liegen unter `/etc/bratonien
 
 Der Reconcile- und Shell-Pfad unterstützt den leeren WebDAV-Root ausdrücklich und gibt ihn als `--root ""` an den Platzhalter-Builder weiter.
 
-### Platzhalterquelle und Shadow Tree
+### Platzhalterquelle, Metadaten und Shadow Tree
 
 `runtime/lib/build_webdav_placeholder_source.py` bildet die Nextcloud-Inhalte als lokale Platzhalterquelle ab. Für Bilder existieren physische 1×1-Platzhalterdateien; die Originale werden dabei nicht dauerhaft heruntergeladen.
+
+Der WebDAV-Scan übernimmt zusätzlich die von Nextcloud gelieferten Bildmaße aus `nc:metadata-photos-size`. `width`, `height` und `fileid` werden im `webdav-map.json` geführt. Nach dem normalen Piwigo-Dateisync überträgt `runtime/lib/sync-webdav-metadata.php` die Originalmaße in `piwigo_images`, damit Piwigo seine Derivatgrößen und Lazy-Loading-Geometrie auf Basis der echten Bildabmessungen berechnet.
 
 `runtime/lib/shadow_tree.py` erzeugt atomar die Dateisystemstruktur, die Piwigo als physische Site sieht. Shadow-Verzeichnisse werden so angelegt, dass der Webserver die für die On-Demand-Materialisierung nötigen Dateisystemoperationen ausführen kann.
 
@@ -56,23 +58,26 @@ Danach wird `bratonien.nc.syncOrphans` für die konkrete WebDAV-Site ausgeführt
 
 Der Shadow Tree stellt Piwigo ausschließlich die physische Album-/Bildstruktur bereit. Albumdatensätze, Bilddatensätze, Bild-Kategorie-Verknüpfungen und Piwigo-Derivate bleiben Aufgabe von Piwigo.
 
-### On-Demand-Materialisierung vor `i.php`
+### On-Demand-Materialisierung und Derivaterzeugung
 
-Die produktive WebDAV-Derivaterzeugung sitzt vor Piwigos `i.php`.
-
-`include/webdav_materialize_runtime.inc.php` löst aus dem Piwigo-Bildpfad die konkrete Verbindung, den ausgewählten Nextcloud-Root und den relativen WebDAV-Pfad auf.
+`include/webdav_materialize_runtime.inc.php` löst aus dem Piwigo-Bildpfad die konkrete Verbindung, den ausgewählten Nextcloud-Root, den relativen WebDAV-Pfad sowie die Mapping-Metadaten `fileid`, `width`, `height`, MIME-Typ, Größe und ETag auf.
 
 Für ein noch nicht vorhandenes Derivat läuft `webdav-derivative.php`:
 
 1. Zugriffsprüfung für das Piwigo-Bild;
-2. Download des Originals aus Nextcloud in eine temporäre Datei;
-3. temporäres Bereitstellen des Originals am exakten von Piwigo erwarteten Quellpfad;
-4. Aufruf des nativen Piwigo-`i.php`;
-5. Piwigo erzeugt sein normales Derivat;
-6. Wiederherstellung des Shadow-/Platzhalterzustands;
-7. Auslieferung des Piwigo-Derivats.
+2. Auswahl einer temporären Nextcloud-Quelle;
+3. temporäres Bereitstellen dieser Quelle am exakten von Piwigo erwarteten Quellpfad;
+4. Erzeugung des normalen Piwigo-Derivats mit Piwigos eigener `pwg_image`-/Derivative-Logik im selben PHP-Prozess;
+5. Wiederherstellung des Shadow-/Platzhalterzustands;
+6. Auslieferung des Piwigo-Derivats.
 
-Das Original verbleibt in Nextcloud. Es gibt keine dauerhafte vollständige Originalkopie in Piwigo.
+Ein interner HTTP-Self-Request auf `i.php` wird nicht mehr verwendet. Damit wird kein zusätzlicher PHP-FPM-Worker pro Derivaterzeugung benötigt.
+
+Für die erste Preview-Stufe verwenden ausschließlich `custom:s9999x250` und `standard:square` den authentifizierten Nextcloud-Endpunkt `/core/preview` anhand der Nextcloud-`fileid`. Die Preview wird mit etwa doppelter benötigter Piwigo-Auflösung und erhaltenem Seitenverhältnis angefordert. Die Berechnung berücksichtigt das Original-Seitenverhältnis, damit auch Crop-Derivate genügend Pixel erhalten. Varianten mit Bildrotation werden in dieser Stufe nicht über Preview erzeugt.
+
+Ist keine geeignete Preview planbar oder schlägt der Preview-Abruf fehl, fällt der Gate automatisch auf den vollständigen WebDAV-Originaldownload zurück. Große/originale Anforderungen verwenden weiterhin die Originalquelle.
+
+Die temporäre Preview bzw. das temporäre Original wird nach der Derivaterzeugung entfernt. Das fertige Derivat verbleibt ausschließlich in Piwigos normalem `_data/i`-Cache. Der Connector führt keinen parallelen permanenten Derivat-Cache.
 
 ### Orphan-Logik
 
@@ -104,13 +109,13 @@ Eine WebDAV-Verbindung kann unabhängig von ihrer Reihenfolge gelöscht werden. 
 
 ### Diagnose
 
-Der WebDAV-Derivative-Gate schreibt Request-bezogene `[BRAT-WD ...]`-Diagnoseeinträge. Der Verbindungsstatus wird pro Verbindung geführt. Runtime-Probleme lassen sich zusätzlich über `bratonien-nc-connector.service` nachvollziehen.
+Der WebDAV-Derivative-Gate schreibt Request-bezogene `[BRAT-WD ...]`-Diagnoseeinträge. Für neue Derivate zeigen `preview_start`, `preview_failed`, `download_done mode=preview|original`, `generate_start` und `generate_done` den verwendeten Quellpfad und die Laufzeiten. Der Verbindungsstatus wird pro Verbindung geführt. Runtime-Probleme lassen sich zusätzlich über `bratonien-nc-connector.service` nachvollziehen.
 
 ## Aktuell relevante Dateien
 
 - `main.inc.php` – Plugin-Hooks, Connector-Sync-Hilfen, Dashboard-Prefilter
-- `include/webdav_materialize_runtime.inc.php` – WebDAV-Quellauflösung und Materialisierung
-- `webdav-derivative.php` – On-Demand-Gate vor Piwigos `i.php`
+- `include/webdav_materialize_runtime.inc.php` – WebDAV-Quellauflösung einschließlich `fileid` und Originalmaßen
+- `webdav-derivative.php` – On-Demand-Gate, Nextcloud-Preview/Original-Fallback und Piwigo-Derivaterzeugung
 - `webdav-image.php` – direkte WebDAV-Originalauslieferung
 - `include/nc_productive_ws.inc.php` – direkter Piwigo-Core-Sync für 16.4.0
 - `include/nc_orphan_ws.inc.php` – Root-Orphan-Synchronisierung
@@ -119,15 +124,16 @@ Der WebDAV-Derivative-Gate schreibt Request-bezogene `[BRAT-WD ...]`-Diagnoseein
 - `runtime/cleanup-webdav-piwigo.php` – Bereinigung verwaister Piwigo-Sites
 - `runtime/sync-webdav.sh` – verbindungsspezifischer Sync
 - `runtime/run-all.sh` – gemeinsamer Runner
-- `runtime/lib/build_webdav_placeholder_source.py` – WebDAV-Scan und Platzhalterquelle
+- `runtime/lib/build_webdav_placeholder_source.py` – WebDAV-Scan, Bildmetadaten und Platzhalterquelle
+- `runtime/lib/sync-webdav-metadata.php` – Übernahme der Originalmaße nach Piwigo
 - `runtime/lib/shadow_tree.py` – atomarer Shadow Tree
 - `runtime/lib/piwigo-sync.php` – Piwigo-API/Fallback-Sync
 
 ## Nicht mehr das produktive WebDAV-Modell
 
-Nicht mehr maßgeblich für die produktive WebDAV-Derivaterzeugung ist das frühere Modell, bei dem Bild-URLs einfach auf einen separaten WebDAV-Bildstream umgebogen wurden oder der Connector selbst einen parallelen vollständigen Derivatbestand verwalten sollte.
+Nicht mehr maßgeblich sind das frühere Modell eines separaten WebDAV-Bildstreams als Derivatquelle, ein paralleler vollständiger Connector-Derivatbestand oder ein interner HTTP-Aufruf von `webdav-derivative.php` zurück auf Piwigos `i.php`.
 
-Maßgeblich ist: **physischer Platzhalter + On-Demand-Original + natives Piwigo-`i.php` + Wiederherstellung des Platzhalters**.
+Maßgeblich ist: **physischer Platzhalter + passende temporäre Nextcloud-Preview bzw. Original-Fallback + Piwigos Bildverarbeitung im selben PHP-Prozess + normales Piwigo-Derivat + Wiederherstellung des Platzhalters**.
 
 ## Prüfpflicht vor Merge
 
