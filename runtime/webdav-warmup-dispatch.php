@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.17';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.19';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -74,6 +74,14 @@ $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.log';
 $result = 0;
 $started = 0;
 $matched = 0;
+
+// Ein manueller Lauf wird bereits vom Admin-Handler als eigener nohup-
+// Dispatcher gestartet. Innerhalb dieses Hintergrundprozesses darf nicht noch
+// einmal ein zweiter, abgekoppelter nohup-Prozess erzeugt werden: sonst kann
+// der Dispatcher erfolgreich enden, obwohl der eigentliche Worker nie bis zum
+// Scan kommt. Manual/Rebuild laufen deshalb im Dispatcher-Prozess selbst.
+$run_inline = $wait || in_array($mode, array('manual','rebuild'), true);
+
 foreach (bratonien_tools_nc_connector_connections() as $connection)
 {
   if (empty($connection['enabled']) || !bratonien_tools_nc_connector_is_webdav($connection)) continue;
@@ -121,13 +129,34 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     ? escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command
     : $worker_command;
 
-  if ($wait)
+  if ($run_inline)
   {
     $output = array();
     $exit = 1;
     @exec($base.' 2>&1', $output, $exit);
-    foreach ($output as $line) fwrite(STDOUT, $line."\n");
-    if ($exit !== 0) $result = $exit;
+    foreach ($output as $line)
+    {
+      fwrite(STDOUT, $line."\n");
+      @file_put_contents($log, $line."\n", FILE_APPEND | LOCK_EX);
+    }
+    if ($exit !== 0)
+    {
+      $result = $exit;
+      if (function_exists('bratonien_tools_webdav_warmup_write_status'))
+      {
+        $detail = $output ? implode(' ', array_slice($output, -4)) : 'Worker Exit '.$exit;
+        bratonien_tools_webdav_warmup_write_status(
+          $connection_id,
+          'error',
+          'WebDAV-Worker wurde gestartet, ist aber vor erfolgreichem Abschluss beendet worden: '.$detail,
+          array('mode'=>$mode)
+        );
+      }
+    }
+    else
+    {
+      $started++;
+    }
   }
   else
   {
@@ -152,5 +181,5 @@ if ($connection_filter > 0 && $matched === 0)
   fwrite(STDERR, "WebDAV-Verbindung #{$connection_filter} wurde nicht als aktive Connector-Verbindung gefunden.\n");
   exit(1);
 }
-if (!$wait) fwrite(STDOUT, "Gestartete WebDAV-Worker: {$started}.\n");
+if (!$run_inline) fwrite(STDOUT, "Gestartete WebDAV-Worker: {$started}.\n");
 exit($result);
