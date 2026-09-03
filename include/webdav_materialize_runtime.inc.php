@@ -126,6 +126,7 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
     'fileid'=>$fileid,
     'width'=>$width,
     'height'=>$height,
+    'state_dir'=>$state_dir,
     'coi'=>$row['coi'] ?? null,
   );
 }
@@ -244,7 +245,7 @@ function bratonien_tools_webdav_materialize_after_signature($image_id, $variant,
 
 function bratonien_tools_webdav_materialize_derivative_url($image_id, $variant, array $info, $after_url='')
 {
-  $url = get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-derivative.php?id='.(int)$image_id.'&variant='.rawurlencode($variant);
+  $url = get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/webdav-derivative-guard.php?id='.(int)$image_id.'&variant='.rawurlencode($variant);
   if ($after_url !== '')
   {
     $url .= '&after='.rawurlencode(bratonien_tools_webdav_materialize_b64url_encode($after_url));
