@@ -17,6 +17,7 @@ define('BRATONIEN_TOOLS_PATH', PHPWG_PLUGINS_PATH . BRATONIEN_TOOLS_ID . '/');
 
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_runtime.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_image_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_cache_validation.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_materialize_runtime.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/picture_navigation.inc.php');
