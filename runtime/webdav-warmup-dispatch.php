@@ -37,9 +37,11 @@ require_once(BRATONIEN_TOOLS_PATH.'include/webdav_warmup_settings.inc.php');
 
 $mode = 'periodic';
 $wait = false;
+$connection_filter = 0;
 foreach ($argv as $arg)
 {
   if (preg_match('/^--mode=(sync|periodic|manual)$/', $arg, $m)) $mode = $m[1];
+  elseif (preg_match('/^--connection-id=(\d+)$/', $arg, $m)) $connection_filter = (int)$m[1];
   elseif ($arg === '--wait') $wait = true;
 }
 
@@ -71,11 +73,14 @@ if (!$guard || !is_file($guard))
 $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.log';
 $result = 0;
 $started = 0;
+$matched = 0;
 foreach (bratonien_tools_nc_connector_connections() as $connection)
 {
   if (empty($connection['enabled']) || !bratonien_tools_nc_connector_is_webdav($connection)) continue;
   $connection_id = (int)$connection['id'];
   if ($connection_id < 1) continue;
+  if ($connection_filter > 0 && $connection_id !== $connection_filter) continue;
+  $matched++;
 
   $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
   $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
@@ -120,5 +125,10 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
   }
 }
 
+if ($connection_filter > 0 && $matched === 0)
+{
+  fwrite(STDERR, "WebDAV-Verbindung #{$connection_filter} wurde nicht als aktive Connector-Verbindung gefunden.\n");
+  exit(1);
+}
 if (!$wait) fwrite(STDOUT, "Gestartete Warmup-Prozesse: {$started}.\n");
 exit($result);
