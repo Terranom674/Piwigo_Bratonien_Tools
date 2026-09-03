@@ -58,9 +58,15 @@ if (!function_exists('exec'))
 }
 
 $worker = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/webdav-cache-warmup.php');
+$priority_waiter = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/run-webdav-priority-wait.sh');
 if (!$worker || !is_file($worker))
 {
   fwrite(STDERR, "WebDAV-Cache-Warmup-Worker wurde nicht gefunden.\n");
+  exit(1);
+}
+if (!$priority_waiter || !is_file($priority_waiter))
+{
+  fwrite(STDERR, "WebDAV-Prioritäts-Warter wurde nicht gefunden.\n");
   exit(1);
 }
 
@@ -129,13 +135,21 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     @chmod($priority_file, 0664);
   }
 
-  // Der Worker schützt nur die kurze produktive Materialisierungsphase eines
-  // einzelnen Bildes mit webdav-sync.lock. Downloads und Batchgrenzen bleiben
-  // frei, damit ein Connector-Sync neue Alben erkennen und Stufe 2 sicher
-  // zwischen zwei vollständig restaurierten Batches priorisieren kann.
-  $base = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
+  $worker_command = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
     .' --connection-id='.$connection_id
     .' --mode='.escapeshellarg($mode);
+
+  if ($mode === 'sync')
+  {
+    // Ein bereits laufender Worker darf seinen aktuellen Bild-/Batchvorgang
+    // vollständig restaurieren. Der Waiter startet den priorisierten Sync-Lauf
+    // danach automatisch, statt die Prioritätsmarke verloren gehen zu lassen.
+    $base = escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command;
+  }
+  else
+  {
+    $base = $worker_command;
+  }
 
   if ($wait)
   {
