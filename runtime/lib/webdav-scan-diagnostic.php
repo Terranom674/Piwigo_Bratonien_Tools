@@ -35,7 +35,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/webdav-scan-diagnostic.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Scan-Diagnostic/0.9.7.1.20';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Scan-Diagnostic/0.9.7.1.21';
 $_SERVER['HTTPS'] = 'off';
 
 try
@@ -53,6 +53,29 @@ try
   $gallery_root = rtrim((string)($config['parallel_gallery_root'] ?? ''), '/');
   if ($state_dir === '') throw new RuntimeException('Connector-State-Verzeichnis fehlt.');
   if ($gallery_root === '') throw new RuntimeException('Shadow-Tree-Pfad fehlt in der Connector-Konfiguration.');
+
+  $lock_file = $state_dir.'/webdav-cache-warmup.lock';
+  $worker_lock_state = 'open_failed';
+  $worker_lock_detail = '';
+  $lock_handle = @fopen($lock_file, 'c');
+  if (is_resource($lock_handle))
+  {
+    if (@flock($lock_handle, LOCK_EX | LOCK_NB))
+    {
+      $worker_lock_state = 'free';
+      @flock($lock_handle, LOCK_UN);
+    }
+    else
+    {
+      $worker_lock_state = 'busy';
+      $worker_lock_detail = 'Ein anderer Prozess haelt den WebDAV-Worker-Lock.';
+    }
+    fclose($lock_handle);
+  }
+  else
+  {
+    $worker_lock_detail = 'Worker-Lock-Datei konnte nicht geoeffnet werden.';
+  }
 
   $mapping_file = $state_dir.'/webdav-map.json';
   if (!is_file($mapping_file) || !is_readable($mapping_file)) throw new RuntimeException('WebDAV-Mapping fehlt oder ist nicht lesbar: '.$mapping_file);
@@ -124,12 +147,17 @@ try
     }
   }
 
+  $scan_ok = ($shadow_links > 0 && $matched === $shadow_links && $broken === 0 && $unmapped === 0 && $duplicates === 0);
   $payload = array(
-    'ok'=>($shadow_links > 0 && $matched === $shadow_links && $broken === 0 && $unmapped === 0 && $duplicates === 0),
+    'ok'=>$scan_ok && $worker_lock_state !== 'open_failed',
+    'scan_ok'=>$scan_ok,
     'connection_id'=>$connection_id,
     'state_dir'=>$state_dir,
     'gallery_root'=>$gallery_root,
     'mapping_file'=>$mapping_file,
+    'worker_lock_file'=>$lock_file,
+    'worker_lock_state'=>$worker_lock_state,
+    'worker_lock_detail'=>$worker_lock_detail,
     'mapping_files'=>count($mapped_files),
     'shadow_links'=>$shadow_links,
     'matched'=>$matched,
