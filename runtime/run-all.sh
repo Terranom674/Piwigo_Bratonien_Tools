@@ -31,19 +31,24 @@ result=0
 for config in "${webdav_configs[@]}"; do
     name="$(basename "$config")"
     echo "NC Connector WebDAV: $name"
-    if ! env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
+    if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
+        # Ein neues Album soll nicht bis zur periodischen Einzelbildprüfung
+        # warten. Direkt nach dem vollständig erfolgreichen Sync dieser
+        # Verbindung darf der Warmup gezielt nur diese Verbindung prüfen.
+        if [[ -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" && "$name" =~ ^webdav-connection-([0-9]+)\.conf$ ]]; then
+            connection_id="${BASH_REMATCH[1]}"
+            php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=sync --connection-id="$connection_id" || result=1
+        fi
+    else
         result=1
     fi
 done
 
-# Erst nach vollständig beendetem Connector-Lauf darf der Cache-Warmup den
-# produktiven Source-/Shadow-Tree lesen. Der Dispatcher ist in der Patchphase
-# standardmäßig deaktiviert und startet nur, wenn die Plugin-Einstellung das
-# ausdrücklich erlaubt. Neue Alben werden im sync-Modus sofort priorisiert;
-# die periodische Prüfung sammelt einzelne neue/geänderte Bilder und führt ihre
-# eigentliche Prüfung nur im konfigurierten Intervall aus.
+# Einzelne neue/geänderte Bilder in bereits bekannten Alben werden nur über
+# die periodische Eingangsprüfung behandelt. Der Dispatcher liest zunächst nur
+# den Warmup-State und startet die eigentliche Prüfung erst, wenn das im Plugin
+# konfigurierte Intervall (Standard: 12 Stunden) wirklich fällig ist.
 if [[ "$result" -eq 0 && -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" ]]; then
-    php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=sync || result=1
     php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=periodic || result=1
 fi
 
