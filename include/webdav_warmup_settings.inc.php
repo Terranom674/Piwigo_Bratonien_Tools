@@ -45,8 +45,8 @@ function bratonien_tools_webdav_warmup_missing_baselines()
     if (empty($connection['enabled']) || !bratonien_tools_nc_connector_is_webdav($connection)) continue;
     $connection_id = (int)($connection['id'] ?? 0);
     if ($connection_id < 1) continue;
-    $state_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.connection-'.$connection_id.'.json';
-    if (!is_file($state_file) || !is_readable($state_file)) $missing[] = '#'.$connection_id;
+    $index_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-source-index.connection-'.$connection_id.'.json';
+    if (!is_file($index_file) || !is_readable($index_file)) $missing[] = '#'.$connection_id;
   }
   return $missing;
 }
@@ -66,7 +66,7 @@ function bratonien_tools_save_webdav_warmup_settings()
     if ($missing)
     {
       throw new RuntimeException(
-        'WebDAV-Cache-Warmup bleibt deaktiviert. Bitte zuerst „Jetzt prüfen“ ausführen, damit der bestehende produktive Bestand nur als Ausgangszustand erfasst wird. Fehlende Baseline: '.implode(', ', $missing)
+        'WebDAV-Cache-Warmup bleibt deaktiviert. Bitte zuerst „Jetzt prüfen“ ausführen, damit der aktuelle Connector-Bestand als Quellenindex erfasst wird. Fehlender Quellenindex: '.implode(', ', $missing)
       );
     }
   }
@@ -98,7 +98,7 @@ function bratonien_tools_save_webdav_warmup_settings()
   }
 
   return array('message'=>sprintf(
-    'WebDAV-Cache-Warmup gespeichert: %s, %d Bilder pro Batch, Eingangsprüfung alle %d Stunden.',
+    'WebDAV-Cache-Warmup gespeichert: %s, %d Bilder pro Batch, Quellenindex-Abgleich alle %d Stunden.',
     $enabled ? 'automatisch aktiv' : 'Automatik deaktiviert',
     $batch_size,
     $periodic_hours
@@ -143,7 +143,7 @@ function bratonien_tools_start_webdav_warmup_manual()
 {
   return bratonien_tools_start_webdav_warmup_mode(
     'manual',
-    'WebDAV-Warmup: Prüfung auf neue oder geänderte Bilder wurde gestartet.'
+    'WebDAV-Quellenindex: Prüfung auf neue oder geänderte Bilder wurde gestartet.'
   );
 }
 
@@ -151,7 +151,7 @@ function bratonien_tools_start_webdav_cache_rebuild()
 {
   return bratonien_tools_start_webdav_warmup_mode(
     'rebuild',
-    'WebDAV-Bildcache: vollständiger Wiederaufbau wurde gestartet.'
+    'WebDAV-Bildcache: vollständiger Wiederaufbau durch Piwigo wurde gestartet.'
   );
 }
 
@@ -193,7 +193,7 @@ function bratonien_tools_get_webdav_warmup_status()
 {
   $status = array(
     'state'=>'idle',
-    'message'=>'Noch kein Warmup-Lauf protokolliert.',
+    'message'=>'Noch kein Quellenindex-/Warmup-Lauf protokolliert.',
     'updated_at'=>0,
   );
   $files = glob(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.status-*.json');
