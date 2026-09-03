@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.19';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.23';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -34,6 +34,37 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
 }
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/webdav_warmup_settings.inc.php');
+
+function bratonien_tools_webdav_dispatch_existing_status($connection_id)
+{
+  if (!function_exists('bratonien_tools_webdav_warmup_status_file_for_connection')) return null;
+  $file = bratonien_tools_webdav_warmup_status_file_for_connection($connection_id);
+  if (!is_file($file) || !is_readable($file)) return null;
+  $raw = @file_get_contents($file);
+  $data = $raw !== false ? json_decode($raw, true) : null;
+  return is_array($data) ? $data : null;
+}
+
+function bratonien_tools_webdav_dispatch_failure_lines(array $output)
+{
+  $failures = array();
+  foreach ($output as $line)
+  {
+    $line = trim((string)$line);
+    if ($line === '') continue;
+    if (
+      strpos($line, 'download_failed') !== false
+      || strpos($line, ' ok=0 ') !== false
+      || strpos($line, '[BRAT-WORKER] fatal ') !== false
+      || stripos($line, 'RESTORE FEHLGESCHLAGEN') !== false
+    )
+    {
+      $failures[] = $line;
+      if (count($failures) >= 8) break;
+    }
+  }
+  return $failures;
+}
 
 $mode = 'periodic';
 $wait = false;
@@ -75,11 +106,6 @@ $result = 0;
 $started = 0;
 $matched = 0;
 
-// Ein manueller Lauf wird bereits vom Admin-Handler als eigener nohup-
-// Dispatcher gestartet. Innerhalb dieses Hintergrundprozesses darf nicht noch
-// einmal ein zweiter, abgekoppelter nohup-Prozess erzeugt werden: sonst kann
-// der Dispatcher erfolgreich enden, obwohl der eigentliche Worker nie bis zum
-// Scan kommt. Manual/Rebuild laufen deshalb im Dispatcher-Prozess selbst.
 $run_inline = $wait || in_array($mode, array('manual','rebuild'), true);
 
 foreach (bratonien_tools_nc_connector_connections() as $connection)
@@ -144,13 +170,41 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
       $result = $exit;
       if (function_exists('bratonien_tools_webdav_warmup_write_status'))
       {
-        $detail = $output ? implode(' ', array_slice($output, -4)) : 'Worker Exit '.$exit;
-        bratonien_tools_webdav_warmup_write_status(
-          $connection_id,
-          'error',
-          'WebDAV-Worker wurde gestartet, ist aber vor erfolgreichem Abschluss beendet worden: '.$detail,
-          array('mode'=>$mode)
-        );
+        $existing = bratonien_tools_webdav_dispatch_existing_status($connection_id);
+        $failures = bratonien_tools_webdav_dispatch_failure_lines($output);
+        $terminal = is_array($existing) && in_array((string)($existing['state'] ?? ''), array('error','fatal','preempted'), true);
+
+        if ($terminal)
+        {
+          $message = trim((string)($existing['message'] ?? 'WebDAV-Worker wurde mit Fehlern beendet.'));
+          if ($failures)
+          {
+            $message .= ' Fehlerbeispiele: '.implode(' | ', $failures);
+          }
+          $extra = $existing;
+          unset($extra['state'], $extra['message'], $extra['connection_id'], $extra['updated_at']);
+          $extra['worker_exit_code'] = (int)$exit;
+          $extra['dispatcher_preserved_worker_status'] = true;
+          if ($failures) $extra['failure_examples'] = $failures;
+          bratonien_tools_webdav_warmup_write_status(
+            $connection_id,
+            (string)$existing['state'],
+            $message,
+            $extra
+          );
+        }
+        else
+        {
+          $detail = $failures
+            ? implode(' | ', $failures)
+            : ($output ? implode(' ', array_slice($output, -8)) : 'keine Worker-Ausgabe');
+          bratonien_tools_webdav_warmup_write_status(
+            $connection_id,
+            'error',
+            'WebDAV-Worker Exit '.(int)$exit.'. Ursache: '.$detail,
+            array('mode'=>$mode, 'worker_exit_code'=>(int)$exit, 'failure_examples'=>$failures)
+          );
+        }
       }
     }
     else
