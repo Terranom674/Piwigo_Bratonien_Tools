@@ -31,23 +31,28 @@ result=0
 for config in "${webdav_configs[@]}"; do
     name="$(basename "$config")"
     echo "NC Connector WebDAV: $name"
+    state_dir="$(PIWIGO_CONFIG="$config" bash -c 'source "$PIWIGO_CONFIG"; printf "%s" "${STATE_DIR:-}"')"
+    change_file="${state_dir%/}/webdav-sync-content-changed"
+
     if env PIWIGO_CONFIG="$config" bash "$SCRIPT_DIR/sync-webdav.sh"; then
-        # Ein neues Album soll nicht bis zur periodischen Einzelbildprüfung
-        # warten. Direkt nach dem vollständig erfolgreichen Sync dieser
-        # Verbindung darf der Warmup gezielt nur diese Verbindung prüfen.
-        if [[ -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" && "$name" =~ ^webdav-connection-([0-9]+)\.conf$ ]]; then
+        # Nur ein tatsaechlich geaenderter Connector-Bestand darf einen
+        # laufenden Cache-Rebuild priorisiert unterbrechen. Ein erfolgreicher
+        # Sync ohne Aenderung ist kein neuer Inhalt.
+        if [[ -f "$change_file" && -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" && "$name" =~ ^webdav-connection-([0-9]+)\.conf$ ]]; then
             connection_id="${BASH_REMATCH[1]}"
             php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=sync --connection-id="$connection_id" || result=1
+            rm -f -- "$change_file"
+        else
+            echo "NC Connector WebDAV: keine Inhaltsaenderung, kein priorisierter Warmup erforderlich."
         fi
     else
         result=1
     fi
 done
 
-# Einzelne neue/geänderte Bilder in bereits bekannten Alben werden nur über
-# die periodische Eingangsprüfung behandelt. Der Dispatcher liest zunächst nur
-# den Warmup-State und startet die eigentliche Prüfung erst, wenn das im Plugin
-# konfigurierte Intervall (Standard: 12 Stunden) wirklich fällig ist.
+# Einzelne neue/geänderte Bilder in bereits bekannten Alben werden weiterhin
+# über die periodische Eingangsprüfung behandelt. Der Dispatcher startet die
+# eigentliche Prüfung erst, wenn das konfigurierte Intervall fällig ist.
 if [[ "$result" -eq 0 && -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" ]]; then
     php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=periodic || result=1
 fi
