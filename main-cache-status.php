@@ -40,6 +40,7 @@ function bratonien_tools_status_webdav_label(array $status)
   $state = (string)($status['state'] ?? 'idle');
   $prefix = $connection > 0 ? 'WebDAV #'.$connection.': ' : 'WebDAV: ';
 
+  if ($state === 'queued') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Worker wartet auf den Start.');
   if ($state === 'scan')
   {
     $sources = (int)($status['shadow_sources'] ?? 0);
@@ -96,15 +97,27 @@ $webdav_error = false;
 $webdav_pending = false;
 $webdav_latest = 0;
 $webdav_lines = array();
-foreach ($webdav as $status)
+$webdav_all_complete = !empty($webdav);
+foreach ($webdav as &$status)
 {
   $state = (string)($status['state'] ?? 'idle');
-  $webdav_latest = max($webdav_latest, (int)($status['updated_at'] ?? 0));
-  if (in_array($state, array('scan','running'), true)) $webdav_active = true;
+  $updated = (int)($status['updated_at'] ?? 0);
+  $webdav_latest = max($webdav_latest, $updated);
+
+  if ($state === 'queued' && $updated > 0 && (time() - $updated) > 45)
+  {
+    $state = 'error';
+    $status['state'] = 'error';
+    $status['message'] = 'Worker wurde angefordert, hat aber innerhalb von 45 Sekunden keinen Scan gestartet.';
+  }
+
+  if (in_array($state, array('queued','scan','running'), true)) $webdav_active = true;
   if ($state === 'preempted') $webdav_pending = true;
   if (in_array($state, array('error','fatal'), true)) $webdav_error = true;
+  if ($state !== 'complete') $webdav_all_complete = false;
   $webdav_lines[] = bratonien_tools_status_webdav_label($status);
 }
+unset($status);
 
 $local_state = (string)($local['state'] ?? 'idle');
 $local_updated = (int)($local['updated_at'] ?? 0);
@@ -154,7 +167,7 @@ elseif ($webdav_pending)
   $overall['message'] = 'Cache-Aufbau wartet auf priorisierte Connector-Inhalte. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
-elseif ($webdav && $local_state === 'complete')
+elseif ($webdav_all_complete && $local_state === 'complete')
 {
   $overall['state'] = 'complete';
   $overall['message'] = 'Cache-Aufbau abgeschlossen. '.$local_label;
@@ -162,6 +175,10 @@ elseif ($webdav && $local_state === 'complete')
 }
 else
 {
+  // Ein alter complete-Status darf niemals einen neuen Lauf als fertig markieren.
+  // Idle/unklare WebDAV-Zustände bleiben sichtbar, bis ein echter Lauf einen
+  // aktuellen queued/scan/running/complete/error-Zustand geschrieben hat.
+  $overall['state'] = $local_state === 'complete' ? 'idle' : $local_state;
   $overall['message'] = $local_label;
   if ($webdav_lines) $overall['current'] = implode(' ', $webdav_lines);
 }
