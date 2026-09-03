@@ -5,6 +5,7 @@ if (!defined('PHPWG_ROOT_PATH'))
 }
 
 require_once(BRATONIEN_TOOLS_PATH . 'tools/image_cache.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/cache_clear_atomic.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_profiles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
@@ -28,7 +29,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_warmup_settings.inc.php');
 function bratonien_tools_get_tools()
 {
   return array(
-    'image_cache_clear' => array('handler' => 'bratonien_tools_clear_image_cache'),
+    'image_cache_clear' => array('handler' => 'bratonien_tools_clear_image_cache_atomic'),
     'image_cache_build' => array('handler' => 'bratonien_tools_start_main_cache_build'),
     'image_cache_cancel' => array('handler' => 'bratonien_tools_cancel_main_cache_build'),
     'image_cache_worker_settings' => array('handler' => 'bratonien_tools_save_cache_worker_settings'),
