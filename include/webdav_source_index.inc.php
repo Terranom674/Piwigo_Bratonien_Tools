@@ -117,7 +117,11 @@ function bratonien_tools_webdav_source_index_metadata(array $source, $image_id)
 
 function bratonien_tools_webdav_source_index_is_current(array $entry, $signature)
 {
-  return isset($entry['source_signature']) && hash_equals((string)$entry['source_signature'], (string)$signature);
+  $signature = (string)$signature;
+  return isset($entry['source_signature'], $entry['stage1_signature'], $entry['stage2_signature'])
+    && hash_equals((string)$entry['source_signature'], $signature)
+    && hash_equals((string)$entry['stage1_signature'], $signature)
+    && hash_equals((string)$entry['stage2_signature'], $signature);
 }
 
 function bratonien_tools_webdav_source_index_prune(array &$index, array $current_keys)
