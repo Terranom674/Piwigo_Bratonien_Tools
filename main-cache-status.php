@@ -98,6 +98,9 @@ $webdav_pending = false;
 $webdav_latest = 0;
 $webdav_lines = array();
 $webdav_all_complete = !empty($webdav);
+$webdav_progress_total = 0;
+$webdav_progress_completed = 0;
+$webdav_source_total = 0;
 foreach ($webdav as &$status)
 {
   $state = (string)($status['state'] ?? 'idle');
@@ -109,6 +112,36 @@ foreach ($webdav as &$status)
     $state = 'error';
     $status['state'] = 'error';
     $status['message'] = 'Worker wurde angefordert, hat aber innerhalb von 45 Sekunden keinen Scan gestartet.';
+  }
+
+  if ($state === 'scan')
+  {
+    $selected = max(0, (int)($status['selected'] ?? 0));
+    $webdav_source_total += $selected;
+    $webdav_progress_total += $selected * 2;
+  }
+  elseif ($state === 'running')
+  {
+    $selected = max(0, (int)($status['selected_total'] ?? 0));
+    $stage = max(1, (int)($status['stage'] ?? 1));
+    $stage_completed = max(0, min($selected, (int)($status['stage_completed'] ?? 0)));
+    $webdav_source_total += $selected;
+    $webdav_progress_total += $selected * 2;
+    $webdav_progress_completed += $stage >= 2 ? $selected + $stage_completed : $stage_completed;
+  }
+  elseif ($state === 'complete' || $state === 'error' || $state === 'fatal' || $state === 'preempted')
+  {
+    $selected = max(0, (int)($status['selected'] ?? 0));
+    if ($selected > 0)
+    {
+      $stage1_completed = max(0, (int)($status['stage1_completed'] ?? 0));
+      $stage2_completed = max(0, (int)($status['stage2_completed'] ?? 0));
+      $stage1_failed = max(0, (int)($status['stage1_failed'] ?? 0));
+      $stage2_failed = max(0, (int)($status['stage2_failed'] ?? 0));
+      $webdav_source_total += $selected;
+      $webdav_progress_total += $selected * 2;
+      $webdav_progress_completed += min($selected * 2, $stage1_completed + $stage2_completed + $stage1_failed + $stage2_failed);
+    }
   }
 
   if (in_array($state, array('queued','scan','running'), true)) $webdav_active = true;
@@ -140,37 +173,53 @@ $overall = $local;
 $overall['local'] = $local;
 $overall['webdav'] = $webdav;
 $overall['updated_at'] = max($local_updated, $webdav_latest);
+$overall['source_total'] = $webdav_source_total;
+
+$local_total = max(0, (int)($local['total'] ?? 0));
+$local_completed = max(0, min($local_total, (int)($local['completed'] ?? 0)));
+$combined_total = $local_total + $webdav_progress_total;
+$combined_completed = $local_completed + min($webdav_progress_total, $webdav_progress_completed);
 
 if ($webdav_active)
 {
   $overall['state'] = 'running';
-  $overall['total'] = 0;
-  $overall['completed'] = 0;
-  $overall['generated'] = 0;
-  $overall['cached'] = 0;
-  $overall['skipped'] = 0;
-  $overall['message'] = 'Gesamtaufbau läuft. '.$local_label;
+  $overall['total'] = $combined_total;
+  $overall['completed'] = $combined_completed;
+  $overall['generated'] = (int)($local['generated'] ?? 0);
+  $overall['cached'] = (int)($local['cached'] ?? 0);
+  $overall['skipped'] = (int)($local['skipped'] ?? 0);
+  $overall['message'] = 'Gesamtaufbau läuft'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
 elseif ($webdav_error || $local_state === 'error')
 {
   $overall['state'] = 'error';
-  $overall['message'] = 'Cache-Aufbau mit Fehlern. '.$local_label;
+  if ($combined_total > 0)
+  {
+    $overall['total'] = $combined_total;
+    $overall['completed'] = $combined_completed;
+  }
+  $overall['message'] = 'Cache-Aufbau mit Fehlern'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
   $overall['errors'] = max(1, (int)($overall['errors'] ?? 0));
 }
 elseif ($webdav_pending)
 {
   $overall['state'] = 'queued';
-  $overall['total'] = 0;
-  $overall['completed'] = 0;
-  $overall['message'] = 'Cache-Aufbau wartet auf priorisierte Connector-Inhalte. '.$local_label;
+  $overall['total'] = $combined_total;
+  $overall['completed'] = $combined_completed;
+  $overall['message'] = 'Cache-Aufbau wartet auf priorisierte Connector-Inhalte'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
 elseif ($webdav_all_complete && $local_state === 'complete')
 {
   $overall['state'] = 'complete';
-  $overall['message'] = 'Cache-Aufbau abgeschlossen. '.$local_label;
+  if ($combined_total > 0)
+  {
+    $overall['total'] = $combined_total;
+    $overall['completed'] = $combined_total;
+  }
+  $overall['message'] = 'Cache-Aufbau abgeschlossen'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
 else
