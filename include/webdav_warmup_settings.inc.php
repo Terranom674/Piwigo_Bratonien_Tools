@@ -60,16 +60,7 @@ function bratonien_tools_save_webdav_warmup_settings()
   $batch_size = max(1, min(50, $batch_size));
   $periodic_hours = max(1, min(168, $periodic_hours));
 
-  if ($enabled && empty($current['enabled']))
-  {
-    $missing = bratonien_tools_webdav_warmup_missing_baselines();
-    if ($missing)
-    {
-      throw new RuntimeException(
-        'WebDAV-Cache-Warmup bleibt deaktiviert. Bitte zuerst „Jetzt prüfen“ ausführen, damit der aktuelle Connector-Bestand als Quellenindex erfasst wird. Fehlender Quellenindex: '.implode(', ', $missing)
-      );
-    }
-  }
+  $missing = $enabled ? bratonien_tools_webdav_warmup_missing_baselines() : array();
 
   $payload = array(
     'enabled'=>$enabled,
@@ -97,12 +88,18 @@ function bratonien_tools_save_webdav_warmup_settings()
     throw new RuntimeException('Warmup-Einstellungen konnten nicht atomar gespeichert werden.');
   }
 
-  return array('message'=>sprintf(
+  $message = sprintf(
     'WebDAV-Cache-Warmup gespeichert: %s, %d Bilder pro Batch, Quellenindex-Abgleich alle %d Stunden.',
     $enabled ? 'automatisch aktiv' : 'Automatik deaktiviert',
     $batch_size,
     $periodic_hours
-  ));
+  );
+  if ($enabled && $missing)
+  {
+    $message .= ' Für '.implode(', ', $missing).' existiert noch kein Quellenindex; dieser wird beim ersten Worker-Lauf automatisch als Ausgangsbestand angelegt.';
+  }
+
+  return array('message'=>$message);
 }
 
 function bratonien_tools_webdav_warmup_php_cli()
