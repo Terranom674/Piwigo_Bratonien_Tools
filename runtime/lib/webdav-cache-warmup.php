@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/webdav-cache-warmup.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Cache-Warmup/0.9.7.1.12';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Cache-Warmup/0.9.7.1.13';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -37,6 +37,7 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
 require_once(BRATONIEN_TOOLS_PATH.'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/webdav_cache_validation.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/webdav_materialize_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'include/webdav_source_index.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/webdav_warmup_settings.inc.php');
 
 function bratonien_tools_cache_warmup_log($event, array $fields=array())
@@ -50,11 +51,6 @@ function bratonien_tools_cache_warmup_log($event, array $fields=array())
     $parts[] = $key.'='.str_replace(array("\r", "\n"), array('\\r', '\\n'), (string)$value);
   }
   fwrite(STDOUT, implode(' ', $parts)."\n");
-}
-
-function bratonien_tools_cache_warmup_state_file($connection_id)
-{
-  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.connection-'.(int)$connection_id.'.json';
 }
 
 function bratonien_tools_cache_warmup_status_file($connection_id)
@@ -77,17 +73,17 @@ function bratonien_tools_cache_warmup_write_json($file, array $payload)
   $directory = dirname($file);
   if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory))
   {
-    throw new RuntimeException('Warmup-State-Verzeichnis konnte nicht angelegt werden.');
+    throw new RuntimeException('Warmup-Statusverzeichnis konnte nicht angelegt werden.');
   }
   $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-  if ($json === false) throw new RuntimeException('Warmup-State konnte nicht serialisiert werden.');
+  if ($json === false) throw new RuntimeException('Warmup-Status konnte nicht serialisiert werden.');
   $tmp = $file.'.tmp-'.bin2hex(random_bytes(4));
-  if (@file_put_contents($tmp, $json."\n", LOCK_EX) === false) throw new RuntimeException('Warmup-State konnte nicht geschrieben werden.');
+  if (@file_put_contents($tmp, $json."\n", LOCK_EX) === false) throw new RuntimeException('Warmup-Status konnte nicht geschrieben werden.');
   @chmod($tmp, 0664);
   if (!@rename($tmp, $file))
   {
     @unlink($tmp);
-    throw new RuntimeException('Warmup-State konnte nicht atomar gespeichert werden.');
+    throw new RuntimeException('Warmup-Status konnte nicht atomar gespeichert werden.');
   }
 }
 
@@ -102,23 +98,6 @@ function bratonien_tools_cache_warmup_status($connection_id, $state, $message, a
       'updated_at'=>time(),
     ), $extra)
   );
-}
-
-function bratonien_tools_cache_warmup_load_state($connection_id)
-{
-  $file = bratonien_tools_cache_warmup_state_file($connection_id);
-  if (!is_file($file) || !is_readable($file)) return null;
-  $raw = @file_get_contents($file);
-  $state = $raw !== false ? json_decode($raw, true) : null;
-  return is_array($state) ? $state : null;
-}
-
-function bratonien_tools_cache_warmup_save_state($connection_id, array $state)
-{
-  $state['updated_at'] = time();
-  if (!isset($state['albums']) || !is_array($state['albums'])) $state['albums'] = array();
-  if (!isset($state['images']) || !is_array($state['images'])) $state['images'] = array();
-  bratonien_tools_cache_warmup_write_json(bratonien_tools_cache_warmup_state_file($connection_id), $state);
 }
 
 function bratonien_tools_cache_warmup_credentials($connection_id)
@@ -152,24 +131,9 @@ function bratonien_tools_cache_warmup_absolute_path($path)
   return PHPWG_ROOT_PATH.ltrim(preg_replace('#^\./#', '', $path), '/');
 }
 
-function bratonien_tools_cache_warmup_signature(array $source)
-{
-  return sha1(implode('|', array(
-    (int)($source['connection_id'] ?? 0),
-    (int)($source['root_fileid'] ?? 0),
-    (int)($source['fileid'] ?? 0),
-    trim((string)($source['webdav_path'] ?? ''), '/'),
-    (string)($source['etag'] ?? ''),
-    (int)($source['size'] ?? 0),
-    (int)($source['width'] ?? 0),
-    (int)($source['height'] ?? 0),
-  )));
-}
-
 function bratonien_tools_cache_warmup_scan($connection_id)
 {
   $images = array();
-  $albums = array();
   $resolved = array();
 
   $result = pwg_query('SELECT id, path, width, height, rotation, coi FROM '.IMAGES_TABLE.' ORDER BY id');
@@ -185,6 +149,7 @@ function bratonien_tools_cache_warmup_scan($connection_id)
     {
       throw new RuntimeException('Bild #'.$image_id.': bestehender Piwigo-Pfad kann nicht aufgelöst werden.');
     }
+
     $normalized = str_replace('\\', '/', $real);
     $expected = '/nc-webdav-source/connection-'.(int)$source['connection_id'].'/root-'.(int)$source['root_fileid'].'/';
     if (strpos($normalized, $expected) === false)
@@ -195,7 +160,6 @@ function bratonien_tools_cache_warmup_scan($connection_id)
     {
       throw new RuntimeException('Bild #'.$image_id.': WebDAV-Mapping enthält keinen Pfad.');
     }
-
     if (isset($resolved[$normalized]) && $resolved[$normalized] !== $image_id)
     {
       throw new RuntimeException('Sicherheitsabbruch: Bild #'.$resolved[$normalized].' und Bild #'.$image_id.' zeigen auf dieselbe physische Connector-Quelle.');
@@ -203,93 +167,53 @@ function bratonien_tools_cache_warmup_scan($connection_id)
     $resolved[$normalized] = $image_id;
 
     $row['id'] = $image_id;
+    $index_key = bratonien_tools_webdav_source_index_key($source);
     $images[$image_id] = array(
       'row'=>$row,
       'source'=>$source,
       'logical'=>$logical,
       'resolved'=>$real,
-      'signature'=>bratonien_tools_cache_warmup_signature($source),
-      'albums'=>array(),
+      'index_key'=>$index_key,
+      'signature'=>bratonien_tools_webdav_source_index_signature($source),
     );
   }
 
-  if ($images)
-  {
-    foreach (array_chunk(array_keys($images), 500) as $chunk)
-    {
-      $result = pwg_query('SELECT image_id, category_id FROM '.IMAGE_CATEGORY_TABLE.' WHERE image_id IN ('.implode(',', array_map('intval', $chunk)).')');
-      while ($rel = pwg_db_fetch_assoc($result))
-      {
-        $image_id = (int)$rel['image_id'];
-        $category_id = (int)$rel['category_id'];
-        if (!isset($images[$image_id]) || $category_id < 1) continue;
-        $images[$image_id]['albums'][$category_id] = true;
-        $albums[$category_id] = true;
-      }
-    }
-  }
-
-  foreach ($images as &$image) $image['albums'] = array_map('intval', array_keys($image['albums']));
-  unset($image);
-  return array('images'=>$images, 'albums'=>array_map('intval', array_keys($albums)));
+  return array('images'=>$images);
 }
 
-function bratonien_tools_cache_warmup_baseline($connection_id, array $scan)
+function bratonien_tools_cache_warmup_build_baseline($connection_id, array $scan)
 {
-  $state = array('albums'=>array(), 'images'=>array(), 'last_periodic_at'=>time());
-  foreach ($scan['albums'] as $album_id) $state['albums'][(string)$album_id] = array('seen_at'=>time());
+  $index = bratonien_tools_webdav_source_index_empty($connection_id);
   foreach ($scan['images'] as $image_id=>$image)
   {
-    $state['images'][(string)$image_id] = array(
-      'stage1_signature'=>$image['signature'],
-      'stage2_signature'=>$image['signature'],
-      'baseline'=>true,
-    );
+    $entry = bratonien_tools_webdav_source_index_metadata($image['source'], $image_id);
+    $entry['stage1_signature'] = $image['signature'];
+    $entry['stage2_signature'] = $image['signature'];
+    $entry['baseline'] = true;
+    $index['sources'][$image['index_key']] = $entry;
   }
-  bratonien_tools_cache_warmup_save_state($connection_id, $state);
-  return $state;
+  $index['last_periodic_at'] = time();
+  bratonien_tools_webdav_source_index_save($connection_id, $index);
+  return $index;
 }
 
-function bratonien_tools_cache_warmup_select(array $scan, array $state, $mode)
+function bratonien_tools_cache_warmup_select(array $scan, array $index, $mode)
 {
-  $known_albums = array_fill_keys(array_map('intval', array_keys((array)($state['albums'] ?? array()))), true);
-  $new_albums = array();
-  foreach ($scan['albums'] as $album_id)
-  {
-    if (!isset($known_albums[(int)$album_id])) $new_albums[(int)$album_id] = true;
-  }
-
-  if ($mode === 'rebuild')
-  {
-    return array('images'=>$scan['images'], 'new_albums'=>array_map('intval', array_keys($new_albums)));
-  }
+  if ($mode === 'rebuild') return $scan['images'];
 
   $selected = array();
   foreach ($scan['images'] as $image_id=>$image)
   {
-    $saved = isset($state['images'][(string)$image_id]) && is_array($state['images'][(string)$image_id])
-      ? $state['images'][(string)$image_id]
-      : array();
-    $stage1_done = isset($saved['stage1_signature']) && hash_equals((string)$saved['stage1_signature'], $image['signature']);
-    $stage2_done = isset($saved['stage2_signature']) && hash_equals((string)$saved['stage2_signature'], $image['signature']);
+    $entry = isset($index['sources'][$image['index_key']]) && is_array($index['sources'][$image['index_key']])
+      ? $index['sources'][$image['index_key']]
+      : null;
 
-    $in_new_album = false;
-    foreach ($image['albums'] as $album_id)
+    if ($entry === null || !bratonien_tools_webdav_source_index_is_current($entry, $image['signature']))
     {
-      if (isset($new_albums[(int)$album_id])) { $in_new_album = true; break; }
-    }
-
-    if ($mode === 'sync')
-    {
-      if ($in_new_album && (!$stage1_done || !$stage2_done)) $selected[$image_id] = $image;
-    }
-    else
-    {
-      if (!$stage1_done || !$stage2_done) $selected[$image_id] = $image;
+      $selected[$image_id] = $image;
     }
   }
-
-  return array('images'=>$selected, 'new_albums'=>array_map('intval', array_keys($new_albums)));
+  return $selected;
 }
 
 function bratonien_tools_cache_warmup_variant_rows(array $image, $stage)
@@ -377,7 +301,7 @@ function bratonien_tools_cache_warmup_download(array $source, array $credentials
     CURLOPT_RETURNTRANSFER=>false,
     CURLOPT_FAILONERROR=>false,
     CURLOPT_FILE=>$fp,
-    CURLOPT_USERAGENT=>'Bratonien-WebDAV-Cache-Warmup/0.9.7.1.12',
+    CURLOPT_USERAGENT=>'Bratonien-WebDAV-Cache-Warmup/0.9.7.1.13',
   ));
   $ok = curl_exec($ch);
   $errno = curl_errno($ch);
@@ -455,19 +379,17 @@ function bratonien_tools_cache_warmup_restore($source_path, $backup, $staging, $
   return true;
 }
 
-function bratonien_tools_cache_warmup_process(array $image, $temp_file, array $credentials, $stage, $force=false)
+function bratonien_tools_cache_warmup_process(array $image, $temp_file, array $credentials, $stage)
 {
   $image_id = (int)$image['row']['id'];
   $variants = bratonien_tools_cache_warmup_variant_rows($image, $stage);
-  $pending = array();
+  $requests = array();
   foreach ($variants as $variant)
   {
-    $cache_reason = '';
-    if (!$force && bratonien_tools_webdav_derivative_cache_valid($variant['target'], $variant['derivative'], $variant['params'], $cache_reason)) continue;
     $request = bratonien_tools_cache_warmup_i_request($variant['target']);
-    if ($request !== null) $pending[] = $variant + array('request'=>$request);
+    if ($request !== null) $requests[] = $variant + array('request'=>$request);
   }
-  if (!$pending) return array('ok'=>true, 'generated'=>0, 'message'=>'Bereits gültig im Piwigo-Cache vorhanden.');
+  if (!$requests) return array('ok'=>true, 'generated'=>0, 'message'=>'Für diese Stufe sind keine Piwigo-Derivate definiert.');
 
   $image_lock = null;
   if (!bratonien_tools_cache_warmup_image_lock($image_id, $image_lock))
@@ -483,7 +405,7 @@ function bratonien_tools_cache_warmup_process(array $image, $temp_file, array $c
   }
 
   $fresh = bratonien_tools_webdav_materialize_source_info($image_id);
-  if (!$fresh || (int)$fresh['connection_id'] !== (int)$image['source']['connection_id'] || bratonien_tools_cache_warmup_signature($fresh) !== $image['signature'])
+  if (!$fresh || (int)$fresh['connection_id'] !== (int)$image['source']['connection_id'] || bratonien_tools_webdav_source_index_signature($fresh) !== $image['signature'])
   {
     bratonien_tools_cache_warmup_unlock($sync_lock);
     bratonien_tools_cache_warmup_unlock($image_lock);
@@ -544,7 +466,7 @@ function bratonien_tools_cache_warmup_process(array $image, $temp_file, array $c
     clearstatcache(true, $source_path);
     if (@getimagesize($source_path) === false) throw new RuntimeException('Piwigo-Quellpfad enthält nach dem Swap kein lesbares Bild.');
 
-    foreach ($pending as $variant)
+    foreach ($requests as $variant)
     {
       $call_detail = '';
       if (!bratonien_tools_cache_warmup_call_piwigo($variant['request'], $call_detail))
@@ -578,24 +500,53 @@ function bratonien_tools_cache_warmup_process(array $image, $temp_file, array $c
   bratonien_tools_cache_warmup_unlock($sync_lock);
   bratonien_tools_cache_warmup_unlock($image_lock);
   if (!$restored) return array('ok'=>false, 'fatal'=>true, 'message'=>'RESTORE FEHLGESCHLAGEN: '.$restore_detail);
-  return array('ok'=>true, 'generated'=>$generated, 'message'=>'Piwigo hat die angeforderten Derivate erzeugt.');
+  return array('ok'=>true, 'generated'=>$generated, 'message'=>'Piwigo hat die angeforderten Derivate verarbeitet.');
 }
 
-function bratonien_tools_cache_warmup_stage_pending(array $selected, array $state, $stage)
+function bratonien_tools_cache_warmup_stage_pending(array $selected, array $index, $stage, $force_all=false)
 {
+  if ($force_all) return $selected;
+
   $pending = array();
-  $key = $stage === 1 ? 'stage1_signature' : 'stage2_signature';
+  $stage_key = $stage === 1 ? 'stage1_signature' : 'stage2_signature';
   foreach ($selected as $image_id=>$image)
   {
-    $saved = isset($state['images'][(string)$image_id]) && is_array($state['images'][(string)$image_id]) ? $state['images'][(string)$image_id] : array();
-    if (!isset($saved[$key]) || !hash_equals((string)$saved[$key], $image['signature'])) $pending[$image_id] = $image;
+    $entry = isset($index['sources'][$image['index_key']]) && is_array($index['sources'][$image['index_key']])
+      ? $index['sources'][$image['index_key']]
+      : array();
+    if (!isset($entry[$stage_key]) || !hash_equals((string)$entry[$stage_key], $image['signature']))
+    {
+      $pending[$image_id] = $image;
+    }
   }
   return $pending;
 }
 
-function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $selected, array &$state, array $credentials, $batch_size, $priority_file='')
+function bratonien_tools_cache_warmup_mark_stage_success($connection_id, array &$index, array $image, $image_id, $stage)
 {
-  $pending = bratonien_tools_cache_warmup_stage_pending($selected, $state, $stage);
+  $key = $image['index_key'];
+  $previous = isset($index['sources'][$key]) && is_array($index['sources'][$key]) ? $index['sources'][$key] : array();
+  $previous_signature = (string)($previous['source_signature'] ?? '');
+  $entry = array_merge($previous, bratonien_tools_webdav_source_index_metadata($image['source'], $image_id));
+
+  if ($stage === 1)
+  {
+    $entry['stage1_signature'] = $image['signature'];
+    if ($previous_signature === '' || !hash_equals($previous_signature, $image['signature'])) unset($entry['stage2_signature']);
+  }
+  else
+  {
+    $entry['stage2_signature'] = $image['signature'];
+  }
+  unset($entry['baseline']);
+  $entry['last_processed_at'] = time();
+  $index['sources'][$key] = $entry;
+  bratonien_tools_webdav_source_index_save($connection_id, $index);
+}
+
+function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $selected, array &$index, array $credentials, $batch_size, $priority_file='', $force_all=false)
+{
+  $pending = bratonien_tools_cache_warmup_stage_pending($selected, $index, $stage, $force_all);
   if (!$pending) return array('ok'=>true, 'success'=>array(), 'failed'=>0, 'preempted'=>false);
 
   if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
@@ -637,20 +588,16 @@ function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $s
       'batch'=>$batch_number,
       'batch_requested'=>count($ids),
       'batch_downloaded'=>count($downloads),
+      'source_index'=>count($index['sources']),
     ));
 
     foreach ($downloads as $image_id=>$file)
     {
-      $saved = isset($state['images'][(string)$image_id]) && is_array($state['images'][(string)$image_id]) ? $state['images'][(string)$image_id] : array();
-      $force = !empty($saved['baseline']) || (
-        isset($saved['stage1_signature']) && !hash_equals((string)$saved['stage1_signature'], $pending[$image_id]['signature'])
-      );
-      if ($stage === 2 && isset($saved['stage2_signature']) && !hash_equals((string)$saved['stage2_signature'], $pending[$image_id]['signature'])) $force = true;
-
-      $result = bratonien_tools_cache_warmup_process($pending[$image_id], $file, $credentials, $stage, $force);
+      $result = bratonien_tools_cache_warmup_process($pending[$image_id], $file, $credentials, $stage);
       bratonien_tools_cache_warmup_log('image', array(
         'stage'=>$stage,
         'image_id'=>$image_id,
+        'source_key'=>$pending[$image_id]['index_key'],
         'ok'=>!empty($result['ok']),
         'generated'=>(int)($result['generated'] ?? 0),
         'message'=>(string)($result['message'] ?? ''),
@@ -667,10 +614,7 @@ function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $s
         continue;
       }
 
-      if (!isset($state['images'][(string)$image_id]) || !is_array($state['images'][(string)$image_id])) $state['images'][(string)$image_id] = array();
-      $state['images'][(string)$image_id][$stage === 1 ? 'stage1_signature' : 'stage2_signature'] = $pending[$image_id]['signature'];
-      unset($state['images'][(string)$image_id]['baseline']);
-      bratonien_tools_cache_warmup_save_state($connection_id, $state);
+      bratonien_tools_cache_warmup_mark_stage_success($connection_id, $index, $pending[$image_id], $image_id, $stage);
       $success[$image_id] = true;
     }
 
@@ -715,28 +659,28 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
     if ($mode === 'sync' && is_file($priority_file)) @unlink($priority_file);
 
     $scan = bratonien_tools_cache_warmup_scan($connection_id);
-    $state = bratonien_tools_cache_warmup_load_state($connection_id);
-    if ($state === null)
+    $index = bratonien_tools_webdav_source_index_load($connection_id);
+    if ($index === null)
     {
       if ($mode === 'rebuild')
       {
-        $state = array('albums'=>array(), 'images'=>array(), 'last_periodic_at'=>0);
+        $index = bratonien_tools_webdav_source_index_empty($connection_id);
       }
       else
       {
-        bratonien_tools_cache_warmup_baseline($connection_id, $scan);
-        bratonien_tools_cache_warmup_status($connection_id, 'baseline', 'Bestehender produktiver Bestand wurde nur als Ausgangszustand erfasst.', array(
+        $index = bratonien_tools_cache_warmup_build_baseline($connection_id, $scan);
+        bratonien_tools_cache_warmup_status($connection_id, 'baseline', 'Bestehender Connector-Bestand wurde als Quellenindex erfasst.', array(
           'images'=>count($scan['images']),
-          'albums'=>count($scan['albums']),
+          'indexed'=>count($index['sources']),
         ));
-        bratonien_tools_cache_warmup_log('baseline', array('connection_id'=>$connection_id, 'images'=>count($scan['images']), 'albums'=>count($scan['albums'])));
+        bratonien_tools_cache_warmup_log('baseline', array('connection_id'=>$connection_id, 'images'=>count($scan['images'])));
         return 0;
       }
     }
 
     if ($mode === 'periodic')
     {
-      $last = (int)($state['last_periodic_at'] ?? 0);
+      $last = (int)($index['last_periodic_at'] ?? 0);
       $interval = max(1, (int)$settings['periodic_hours']) * 3600;
       if ($last > 0 && time() - $last < $interval)
       {
@@ -745,41 +689,41 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
       }
     }
 
-    $selection = bratonien_tools_cache_warmup_select($scan, $state, $mode);
-    $selected = $selection['images'];
-    bratonien_tools_cache_warmup_status($connection_id, 'scan', 'Warmup-Eingangsprüfung abgeschlossen.', array(
+    $current_keys = array();
+    foreach ($scan['images'] as $image) $current_keys[] = $image['index_key'];
+    $removed = bratonien_tools_webdav_source_index_prune($index, $current_keys);
+
+    $selected = bratonien_tools_cache_warmup_select($scan, $index, $mode);
+    bratonien_tools_cache_warmup_status($connection_id, 'scan', 'Quellenindex-Abgleich abgeschlossen.', array(
       'mode'=>$mode,
       'images'=>count($scan['images']),
+      'indexed'=>count($index['sources']),
       'selected'=>count($selected),
-      'new_albums'=>count($selection['new_albums']),
+      'removed'=>$removed,
     ));
 
     if (!$selected)
     {
-      foreach ($scan['albums'] as $album_id) $state['albums'][(string)$album_id] = array('seen_at'=>time());
-      if ($mode === 'periodic' || $mode === 'manual') $state['last_periodic_at'] = time();
-      bratonien_tools_cache_warmup_save_state($connection_id, $state);
-      bratonien_tools_cache_warmup_status($connection_id, 'complete', 'Keine neuen oder geänderten Bilder für den Warmup gefunden.', array('mode'=>$mode));
+      if ($mode === 'periodic' || $mode === 'manual') $index['last_periodic_at'] = time();
+      bratonien_tools_webdav_source_index_save($connection_id, $index);
+      bratonien_tools_cache_warmup_status($connection_id, 'complete', 'Quellenindex unverändert; keine Arbeit für Piwigo.', array(
+        'mode'=>$mode,
+        'images'=>count($scan['images']),
+        'removed'=>$removed,
+      ));
       return 0;
     }
 
-    if ($mode === 'rebuild')
-    {
-      foreach ($selected as $image_id=>$image)
-      {
-        if (!isset($state['images'][(string)$image_id]) || !is_array($state['images'][(string)$image_id])) $state['images'][(string)$image_id] = array();
-        unset($state['images'][(string)$image_id]['stage1_signature'], $state['images'][(string)$image_id]['stage2_signature']);
-      }
-    }
+    $force_all = $mode === 'rebuild';
+    $stage1 = bratonien_tools_cache_warmup_run_stage($connection_id, 1, $selected, $index, $credentials, $settings['batch_size'], $priority_file, $force_all);
 
-    $stage1 = bratonien_tools_cache_warmup_run_stage($connection_id, 1, $selected, $state, $credentials, $settings['batch_size'], $priority_file);
     $stage2_candidates = array();
     foreach ($selected as $image_id=>$image)
     {
-      $saved = isset($state['images'][(string)$image_id]) && is_array($state['images'][(string)$image_id]) ? $state['images'][(string)$image_id] : array();
-      if (isset($saved['stage1_signature']) && hash_equals((string)$saved['stage1_signature'], $image['signature'])) $stage2_candidates[$image_id] = $image;
+      $entry = isset($index['sources'][$image['index_key']]) && is_array($index['sources'][$image['index_key']]) ? $index['sources'][$image['index_key']] : array();
+      if (isset($entry['stage1_signature']) && hash_equals((string)$entry['stage1_signature'], $image['signature'])) $stage2_candidates[$image_id] = $image;
     }
-    $stage2 = bratonien_tools_cache_warmup_run_stage($connection_id, 2, $stage2_candidates, $state, $credentials, $settings['batch_size'], $priority_file);
+    $stage2 = bratonien_tools_cache_warmup_run_stage($connection_id, 2, $stage2_candidates, $index, $credentials, $settings['batch_size'], $priority_file, $force_all);
 
     if (!empty($stage2['preempted']))
     {
@@ -791,15 +735,17 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
       return ((int)$stage1['failed'] + (int)$stage2['failed']) > 0 ? 2 : 0;
     }
 
-    foreach ($scan['albums'] as $album_id) $state['albums'][(string)$album_id] = array('seen_at'=>time());
-    if ($mode === 'periodic' || $mode === 'manual') $state['last_periodic_at'] = time();
-    bratonien_tools_cache_warmup_save_state($connection_id, $state);
+    if ($mode === 'periodic' || $mode === 'manual') $index['last_periodic_at'] = time();
+    bratonien_tools_webdav_source_index_save($connection_id, $index);
 
     $failed = (int)$stage1['failed'] + (int)$stage2['failed'];
-    bratonien_tools_cache_warmup_status($connection_id, $failed ? 'error' : 'complete', $failed ? 'Warmup mit einzelnen Fehlern beendet.' : ($mode === 'rebuild' ? 'WebDAV-Bildcache vollständig wiederaufgebaut.' : 'Warmup vollständig beendet.'), array(
+    bratonien_tools_cache_warmup_status($connection_id, $failed ? 'error' : 'complete', $failed ? 'Warmup mit einzelnen Fehlern beendet.' : ($mode === 'rebuild' ? 'WebDAV-Bildcache durch Piwigo vollständig neu angefordert.' : 'Quellenänderungen durch Piwigo verarbeitet.'), array(
       'mode'=>$mode,
+      'selected'=>count($selected),
+      'removed'=>$removed,
       'stage1_failed'=>(int)$stage1['failed'],
       'stage2_failed'=>(int)$stage2['failed'],
+      'indexed'=>count($index['sources']),
     ));
     return $failed ? 2 : 0;
   }
