@@ -27,9 +27,20 @@ source "$CONFIG_FILE"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LOCK_FILE="$STATE_DIR/webdav-sync.lock"
+WORKER_LOCK_FILE="$STATE_DIR/webdav-cache-warmup.lock"
 mkdir -p -- "$STATE_DIR"
 chgrp www-data -- "$STATE_DIR"
 chmod 0750 -- "$STATE_DIR"
+
+# Das Connector-State-Verzeichnis bleibt fuer www-data bewusst nicht
+# beschreibbar. Die beiden gemeinsam verwendeten Lock-Dateien werden deshalb
+# vom privilegierten Connector explizit angelegt und gruppenschreibbar gemacht.
+# So kann der Piwigo-CLI-Worker vorhandene Locks oeffnen, ohne Schreibrechte
+# auf das gesamte Connector-State-Verzeichnis zu erhalten.
+touch -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
+chgrp www-data -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
+chmod 0660 -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
+
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
