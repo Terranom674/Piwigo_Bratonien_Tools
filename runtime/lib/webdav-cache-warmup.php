@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/webdav-cache-warmup.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Cache-Worker/0.9.7.1.28';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Cache-Worker/0.9.7.1.30';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -257,7 +257,7 @@ function bratonien_tools_cache_warmup_download(array $source, array $credentials
     CURLOPT_RETURNTRANSFER=>false,
     CURLOPT_FAILONERROR=>false,
     CURLOPT_FILE=>$fp,
-    CURLOPT_USERAGENT=>'Bratonien-WebDAV-Cache-Worker/0.9.7.1.28',
+    CURLOPT_USERAGENT=>'Bratonien-WebDAV-Cache-Worker/0.9.7.1.30',
   ));
   $ok = curl_exec($ch);
   $errno = curl_errno($ch);
@@ -502,27 +502,62 @@ function bratonien_tools_cache_warmup_stage_completed_count(array $selected, arr
 function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $selected, array &$index, array $credentials, $batch_size, $priority_file='')
 {
   $pending = bratonien_tools_cache_warmup_stage_pending($selected, $index, $stage);
-  if (!$pending) return array('failed'=>0, 'preempted'=>false, 'cancelled'=>false, 'completed'=>0);
+  if (!$pending) return array('failed'=>0, 'deferred'=>0, 'waiting'=>false, 'preempted'=>false, 'cancelled'=>false, 'completed'=>0);
   if (bratonien_tools_cache_warmup_cancel_pending($connection_id))
   {
-    return array('failed'=>0, 'preempted'=>false, 'cancelled'=>true, 'completed'=>0);
+    return array('failed'=>0, 'deferred'=>0, 'waiting'=>false, 'preempted'=>false, 'cancelled'=>true, 'completed'=>0);
   }
   if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
   {
-    return array('failed'=>0, 'preempted'=>true, 'cancelled'=>false, 'completed'=>0);
+    return array('failed'=>0, 'deferred'=>0, 'waiting'=>false, 'preempted'=>true, 'cancelled'=>false, 'completed'=>0);
   }
 
   $temp_root = PHPWG_ROOT_PATH.'upload/bratonien-webdav-warmup';
   if (!is_dir($temp_root) && !@mkdir($temp_root, 0775, true) && !is_dir($temp_root)) throw new RuntimeException('Worker-Temp-Verzeichnis konnte nicht angelegt werden.');
   $failed = 0;
+  $deferred = 0;
   $completed = 0;
   $batch_number = 0;
 
   foreach (array_chunk(array_keys($pending), max(1, (int)$batch_size)) as $keys)
   {
+    // Harte Batch-Grenze: Sobald ein Abbruchsignal existiert, darf dieser
+    // Batch gar nicht mehr begonnen und damit auch kein weiteres Original
+    // aus Nextcloud geladen werden.
+    if (bratonien_tools_cache_warmup_cancel_pending($connection_id))
+    {
+      return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>false, 'preempted'=>false, 'cancelled'=>true, 'completed'=>$completed);
+    }
+
+    if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
+    {
+      return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>false, 'preempted'=>true, 'cancelled'=>false, 'completed'=>$completed);
+    }
+
+    // Der Connector-Lock wird VOR jedem Download geprueft und fuer den
+    // kompletten Batch gemeinsam gehalten. Ist der Connector aktiv, werden
+    // exakt null Bilder dieses Batches geladen.
+    $batch_sync_lock = null;
+    $batch_sync_detail = '';
+    if (!bratonien_tools_cache_warmup_sync_guard($credentials, $batch_sync_lock, $batch_sync_detail))
+    {
+      bratonien_tools_cache_warmup_status($connection_id, 'waiting', 'Connector-Synchronisierung läuft. Der nächste Batch startet erst danach; es wurden für diesen Batch keine Nextcloud-Originale geladen.', array(
+        'stage'=>$stage,
+        'batch'=>$batch_number + 1,
+        'selected_total'=>count($selected),
+        'stage_completed'=>$completed,
+        'deferred_by_connector'=>true,
+      ));
+      return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>true, 'preempted'=>false, 'cancelled'=>false, 'completed'=>$completed);
+    }
+
     $batch_number++;
     $dir = $temp_root.'/connection-'.(int)$connection_id.'-stage'.$stage.'-'.date('YmdHis').'-'.bin2hex(random_bytes(4));
-    if (!@mkdir($dir, 0775, true) && !is_dir($dir)) throw new RuntimeException('Worker-Batch-Verzeichnis konnte nicht angelegt werden.');
+    if (!@mkdir($dir, 0775, true) && !is_dir($dir))
+    {
+      bratonien_tools_cache_warmup_unlock($batch_sync_lock);
+      throw new RuntimeException('Worker-Batch-Verzeichnis konnte nicht angelegt werden.');
+    }
 
     $downloads = array();
     foreach ($keys as $key)
@@ -537,28 +572,42 @@ function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $s
       }
     }
 
-    bratonien_tools_cache_warmup_status($connection_id, 'running', 'Piwigo verarbeitet WebDAV-Quellen aus dem Worker-Index.', array(
-      'stage'=>$stage,
-      'batch'=>$batch_number,
-      'batch_requested'=>count($keys),
-      'batch_downloaded'=>count($downloads),
-      'selected_total'=>count($selected),
-      'stage_completed'=>$completed,
-    ));
+    $cancel_requested = bratonien_tools_cache_warmup_cancel_pending($connection_id);
+    bratonien_tools_cache_warmup_status(
+      $connection_id,
+      $cancel_requested ? 'cancelling' : 'running',
+      $cancel_requested
+        ? 'Abbruch angefordert. Der bereits geladene aktuelle Batch wird vollständig beendet; danach ist Schluss.'
+        : 'Piwigo verarbeitet WebDAV-Quellen aus dem Worker-Index.',
+      array(
+        'stage'=>$stage,
+        'batch'=>$batch_number,
+        'batch_requested'=>count($keys),
+        'batch_downloaded'=>count($downloads),
+        'selected_total'=>count($selected),
+        'stage_completed'=>$completed,
+        'cancel_requested'=>$cancel_requested,
+      )
+    );
 
     foreach ($downloads as $key=>$file)
     {
       $result = bratonien_tools_cache_warmup_process($pending[$key], $file, $credentials, $stage);
-      bratonien_tools_cache_warmup_log('source', array('stage'=>$stage, 'source'=>$key, 'ok'=>!empty($result['ok']), 'message'=>(string)($result['message'] ?? '')));
+      bratonien_tools_cache_warmup_log('source', array('stage'=>$stage, 'source'=>$key, 'ok'=>!empty($result['ok']), 'defer'=>!empty($result['defer']), 'message'=>(string)($result['message'] ?? '')));
       if (!empty($result['fatal']))
       {
         foreach ($downloads as $cleanup) @unlink($cleanup);
         @rmdir($dir);
+        bratonien_tools_cache_warmup_unlock($batch_sync_lock);
         throw new RuntimeException('Sicherheitsabbruch bei '.$key.': '.(string)$result['message']);
       }
       if (empty($result['ok']))
       {
-        $failed++;
+        // Temporäre Sperren oder parallel belegte Quellen sind kein Fehler.
+        // Der Index bleibt offen und der nächste Lauf versucht nur diese
+        // Quelle erneut.
+        if (!empty($result['defer'])) $deferred++;
+        else $failed++;
         continue;
       }
 
@@ -573,22 +622,20 @@ function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $s
 
     foreach ($downloads as $file) @unlink($file);
     @rmdir($dir);
+    bratonien_tools_cache_warmup_unlock($batch_sync_lock);
 
-    // Ein manueller Abbruch wirkt exakt an der Batch-Grenze: ein bereits
-    // geladener Batch wird vollständig verarbeitet und aufgeräumt. Danach
-    // wird kein weiteres Original aus Nextcloud angefordert.
     if (bratonien_tools_cache_warmup_cancel_pending($connection_id))
     {
-      return array('failed'=>$failed, 'preempted'=>false, 'cancelled'=>true, 'completed'=>$completed);
+      return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>false, 'preempted'=>false, 'cancelled'=>true, 'completed'=>$completed);
     }
 
     if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
     {
-      return array('failed'=>$failed, 'preempted'=>true, 'cancelled'=>false, 'completed'=>$completed);
+      return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>false, 'preempted'=>true, 'cancelled'=>false, 'completed'=>$completed);
     }
   }
 
-  return array('failed'=>$failed, 'preempted'=>false, 'cancelled'=>false, 'completed'=>$completed);
+  return array('failed'=>$failed, 'deferred'=>$deferred, 'waiting'=>false, 'preempted'=>false, 'cancelled'=>false, 'completed'=>$completed);
 }
 
 function bratonien_tools_cache_warmup_run($connection_id, $mode)
@@ -662,19 +709,24 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
     $stage1 = bratonien_tools_cache_warmup_run_stage($connection_id, 1, $selected, $index, $credentials, $settings['batch_size'], $priority_file);
     if (!empty($stage1['cancelled']))
     {
-      $stage1_done = bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1);
-      $stage2_done = bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2);
       bratonien_tools_webdav_source_index_save($state_dir, $connection_id, $index);
       @unlink(bratonien_tools_cache_warmup_cancel_file($connection_id));
       bratonien_tools_cache_warmup_status($connection_id, 'cancelled', 'Cache-Aufbau nach dem vollständig abgeschlossenen aktuellen Batch beendet.', array(
         'mode'=>$mode,
         'shadow_sources'=>count($scan['sources']),
         'selected'=>count($selected),
-        'stage1_completed'=>$stage1_done,
-        'stage2_completed'=>$stage2_done,
+        'stage1_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1),
+        'stage2_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2),
         'stage1_failed'=>(int)$stage1['failed'],
+        'stage1_deferred'=>(int)$stage1['deferred'],
         'stage2_failed'=>0,
+        'stage2_deferred'=>0,
       ));
+      return 0;
+    }
+    if (!empty($stage1['waiting']))
+    {
+      bratonien_tools_webdav_source_index_save($state_dir, $connection_id, $index);
       return 0;
     }
 
@@ -688,33 +740,41 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
 
     if (!empty($stage2['cancelled']))
     {
-      $stage1_done = bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1);
-      $stage2_done = bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2);
       bratonien_tools_webdav_source_index_save($state_dir, $connection_id, $index);
       @unlink(bratonien_tools_cache_warmup_cancel_file($connection_id));
       bratonien_tools_cache_warmup_status($connection_id, 'cancelled', 'Cache-Aufbau nach dem vollständig abgeschlossenen aktuellen Batch beendet.', array(
         'mode'=>$mode,
         'shadow_sources'=>count($scan['sources']),
         'selected'=>count($selected),
-        'stage1_completed'=>$stage1_done,
-        'stage2_completed'=>$stage2_done,
+        'stage1_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1),
+        'stage2_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2),
         'stage1_failed'=>(int)$stage1['failed'],
+        'stage1_deferred'=>(int)$stage1['deferred'],
         'stage2_failed'=>(int)$stage2['failed'],
+        'stage2_deferred'=>(int)$stage2['deferred'],
       ));
+      return 0;
+    }
+    if (!empty($stage2['waiting']))
+    {
+      bratonien_tools_webdav_source_index_save($state_dir, $connection_id, $index);
       return 0;
     }
 
     if (!empty($stage2['preempted']))
     {
+      bratonien_tools_webdav_source_index_save($state_dir, $connection_id, $index);
       bratonien_tools_cache_warmup_status($connection_id, 'preempted', 'Stufe 2 wurde nach einem vollständigen Batch für neue Connector-Inhalte freigegeben.', array(
         'mode'=>$mode,
         'selected'=>count($selected),
         'stage1_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1),
         'stage2_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2),
         'stage1_failed'=>(int)$stage1['failed'],
+        'stage1_deferred'=>(int)$stage1['deferred'],
         'stage2_failed'=>(int)$stage2['failed'],
+        'stage2_deferred'=>(int)$stage2['deferred'],
       ));
-      return ((int)$stage1['failed'] + (int)$stage2['failed']) > 0 ? 2 : 0;
+      return 0;
     }
 
     if ($mode === 'periodic' || $mode === 'manual') $index['last_periodic_at'] = time();
@@ -722,16 +782,35 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
     @unlink(bratonien_tools_cache_warmup_cancel_file($connection_id));
 
     $failed = (int)$stage1['failed'] + (int)$stage2['failed'];
-    bratonien_tools_cache_warmup_status($connection_id, $failed ? 'error' : 'complete', $failed ? 'Worker-Lauf mit einzelnen Fehlern beendet.' : ($mode === 'rebuild' ? 'Piwigo hat den vollständigen Shadow-Bestand für den Cache-Rebuild verarbeitet.' : 'Worker-Lauf vollständig beendet.'), array(
+    $deferred = (int)$stage1['deferred'] + (int)$stage2['deferred'];
+    if ($failed > 0 || $deferred > 0)
+    {
+      bratonien_tools_cache_warmup_status($connection_id, 'partial', 'Worker-Lauf beendet; einzelne Quellen bleiben offen und werden beim nächsten Lauf erneut versucht. Der übrige Bestand wurde weiterverarbeitet.', array(
+        'mode'=>$mode,
+        'shadow_sources'=>count($scan['sources']),
+        'selected'=>count($selected),
+        'stage1_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1),
+        'stage2_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2),
+        'stage1_failed'=>(int)$stage1['failed'],
+        'stage1_deferred'=>(int)$stage1['deferred'],
+        'stage2_failed'=>(int)$stage2['failed'],
+        'stage2_deferred'=>(int)$stage2['deferred'],
+      ));
+      return 0;
+    }
+
+    bratonien_tools_cache_warmup_status($connection_id, 'complete', $mode === 'rebuild' ? 'Piwigo hat den vollständigen Shadow-Bestand für den Cache-Rebuild verarbeitet.' : 'Worker-Lauf vollständig beendet.', array(
       'mode'=>$mode,
       'shadow_sources'=>count($scan['sources']),
       'selected'=>count($selected),
       'stage1_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 1),
       'stage2_completed'=>bratonien_tools_cache_warmup_stage_completed_count($selected, $index, 2),
-      'stage1_failed'=>(int)$stage1['failed'],
-      'stage2_failed'=>(int)$stage2['failed'],
+      'stage1_failed'=>0,
+      'stage1_deferred'=>0,
+      'stage2_failed'=>0,
+      'stage2_deferred'=>0,
     ));
-    return $failed ? 2 : 0;
+    return 0;
   }
   finally
   {
