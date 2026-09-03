@@ -10,7 +10,9 @@ function bratonien_tools_webdav_materialize_source_info($image_id)
 
   $image_id = (int)$image_id;
   if ($image_id < 1) return null;
-  if (array_key_exists($image_id, $cache)) return $cache[$image_id];
+  $warmup_cli = PHP_SAPI === 'cli'
+    && strpos((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 'Bratonien-WebDAV-Cache-Warmup/') === 0;
+  if (!$warmup_cli && array_key_exists($image_id, $cache)) return $cache[$image_id];
 
   $result = pwg_query('SELECT path, coi FROM '.IMAGES_TABLE.' WHERE id='.$image_id.' LIMIT 1');
   if (!pwg_db_num_rows($result)) return $cache[$image_id] = null;
