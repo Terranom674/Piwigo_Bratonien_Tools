@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Warmup-Dispatcher/0.9.7.1.8';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Warmup-Dispatcher/0.9.7.1.12';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -40,13 +40,13 @@ $wait = false;
 $connection_filter = 0;
 foreach ($argv as $arg)
 {
-  if (preg_match('/^--mode=(sync|periodic|manual)$/', $arg, $m)) $mode = $m[1];
+  if (preg_match('/^--mode=(sync|periodic|manual|rebuild)$/', $arg, $m)) $mode = $m[1];
   elseif (preg_match('/^--connection-id=(\d+)$/', $arg, $m)) $connection_filter = (int)$m[1];
   elseif ($arg === '--wait') $wait = true;
 }
 
 $settings = bratonien_tools_get_webdav_warmup_settings();
-if ($mode !== 'manual' && empty($settings['enabled']))
+if (!in_array($mode, array('manual','rebuild'), true) && empty($settings['enabled']))
 {
   fwrite(STDOUT, "WebDAV-Cache-Warmup ist deaktiviert.\n");
   exit(0);
@@ -141,9 +141,6 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
 
   if ($mode === 'sync')
   {
-    // Ein bereits laufender Worker darf seinen aktuellen Bild-/Batchvorgang
-    // vollständig restaurieren. Der Waiter startet den priorisierten Sync-Lauf
-    // danach automatisch, statt die Prioritätsmarke verloren gehen zu lassen.
     $base = escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command;
   }
   else
