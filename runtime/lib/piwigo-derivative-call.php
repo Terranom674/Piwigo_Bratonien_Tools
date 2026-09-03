@@ -19,7 +19,7 @@ if ($request === '' || strpos($request, '/i.php?/') !== 0)
   exit(2);
 }
 
-$piwigo_root = realpath(dirname(__DIR__, 3));
+$piwigo_root = realpath(dirname(__DIR__, 4));
 if ($piwigo_root === false || !is_file($piwigo_root.'/i.php'))
 {
   fwrite(STDERR, "Piwigo i.php wurde nicht gefunden.\n");
