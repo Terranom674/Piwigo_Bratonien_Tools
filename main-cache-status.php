@@ -42,9 +42,11 @@ function bratonien_tools_status_webdav_label(array $status)
 
   if ($state === 'scan')
   {
-    $images = (int)($status['images'] ?? 0);
+    $sources = (int)($status['shadow_sources'] ?? 0);
     $selected = (int)($status['selected'] ?? 0);
-    return $prefix.'Quellenindex wird mit dem aktuellen Connector-Bestand verglichen · '.$images.' Quellen gefunden · '.$selected.' neu/geändert bzw. für Rebuild ausgewählt.';
+    $removed = (int)($status['removed_from_index'] ?? 0);
+    $created = !empty($status['index_created']);
+    return $prefix.'Shadow-Tree wird mit dem eigenen Worker-Index verglichen · '.$sources.' Quellen im Shadow-Tree · '.$selected.' zu verarbeiten'.($removed > 0 ? ' · '.$removed.' gelöschte Quelle(n) aus dem Worker-Index entfernt' : '').($created ? ' · Worker-Index wurde neu angelegt' : '').'.';
   }
   if ($state === 'running')
   {
@@ -52,28 +54,18 @@ function bratonien_tools_status_webdav_label(array $status)
     $batch = (int)($status['batch'] ?? 0);
     $requested = (int)($status['batch_requested'] ?? 0);
     $downloaded = (int)($status['batch_downloaded'] ?? 0);
-    $parts = array($prefix.'Piwigo verarbeitet temporär bereitgestellte WebDAV-Originale');
+    $completed = (int)($status['stage_completed'] ?? 0);
+    $total = (int)($status['selected_total'] ?? 0);
+    $parts = array($prefix.'Worker stellt Originale temporär bereit; Piwigo erzeugt die Derivate');
     if ($stage > 0) $parts[] = 'Stufe '.$stage;
     if ($batch > 0) $parts[] = 'Batch '.$batch;
     if ($requested > 0) $parts[] = $downloaded.' / '.$requested.' Quellen dieses Batches geladen';
+    if ($total > 0) $parts[] = $completed.' / '.$total.' Quellen dieser Stufe abgeschlossen';
     return implode(' · ', $parts).'.';
   }
-  if ($state === 'preempted')
-  {
-    return $prefix.'Stufe 2 wurde nach einem vollständigen Batch unterbrochen, damit neue Connector-Inhalte zuerst verarbeitet werden können.';
-  }
-  if ($state === 'baseline')
-  {
-    return $prefix.'Quellenindex wurde als Ausgangsbestand angelegt; noch keine Derivate wurden deshalb erzeugt.';
-  }
-  if ($state === 'complete')
-  {
-    return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Verarbeitung abgeschlossen.');
-  }
-  if ($state === 'error' || $state === 'fatal')
-  {
-    return $prefix.'FEHLER: '.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'WebDAV-Verarbeitung fehlgeschlagen.');
-  }
+  if ($state === 'preempted') return $prefix.'Stufe 2 wurde nach einem vollständigen Batch unterbrochen, damit neue Connector-Inhalte zuerst verarbeitet werden können.';
+  if ($state === 'complete') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Verarbeitung abgeschlossen.');
+  if ($state === 'error' || $state === 'fatal') return $prefix.'FEHLER: '.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'WebDAV-Verarbeitung fehlgeschlagen.');
   return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'wartet.');
 }
 
@@ -117,10 +109,6 @@ foreach ($webdav as $status)
 $local_state = (string)($local['state'] ?? 'idle');
 $local_updated = (int)($local['updated_at'] ?? 0);
 $local_stale = in_array($local_state, array('running','queued'), true) && $local_updated > 0 && (time() - $local_updated) > 45;
-
-// Ein ruhiger lokaler Worker ist kein Stall des Gesamtaufbaus, solange der
-// getrennte WebDAV-Worker sichtbar weiterarbeitet. Der 45-Sekunden-Fehler darf
-// deshalb nur ausgelöst werden, wenn auch kein WebDAV-Teil aktiv ist.
 if ($local_stale && !$webdav_active)
 {
   $local['state'] = 'error';
@@ -129,27 +117,11 @@ if ($local_stale && !$webdav_active)
   $local_state = 'error';
 }
 
-$local_label = '';
-if ($local_state === 'running' || $local_state === 'queued')
-{
-  $local_label = 'Lokaler Piwigo-Teil läuft: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'Cache-Varianten werden verarbeitet.');
-}
-elseif ($local_state === 'complete')
-{
-  $local_label = 'Lokaler Piwigo-Teil fertig.';
-}
-elseif ($local_state === 'cancelled')
-{
-  $local_label = 'Lokaler Piwigo-Teil wurde abgebrochen.';
-}
-elseif ($local_state === 'error')
-{
-  $local_label = 'Lokaler Piwigo-Teil mit Fehler: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'unbekannter Fehler');
-}
-else
-{
-  $local_label = 'Lokaler Piwigo-Teil: keine relevanten lokalen Bildquellen aktiv.';
-}
+if ($local_state === 'running' || $local_state === 'queued') $local_label = 'Lokaler Piwigo-Teil läuft: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'Cache-Varianten werden verarbeitet.');
+elseif ($local_state === 'complete') $local_label = 'Lokaler Piwigo-Teil fertig.';
+elseif ($local_state === 'cancelled') $local_label = 'Lokaler Piwigo-Teil wurde abgebrochen.';
+elseif ($local_state === 'error') $local_label = 'Lokaler Piwigo-Teil mit Fehler: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'unbekannter Fehler');
+else $local_label = 'Lokaler Piwigo-Teil: keine relevanten lokalen Bildquellen aktiv.';
 
 $overall = $local;
 $overall['local'] = $local;
@@ -159,9 +131,6 @@ $overall['updated_at'] = max($local_updated, $webdav_latest);
 if ($webdav_active)
 {
   $overall['state'] = 'running';
-  // Während der WebDAV-Verarbeitung wären die lokalen Variantenzahlen als
-  // Gesamtfortschritt irreführend. Die Oberfläche zeigt deshalb bewusst die
-  // aktuelle Arbeitsphase statt eines falschen Prozentwerts.
   $overall['total'] = 0;
   $overall['completed'] = 0;
   $overall['generated'] = 0;
