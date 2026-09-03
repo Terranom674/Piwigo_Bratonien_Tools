@@ -155,6 +155,21 @@ function bratonien_tools_start_webdav_cache_rebuild()
   );
 }
 
+function bratonien_tools_start_combined_image_cache_build()
+{
+  $main = bratonien_tools_start_main_cache_build();
+  $webdav = bratonien_tools_start_webdav_cache_rebuild();
+
+  $parts = array();
+  if (!empty($main['message'])) $parts[] = $main['message'];
+  if (!empty($webdav['message'])) $parts[] = $webdav['message'];
+
+  return array(
+    'started'=>!empty($main['started']) || !empty($webdav['pid']),
+    'message'=>implode(' ', $parts),
+  );
+}
+
 function bratonien_tools_run_webdav_warmup_audit()
 {
   if (!function_exists('exec')) throw new RuntimeException('PHP exec() ist deaktiviert; Pfadaudit kann nicht gestartet werden.');
