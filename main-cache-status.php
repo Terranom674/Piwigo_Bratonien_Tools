@@ -134,15 +134,15 @@ if ($local_state === 'running' || $local_state === 'queued')
 {
   $local_label = 'Lokaler Piwigo-Teil läuft: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'Cache-Varianten werden verarbeitet.');
 }
-elif ($local_state === 'complete')
+elseif ($local_state === 'complete')
 {
   $local_label = 'Lokaler Piwigo-Teil fertig.';
 }
-elif ($local_state === 'cancelled')
+elseif ($local_state === 'cancelled')
 {
   $local_label = 'Lokaler Piwigo-Teil wurde abgebrochen.';
 }
-elif ($local_state === 'error')
+elseif ($local_state === 'error')
 {
   $local_label = 'Lokaler Piwigo-Teil mit Fehler: '.((string)($local['message'] ?? '') !== '' ? (string)$local['message'] : 'unbekannter Fehler');
 }
@@ -170,14 +170,14 @@ if ($webdav_active)
   $overall['message'] = 'Gesamtaufbau läuft. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
-elif ($webdav_error || $local_state === 'error')
+elseif ($webdav_error || $local_state === 'error')
 {
   $overall['state'] = 'error';
   $overall['message'] = 'Cache-Aufbau mit Fehlern. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
   $overall['errors'] = max(1, (int)($overall['errors'] ?? 0));
 }
-elif ($webdav_pending)
+elseif ($webdav_pending)
 {
   $overall['state'] = 'queued';
   $overall['total'] = 0;
@@ -185,7 +185,7 @@ elif ($webdav_pending)
   $overall['message'] = 'Cache-Aufbau wartet auf priorisierte Connector-Inhalte. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
-elif ($webdav && $local_state === 'complete')
+elseif ($webdav && $local_state === 'complete')
 {
   $overall['state'] = 'complete';
   $overall['message'] = 'Cache-Aufbau abgeschlossen. '.$local_label;
