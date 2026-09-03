@@ -119,7 +119,7 @@ function bratonien_tools_webdav_warmup_php_cli()
   return null;
 }
 
-function bratonien_tools_start_webdav_warmup_manual()
+function bratonien_tools_start_webdav_warmup_mode($mode, $message)
 {
   if (!function_exists('exec')) throw new RuntimeException('PHP exec() ist deaktiviert; Warmup kann nicht gestartet werden.');
   $php = bratonien_tools_webdav_warmup_php_cli();
@@ -127,15 +127,32 @@ function bratonien_tools_start_webdav_warmup_manual()
   $dispatcher = realpath(BRATONIEN_TOOLS_PATH.'runtime/webdav-warmup-dispatch.php');
   if (!$dispatcher || !is_file($dispatcher)) throw new RuntimeException('WebDAV-Warmup-Dispatcher wurde nicht gefunden.');
 
+  if (!in_array($mode, array('manual','rebuild'), true)) throw new RuntimeException('Ungültiger manueller Warmup-Modus.');
   $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup-dispatch.log';
-  $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($dispatcher).' --mode=manual >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
+  $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($dispatcher).' --mode='.escapeshellarg($mode).' >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
   $output = array();
   $exit = 1;
   @exec($command, $output, $exit);
   $pid = isset($output[0]) ? (int)$output[0] : 0;
-  if ($exit !== 0 || $pid <= 0) throw new RuntimeException('Manuelle Warmup-Prüfung konnte nicht gestartet werden.');
+  if ($exit !== 0 || $pid <= 0) throw new RuntimeException('WebDAV-Warmup konnte nicht gestartet werden.');
 
-  return array('message'=>'WebDAV-Warmup: Prüfung auf neue oder geänderte Bilder wurde gestartet.');
+  return array('message'=>$message, 'pid'=>$pid);
+}
+
+function bratonien_tools_start_webdav_warmup_manual()
+{
+  return bratonien_tools_start_webdav_warmup_mode(
+    'manual',
+    'WebDAV-Warmup: Prüfung auf neue oder geänderte Bilder wurde gestartet.'
+  );
+}
+
+function bratonien_tools_start_webdav_cache_rebuild()
+{
+  return bratonien_tools_start_webdav_warmup_mode(
+    'rebuild',
+    'WebDAV-Bildcache: vollständiger Wiederaufbau wurde gestartet.'
+  );
 }
 
 function bratonien_tools_run_webdav_warmup_audit()
