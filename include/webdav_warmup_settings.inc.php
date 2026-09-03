@@ -185,7 +185,7 @@ function bratonien_tools_start_webdav_warmup_mode($mode, $message)
       'queued',
       $mode === 'rebuild'
         ? 'Cache-Rebuild wurde angefordert. Der Worker wartet auf den Start und gleicht danach Shadow-Tree und eigenen Index ab.'
-        : 'Cache-Fortsetzung wurde angefordert. Bereits erfolgreich abgeschlossene Stufen bleiben erhalten; verarbeitet werden nur noch fehlende oder geänderte Quellen.',
+        : 'Cache-Abgleich wurde angefordert. Bereits erfolgreich abgeschlossene Stufen bleiben erhalten; geladen werden nur Quellen mit fehlender Stufe 1 oder Stufe 2.',
       array('mode'=>$mode, 'run_id'=>$run_id)
     );
   }
@@ -212,7 +212,7 @@ function bratonien_tools_start_webdav_warmup_manual()
 {
   return bratonien_tools_start_webdav_warmup_mode(
     'manual',
-    'WebDAV-Worker: Shadow-Tree wird mit dem eigenen Index auf neue, geänderte oder noch nicht vollständig verarbeitete Quellen abgeglichen.'
+    'WebDAV-Worker: Shadow-Tree und Worker-Index werden abgeglichen; vollständig erledigte Quellen werden nicht aus Nextcloud geladen.'
   );
 }
 
@@ -222,29 +222,6 @@ function bratonien_tools_start_webdav_cache_rebuild()
     'rebuild',
     'WebDAV-Bildcache: der vollständige aktuelle Shadow-Bestand wird erneut an Piwigo übergeben.'
   );
-}
-
-function bratonien_tools_webdav_cache_build_should_resume()
-{
-  $now = time();
-  foreach (bratonien_tools_webdav_warmup_connections() as $connection_id=>$runtime)
-  {
-    $file = bratonien_tools_webdav_warmup_status_file_for_connection($connection_id);
-    if (!is_file($file) || !is_readable($file)) continue;
-    $raw = @file_get_contents($file);
-    $status = $raw !== false ? json_decode($raw, true) : null;
-    if (!is_array($status)) continue;
-
-    $state = (string)($status['state'] ?? 'idle');
-    if (in_array($state, array('preempted','error','fatal'), true)) return true;
-
-    if (in_array($state, array('queued','scan','running'), true))
-    {
-      $updated = (int)($status['updated_at'] ?? 0);
-      if ($updated > 0 && ($now - $updated) > 120) return true;
-    }
-  }
-  return false;
 }
 
 function bratonien_tools_has_local_cache_sources()
@@ -263,17 +240,13 @@ function bratonien_tools_has_local_cache_sources()
 
 function bratonien_tools_start_combined_image_cache_build()
 {
-  // Ein unvollständiger WebDAV-Lauf wird fortgesetzt. Nur wenn kein
-  // fortsetzbarer Lauf existiert, startet der Button einen echten Rebuild.
-  // Dadurch bleiben bereits gesetzte stage1/stage2-Signaturen erhalten und
-  // ein Abbruch nach Stufe 1 führt nicht erneut zu einem Start bei 0.
-  $resume = bratonien_tools_webdav_cache_build_should_resume();
-  $webdav = $resume
-    ? bratonien_tools_start_webdav_warmup_mode(
-        'manual',
-        'WebDAV-Bildcache: unterbrochener Lauf wird aus dem vorhandenen Worker-Index fortgesetzt; fertige Stufen werden nicht erneut verarbeitet.'
-      )
-    : bratonien_tools_start_webdav_cache_rebuild();
+  // Der normale "Piwigo-Bildcache aufbauen"-Lauf ist immer inkrementell.
+  // Der Worker liest zuerst ausschließlich Shadow-Tree/Mapping und seinen
+  // eigenen Index. Nur Quellen, denen laut Index Stufe 1 oder Stufe 2 fehlt,
+  // dürfen anschließend aus Nextcloud geladen werden. Ein kompletter
+  // Neuaufbau entsteht nur nach einer echten Cache-Invalidierung (z.B. Cache
+  // leeren), denn genau dort werden die Stage-Signaturen bewusst entfernt.
+  $webdav = bratonien_tools_start_webdav_warmup_manual();
   $main = array('started'=>false, 'message'=>'');
 
   if (bratonien_tools_has_local_cache_sources())
