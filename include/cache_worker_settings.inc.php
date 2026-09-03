@@ -4,6 +4,8 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+require_once(BRATONIEN_TOOLS_PATH.'include/webdav_warmup_settings.inc.php');
+
 function bratonien_tools_cache_worker_settings_file()
 {
   return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-tools-cache-workers.json';
@@ -136,6 +138,8 @@ function bratonien_tools_get_cache_worker_settings()
   $settings['auto_workers'] = min($settings['max_workers'], $settings['cpu_count']);
   $settings['manual_workers'] = min($settings['max_workers'], $settings['manual_workers']);
   $settings['worker_count'] = $settings['auto'] ? $settings['auto_workers'] : $settings['manual_workers'];
+  $settings['webdav_warmup'] = bratonien_tools_get_webdav_warmup_settings();
+  $settings['webdav_warmup']['status'] = bratonien_tools_get_webdav_warmup_status();
   return $settings;
 }
 
