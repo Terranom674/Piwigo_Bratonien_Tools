@@ -57,6 +57,11 @@ function bratonien_tools_webdav_warmup_status_file_for_connection($connection_id
   return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.status-'.(int)$connection_id.'.json';
 }
 
+function bratonien_tools_webdav_warmup_cancel_file_for_connection($connection_id)
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.cancel-'.(int)$connection_id;
+}
+
 function bratonien_tools_webdav_warmup_write_status($connection_id, $state, $message, array $extra=array())
 {
   $file = bratonien_tools_webdav_warmup_status_file_for_connection($connection_id);
@@ -180,6 +185,10 @@ function bratonien_tools_start_webdav_warmup_mode($mode, $message)
   $run_id = date('YmdHis').'-'.bin2hex(random_bytes(4));
   foreach ($connections as $connection_id=>$runtime)
   {
+    // Ein altes Abbruchsignal darf niemals den nächsten bewusst gestarteten
+    // Lauf stoppen. Es wird unmittelbar vor dem neuen Start entfernt.
+    @unlink(bratonien_tools_webdav_warmup_cancel_file_for_connection($connection_id));
+
     bratonien_tools_webdav_warmup_write_status(
       $connection_id,
       'queued',
@@ -222,6 +231,72 @@ function bratonien_tools_start_webdav_cache_rebuild()
     'rebuild',
     'WebDAV-Bildcache: der vollständige aktuelle Shadow-Bestand wird erneut an Piwigo übergeben.'
   );
+}
+
+function bratonien_tools_request_webdav_cache_cancel()
+{
+  $requested = 0;
+  foreach (bratonien_tools_webdav_warmup_connections() as $connection_id=>$runtime)
+  {
+    $status_file = bratonien_tools_webdav_warmup_status_file_for_connection($connection_id);
+    $status = null;
+    if (is_file($status_file) && is_readable($status_file))
+    {
+      $raw = @file_get_contents($status_file);
+      $status = $raw !== false ? json_decode($raw, true) : null;
+    }
+    if (!is_array($status)) $status = array();
+    $state = (string)($status['state'] ?? 'idle');
+    if (!in_array($state, array('queued','scan','running','cancelling'), true)) continue;
+
+    $cancel = bratonien_tools_webdav_warmup_cancel_file_for_connection($connection_id);
+    if (@file_put_contents($cancel, (string)time()."\n", LOCK_EX) === false)
+    {
+      throw new RuntimeException('WebDAV-Abbruchsignal für Verbindung #'.(int)$connection_id.' konnte nicht geschrieben werden.');
+    }
+    @chmod($cancel, 0664);
+
+    $extra = $status;
+    unset($extra['state'], $extra['message'], $extra['connection_id'], $extra['updated_at']);
+    $extra['cancel_requested'] = true;
+    bratonien_tools_webdav_warmup_write_status(
+      $connection_id,
+      'cancelling',
+      'Abbruch angefordert. Der aktuell laufende Batch wird noch vollständig beendet; danach werden keine weiteren Nextcloud-Originale geladen.',
+      $extra
+    );
+    $requested++;
+  }
+  return $requested;
+}
+
+function bratonien_tools_cancel_combined_image_cache_build()
+{
+  $webdav = bratonien_tools_request_webdav_cache_cancel();
+  $local = false;
+  if (function_exists('bratonien_tools_main_cache_process_active') && function_exists('bratonien_tools_main_cache_is_running'))
+  {
+    $local = bratonien_tools_main_cache_process_active() || bratonien_tools_main_cache_is_running();
+  }
+  if ($local && function_exists('bratonien_tools_request_main_cache_cancel'))
+  {
+    bratonien_tools_request_main_cache_cancel();
+  }
+
+  if ($webdav > 0 && $local)
+  {
+    return array('message'=>'Cache-Abbruch angefordert. Der aktuelle WebDAV-Batch wird noch beendet; lokale Cache-Worker erhalten ebenfalls sofort das Abbruchsignal.');
+  }
+  if ($webdav > 0)
+  {
+    return array('message'=>'WebDAV-Cache-Abbruch angefordert. Der aktuell laufende Batch wird noch vollständig beendet; danach ist Schluss.');
+  }
+  if ($local)
+  {
+    return array('message'=>'Lokaler Piwigo-Cache-Abbruch wurde angefordert.');
+  }
+
+  return array('message'=>'Es läuft aktuell kein Cache-Aufbau.');
 }
 
 function bratonien_tools_has_local_cache_sources()
