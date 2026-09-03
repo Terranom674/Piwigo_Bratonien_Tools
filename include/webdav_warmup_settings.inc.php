@@ -4,6 +4,8 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+require_once(BRATONIEN_TOOLS_PATH.'include/webdav_source_index.inc.php');
+
 function bratonien_tools_webdav_warmup_settings_file()
 {
   return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.settings.json';
@@ -30,6 +32,80 @@ function bratonien_tools_get_webdav_warmup_settings()
     }
   }
   return $settings;
+}
+
+function bratonien_tools_webdav_warmup_connections()
+{
+  $result = array();
+  if (!function_exists('bratonien_tools_nc_connector_connections') || !function_exists('bratonien_tools_nc_connector_is_webdav')) return $result;
+
+  foreach (bratonien_tools_nc_connector_connections() as $connection)
+  {
+    if (empty($connection['enabled']) || !bratonien_tools_nc_connector_is_webdav($connection)) continue;
+    $connection_id = (int)($connection['id'] ?? 0);
+    if ($connection_id < 1) continue;
+    $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+    $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+    if ($state_dir === '') continue;
+    $result[$connection_id] = array('id'=>$connection_id, 'state_dir'=>$state_dir, 'connection'=>$connection);
+  }
+  return $result;
+}
+
+function bratonien_tools_webdav_warmup_status_file_for_connection($connection_id)
+{
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.status-'.(int)$connection_id.'.json';
+}
+
+function bratonien_tools_webdav_warmup_write_status($connection_id, $state, $message, array $extra=array())
+{
+  $file = bratonien_tools_webdav_warmup_status_file_for_connection($connection_id);
+  $payload = array_merge(array(
+    'state'=>(string)$state,
+    'message'=>(string)$message,
+    'connection_id'=>(int)$connection_id,
+    'updated_at'=>time(),
+  ), $extra);
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+  if ($json === false) throw new RuntimeException('WebDAV-Worker-Status konnte nicht serialisiert werden.');
+  $directory = dirname($file);
+  if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) throw new RuntimeException('WebDAV-Worker-Statusverzeichnis konnte nicht angelegt werden.');
+  $tmp = $file.'.tmp-'.bin2hex(random_bytes(4));
+  if (@file_put_contents($tmp, $json."\n", LOCK_EX) === false) throw new RuntimeException('WebDAV-Worker-Status konnte nicht geschrieben werden.');
+  @chmod($tmp, 0664);
+  if (!@rename($tmp, $file))
+  {
+    @unlink($tmp);
+    throw new RuntimeException('WebDAV-Worker-Status konnte nicht atomar gespeichert werden.');
+  }
+}
+
+function bratonien_tools_invalidate_webdav_cache_completion($reason='Piwigo-Bildcache wurde geleert.')
+{
+  $invalidated = 0;
+  foreach (bratonien_tools_webdav_warmup_connections() as $connection_id=>$runtime)
+  {
+    $index = bratonien_tools_webdav_source_index_load($runtime['state_dir'], $connection_id);
+    if (is_array($index))
+    {
+      foreach ($index['sources'] as &$entry)
+      {
+        if (!is_array($entry)) continue;
+        unset($entry['stage1_signature'], $entry['stage2_signature']);
+      }
+      unset($entry);
+      bratonien_tools_webdav_source_index_save($runtime['state_dir'], $connection_id, $index);
+      $invalidated++;
+    }
+
+    bratonien_tools_webdav_warmup_write_status(
+      $connection_id,
+      'idle',
+      $reason.' Der Quellenindex bleibt erhalten; seine Cache-Fertigmarkierungen wurden verworfen.',
+      array('cache_invalidated'=>true)
+    );
+  }
+  return $invalidated;
 }
 
 function bratonien_tools_save_webdav_warmup_settings()
@@ -96,17 +172,40 @@ function bratonien_tools_start_webdav_warmup_mode($mode, $message)
   if (!$php) throw new RuntimeException('PHP-CLI wurde für den WebDAV-Worker nicht gefunden.');
   $dispatcher = realpath(BRATONIEN_TOOLS_PATH.'runtime/webdav-warmup-dispatch.php');
   if (!$dispatcher || !is_file($dispatcher)) throw new RuntimeException('WebDAV-Worker-Dispatcher wurde nicht gefunden.');
-
   if (!in_array($mode, array('manual','rebuild'), true)) throw new RuntimeException('Ungültiger manueller Worker-Modus.');
+
+  $connections = bratonien_tools_webdav_warmup_connections();
+  if (!$connections) throw new RuntimeException('Keine aktive WebDAV-Verbindung mit vollständiger Runtime gefunden.');
+
+  $run_id = date('YmdHis').'-'.bin2hex(random_bytes(4));
+  foreach ($connections as $connection_id=>$runtime)
+  {
+    bratonien_tools_webdav_warmup_write_status(
+      $connection_id,
+      'queued',
+      $mode === 'rebuild'
+        ? 'Cache-Rebuild wurde angefordert. Der Worker wartet auf den Start und gleicht danach Shadow-Tree und eigenen Index ab.'
+        : 'Quellenprüfung wurde angefordert. Der Worker wartet auf den Start und gleicht danach Shadow-Tree und eigenen Index ab.',
+      array('mode'=>$mode, 'run_id'=>$run_id)
+    );
+  }
+
   $log = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup-dispatch.log';
   $command = 'nohup '.escapeshellarg($php).' '.escapeshellarg($dispatcher).' --mode='.escapeshellarg($mode).' >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
   $output = array();
   $exit = 1;
   @exec($command, $output, $exit);
   $pid = isset($output[0]) ? (int)$output[0] : 0;
-  if ($exit !== 0 || $pid <= 0) throw new RuntimeException('WebDAV-Worker konnte nicht gestartet werden.');
+  if ($exit !== 0 || $pid <= 0)
+  {
+    foreach ($connections as $connection_id=>$runtime)
+    {
+      bratonien_tools_webdav_warmup_write_status($connection_id, 'error', 'WebDAV-Worker konnte nicht gestartet werden.', array('mode'=>$mode, 'run_id'=>$run_id));
+    }
+    throw new RuntimeException('WebDAV-Worker konnte nicht gestartet werden.');
+  }
 
-  return array('message'=>$message, 'pid'=>$pid);
+  return array('message'=>$message, 'pid'=>$pid, 'run_id'=>$run_id);
 }
 
 function bratonien_tools_start_webdav_warmup_manual()
@@ -141,6 +240,10 @@ function bratonien_tools_has_local_cache_sources()
 
 function bratonien_tools_start_combined_image_cache_build()
 {
+  // Der WebDAV-Status muss vor jedem asynchronen Start auf queued wechseln.
+  // Sonst kann die Admin-Seite den complete-Status des vorigen Laufs sofort
+  // als Ergebnis des neuen Klicks interpretieren und die Abfrage beenden.
+  $webdav = bratonien_tools_start_webdav_cache_rebuild();
   $main = array('started'=>false, 'message'=>'');
 
   if (bratonien_tools_has_local_cache_sources())
@@ -164,7 +267,6 @@ function bratonien_tools_start_combined_image_cache_build()
     $main['message'] = 'Lokaler Piwigo-Teil nicht gestartet, weil keine lokalen Bildquellen vorhanden sind.';
   }
 
-  $webdav = bratonien_tools_start_webdav_cache_rebuild();
   $parts = array();
   if (!empty($main['message'])) $parts[] = $main['message'];
   if (!empty($webdav['message'])) $parts[] = $webdav['message'];
