@@ -40,7 +40,7 @@ function bratonien_tools_status_webdav_label(array $status)
   $state = (string)($status['state'] ?? 'idle');
   $prefix = $connection > 0 ? 'WebDAV #'.$connection.': ' : 'WebDAV: ';
 
-  if ($state === 'queued') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Worker wartet auf den Start.');
+  if ($state === 'queued' || $state === 'waiting') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Worker wartet auf den nächsten sicheren Startpunkt.');
   if ($state === 'scan')
   {
     $sources = (int)($status['shadow_sources'] ?? 0);
@@ -95,6 +95,7 @@ usort($webdav, function($a, $b) {
 });
 
 $webdav_active = false;
+$webdav_waiting = false;
 $webdav_cancelling = false;
 $webdav_cancelled = false;
 $webdav_error = false;
@@ -133,7 +134,7 @@ foreach ($webdav as &$status)
     $webdav_progress_total += $selected * 2;
     $webdav_progress_completed += $stage >= 2 ? $selected + $stage_completed : $stage_completed;
   }
-  elseif (in_array($state, array('complete','error','fatal','preempted','cancelled'), true))
+  elseif (in_array($state, array('complete','error','fatal','preempted','cancelled','waiting'), true))
   {
     $selected = max(0, (int)($status['selected'] ?? 0));
     if ($selected > 0)
@@ -149,6 +150,7 @@ foreach ($webdav as &$status)
   }
 
   if (in_array($state, array('queued','scan','running'), true)) $webdav_active = true;
+  if ($state === 'waiting') $webdav_waiting = true;
   if ($state === 'cancelling') $webdav_cancelling = true;
   if ($state === 'cancelled') $webdav_cancelled = true;
   if ($state === 'preempted') $webdav_pending = true;
@@ -161,7 +163,7 @@ unset($status);
 $local_state = (string)($local['state'] ?? 'idle');
 $local_updated = (int)($local['updated_at'] ?? 0);
 $local_stale = in_array($local_state, array('running','queued'), true) && $local_updated > 0 && (time() - $local_updated) > 45;
-if ($local_stale && !$webdav_active && !$webdav_cancelling)
+if ($local_stale && !$webdav_active && !$webdav_cancelling && !$webdav_waiting)
 {
   $local['state'] = 'error';
   $local['message'] = 'Der lokale Piwigo-Teil liefert seit mehr als 45 Sekunden keinen Fortschritt.';
@@ -203,6 +205,14 @@ elseif ($webdav_active)
   $overall['cached'] = (int)($local['cached'] ?? 0);
   $overall['skipped'] = (int)($local['skipped'] ?? 0);
   $overall['message'] = 'Gesamtaufbau läuft'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
+  $overall['current'] = implode(' ', $webdav_lines);
+}
+elseif ($webdav_waiting)
+{
+  $overall['state'] = 'queued';
+  $overall['total'] = $combined_total;
+  $overall['completed'] = $combined_completed;
+  $overall['message'] = 'Cache-Aufbau pausiert für laufende Connector-Synchronisierung'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. Der Indexstand bleibt erhalten.';
   $overall['current'] = implode(' ', $webdav_lines);
 }
 elseif ($webdav_error || $local_state === 'error')
