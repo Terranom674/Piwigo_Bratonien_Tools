@@ -20,14 +20,10 @@ flock -s 9
 
 COMMAND=("$@")
 
-run_command() {
-    "${COMMAND[@]}"
-}
-
-result=0
-if ! run_command; then
-    result=$?
-fi
+set +e
+"${COMMAND[@]}"
+result=$?
+set -e
 
 # Ein Connector-Sync kann während eines bereits laufenden Warmups neue Alben
 # melden. Der Dispatcher legt dafür nur eine Prioritätsmarke an; er startet
@@ -50,8 +46,12 @@ if [[ -f "$PRIORITY_FILE" ]]; then
         SYNC_COMMAND+=("--mode=sync")
     fi
 
-    if ! "${SYNC_COMMAND[@]}"; then
-        result=$?
+    set +e
+    "${SYNC_COMMAND[@]}"
+    sync_result=$?
+    set -e
+    if [[ "$sync_result" -ne 0 ]]; then
+        result="$sync_result"
     fi
 fi
 
