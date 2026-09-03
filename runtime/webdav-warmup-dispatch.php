@@ -56,9 +56,15 @@ if (!function_exists('exec'))
 }
 
 $worker = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/webdav-cache-warmup.php');
+$guard = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/run-webdav-cache-warmup.sh');
 if (!$worker || !is_file($worker))
 {
   fwrite(STDERR, "WebDAV-Cache-Warmup-Worker wurde nicht gefunden.\n");
+  exit(1);
+}
+if (!$guard || !is_file($guard))
+{
+  fwrite(STDERR, "WebDAV-Cache-Warmup-Schutzskript wurde nicht gefunden.\n");
   exit(1);
 }
 
@@ -71,7 +77,20 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
   $connection_id = (int)$connection['id'];
   if ($connection_id < 1) continue;
 
-  $base = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
+  $config = isset($connection['config']) && is_array($connection['config']) ? $connection['config'] : array();
+  $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
+  if ($state_dir === '')
+  {
+    fwrite(STDERR, "Warmup für Verbindung #{$connection_id} übersprungen: Connector-State-Verzeichnis fehlt.\n");
+    $result = 1;
+    continue;
+  }
+
+  // Der Guard hält webdav-sync.lock für den gesamten Worker-Lauf geteilt.
+  // Dadurch kann der produktive Source-/Shadow-Tree während Download, Swap,
+  // Piwigo-Aufruf und Restore nicht von einem Connector-Sync ersetzt werden.
+  $base = escapeshellarg('/bin/bash').' '.escapeshellarg($guard).' '.escapeshellarg($state_dir)
+    .' '.escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
     .' --connection-id='.$connection_id
     .' --mode='.escapeshellarg($mode);
 
