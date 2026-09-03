@@ -28,6 +28,8 @@ source "$CONFIG_FILE"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LOCK_FILE="$STATE_DIR/webdav-sync.lock"
 WORKER_LOCK_FILE="$STATE_DIR/webdav-cache-warmup.lock"
+CHANGE_FILE="$STATE_DIR/webdav-sync-content-changed"
+PRIORITY_FILE="$STATE_DIR/webdav-cache-warmup-priority-sync"
 mkdir -p -- "$STATE_DIR"
 chgrp www-data -- "$STATE_DIR"
 chmod 0750 -- "$STATE_DIR"
@@ -35,8 +37,6 @@ chmod 0750 -- "$STATE_DIR"
 # Das Connector-State-Verzeichnis bleibt fuer www-data bewusst nicht
 # beschreibbar. Die beiden gemeinsam verwendeten Lock-Dateien werden deshalb
 # vom privilegierten Connector explizit angelegt und gruppenschreibbar gemacht.
-# So kann der Piwigo-CLI-Worker vorhandene Locks oeffnen, ohne Schreibrechte
-# auf das gesamte Connector-State-Verzeichnis zu erhalten.
 touch -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
 chgrp www-data -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
 chmod 0660 -- "$LOCK_FILE" "$WORKER_LOCK_FILE"
@@ -96,6 +96,11 @@ done < "$WEBDAV_ROOTS_FILE"
 
 [[ ${#ROOT_ARGS[@]} -gt 0 ]] || { write_status error "Keine WebDAV-Wurzeln konfiguriert"; exit 1; }
 
+OLD_MAPPING_HASH=""
+if [[ -r "$WEBDAV_MAPPING_FILE" ]]; then
+    OLD_MAPPING_HASH="$(sha256sum -- "$WEBDAV_MAPPING_FILE" | awk '{print $1}')"
+fi
+
 python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --base-url "$WEBDAV_BASE_URL" \
     --user "$WEBDAV_USER" \
@@ -112,6 +117,18 @@ find "$WEBDAV_SOURCE_DIR" -type f -exec chmod 0664 -- {} +
 
 chgrp www-data -- "$WEBDAV_MAPPING_FILE"
 chmod 0640 -- "$WEBDAV_MAPPING_FILE"
+
+NEW_MAPPING_HASH="$(sha256sum -- "$WEBDAV_MAPPING_FILE" | awk '{print $1}')"
+if [[ -z "$OLD_MAPPING_HASH" || "$OLD_MAPPING_HASH" != "$NEW_MAPPING_HASH" ]]; then
+    printf '%s\n' "$NEW_MAPPING_HASH" > "$CHANGE_FILE"
+    chmod 0640 -- "$CHANGE_FILE"
+else
+    rm -f -- "$CHANGE_FILE"
+    # Eine alte Prioritaetsmarke darf einen laufenden Rebuild nicht abbrechen,
+    # wenn der gerade abgeschlossene Connector-Sync keinerlei Aenderung
+    # festgestellt hat.
+    rm -f -- "$PRIORITY_FILE"
+fi
 
 python3 "$SCRIPT_DIR/lib/shadow_tree.py" \
     --manifest "$MANIFEST" \
