@@ -5,7 +5,7 @@ if (PHP_SAPI !== 'cli')
   exit;
 }
 
-$piwigo_root = realpath(dirname(__DIR__, 3));
+$piwigo_root = realpath(dirname(__DIR__, 4));
 if ($piwigo_root === false)
 {
   fwrite(STDERR, "Piwigo-Root wurde nicht gefunden.\n");
