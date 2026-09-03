@@ -12,7 +12,7 @@ function bratonien_tools_webdav_warmup_settings_file()
 function bratonien_tools_get_webdav_warmup_settings()
 {
   $settings = array(
-    'enabled'=>true,
+    'enabled'=>false,
     'batch_size'=>10,
     'periodic_hours'=>12,
     'piwigo_base_url'=>'http://127.0.0.1',
