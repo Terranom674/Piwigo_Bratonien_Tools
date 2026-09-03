@@ -8,24 +8,53 @@ function bratonien_tools_atomic_cache_remove_tree($root, array &$failed)
 {
   if (!file_exists($root) && !is_link($root)) return;
 
-  $iterator = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-    RecursiveIteratorIterator::CHILD_FIRST
-  );
-
-  foreach ($iterator as $item)
+  // Niemals einem Symlink folgen. Auch ein Link auf ein Verzeichnis ist nur
+  // ein einzelner Eintrag des ausgelagerten Cachebaums und wird per unlink()
+  // entfernt. So kann das Cleanup kein Ziel ausserhalb des Cachebaums beruehren.
+  if (is_link($root))
   {
-    $path = $item->getPathname();
-    if ($item->isLink() || $item->isFile())
+    if (!@unlink($root)) $failed[] = $root;
+    return;
+  }
+  if (is_file($root))
+  {
+    if (!@unlink($root)) $failed[] = $root;
+    return;
+  }
+  if (!is_dir($root))
+  {
+    $failed[] = $root;
+    return;
+  }
+
+  $entries = @scandir($root);
+  if ($entries === false)
+  {
+    $failed[] = $root;
+    return;
+  }
+
+  foreach ($entries as $entry)
+  {
+    if ($entry === '.' || $entry === '..') continue;
+    $path = $root.DIRECTORY_SEPARATOR.$entry;
+
+    if (is_link($path) || is_file($path))
     {
       if (!@unlink($path)) $failed[] = $path;
       continue;
     }
 
-    if ($item->isDir() && !@rmdir($path))
+    if (is_dir($path))
     {
-      $failed[] = $path;
+      bratonien_tools_atomic_cache_remove_tree($path, $failed);
+      continue;
     }
+
+    // Sonderdateien werden wie einzelne Cacheeintraege behandelt. unlink()
+    // ist hier sicherer als ein rekursiver Iterator, der Verweise interpretieren
+    // koennte.
+    if (!@unlink($path)) $failed[] = $path;
   }
 
   if (!@rmdir($root) && is_dir($root)) $failed[] = $root;
@@ -86,10 +115,6 @@ function bratonien_tools_clear_image_cache_atomic()
     throw new RuntimeException('Temporäres Cache-Auslagerungsverzeichnis existiert bereits. Abbruch.');
   }
 
-  // Der gesamte bisherige Cache wird in einem einzigen Rename aus dem aktiven
-  // Piwigo-Pfad entfernt. Neue Requests schreiben danach nur noch in den neu
-  // angelegten Cachebaum und können nicht mit dem Löschen des Altbestands
-  // konkurrieren.
   if (!@rename($real_cache_root, $detached))
   {
     throw new RuntimeException('Bildcache konnte nicht atomar aus dem aktiven Pfad ausgelagert werden.');
@@ -101,7 +126,6 @@ function bratonien_tools_clear_image_cache_atomic()
   umask($umask);
   if (!$created && !is_dir($real_cache_root))
   {
-    // Der aktive Pfad muss in diesem Fehlerfall wiederhergestellt werden.
     if (!file_exists($real_cache_root) && @rename($detached, $real_cache_root))
     {
       throw new RuntimeException('Neuer Bildcache konnte nicht angelegt werden; der bisherige Cache wurde vollständig wiederhergestellt.');
