@@ -35,6 +35,7 @@ if (!defined('BRATONIEN_TOOLS_PATH'))
 
 require_once(BRATONIEN_TOOLS_PATH.'tools/image_cache.inc.php');
 require_once(BRATONIEN_TOOLS_PATH.'include/watermark_engine.inc.php');
+require_once(BRATONIEN_TOOLS_PATH.'include/webdav_materialize_runtime.inc.php');
 require_once(PHPWG_ROOT_PATH.'include/derivative.inc.php');
 require_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
 
@@ -229,6 +230,7 @@ function bratonien_tools_cache_builder_worker($worker_index, $worker_count, $run
     $source_path = $src->get_path();
     $image_id = (int)$image_row['id'];
     $metadata = null;
+    $webdav_source = bratonien_tools_webdav_materialize_source_info($image_id);
 
     foreach ($variants as $variant_name => $requested_params)
     {
@@ -248,6 +250,28 @@ function bratonien_tools_cache_builder_worker($worker_index, $worker_count, $run
       {
         $derivative = new DerivativeImage($requested_params, $src);
         $target_path = $derivative->get_path();
+
+        // WebDAV-Connector-Bilder besitzen absichtlich nur einen Placeholder als
+        // lokale Quelle. Der alte Full-Cache-Builder darf diesen niemals direkt
+        // rendern. Fehlende Connector-Derivate gehören ausschließlich in den
+        // materialisierenden WebDAV-Warmup-/On-Demand-Pfad.
+        if ($webdav_source)
+        {
+          if (
+            strpos($target_path, PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR) === 0
+            && is_file($target_path)
+            && is_readable($target_path)
+          )
+          {
+            $cached++;
+          }
+          else
+          {
+            $skipped++;
+          }
+          continue;
+        }
+
         if (strpos($target_path, PHPWG_ROOT_PATH.PWG_DERIVATIVE_DIR) !== 0)
         {
           $skipped++;
