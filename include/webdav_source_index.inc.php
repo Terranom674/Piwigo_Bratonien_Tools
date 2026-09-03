@@ -4,15 +4,17 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_webdav_source_index_file($connection_id)
+function bratonien_tools_webdav_source_index_file($state_dir)
 {
-  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-source-index.connection-'.(int)$connection_id.'.json';
+  $state_dir = rtrim((string)$state_dir, '/');
+  if ($state_dir === '') throw new RuntimeException('Connector-State-Verzeichnis fehlt für den WebDAV-Quellenindex.');
+  return $state_dir.'/webdav-cache-index.json';
 }
 
 function bratonien_tools_webdav_source_index_empty($connection_id)
 {
   return array(
-    'schema_version'=>1,
+    'schema_version'=>2,
     'connection_id'=>(int)$connection_id,
     'updated_at'=>0,
     'last_periodic_at'=>0,
@@ -20,9 +22,9 @@ function bratonien_tools_webdav_source_index_empty($connection_id)
   );
 }
 
-function bratonien_tools_webdav_source_index_load($connection_id)
+function bratonien_tools_webdav_source_index_load($state_dir, $connection_id)
 {
-  $file = bratonien_tools_webdav_source_index_file($connection_id);
+  $file = bratonien_tools_webdav_source_index_file($state_dir);
   if (!is_file($file) || !is_readable($file)) return null;
 
   $raw = @file_get_contents($file);
@@ -36,16 +38,16 @@ function bratonien_tools_webdav_source_index_load($connection_id)
   return $index;
 }
 
-function bratonien_tools_webdav_source_index_save($connection_id, array $index)
+function bratonien_tools_webdav_source_index_save($state_dir, $connection_id, array $index)
 {
-  $file = bratonien_tools_webdav_source_index_file($connection_id);
+  $file = bratonien_tools_webdav_source_index_file($state_dir);
   $directory = dirname($file);
   if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory))
   {
     throw new RuntimeException('WebDAV-Quellenindex-Verzeichnis konnte nicht angelegt werden.');
   }
 
-  $index['schema_version'] = 1;
+  $index['schema_version'] = 2;
   $index['connection_id'] = (int)$connection_id;
   $index['updated_at'] = time();
   if (!isset($index['sources']) || !is_array($index['sources'])) $index['sources'] = array();
@@ -71,10 +73,7 @@ function bratonien_tools_webdav_source_index_key(array $source)
 {
   $connection_id = (int)($source['connection_id'] ?? 0);
   $fileid = (int)($source['fileid'] ?? 0);
-  if ($fileid > 0)
-  {
-    return 'c'.$connection_id.':f'.$fileid;
-  }
+  if ($fileid > 0) return 'c'.$connection_id.':f'.$fileid;
 
   $root_fileid = (int)($source['root_fileid'] ?? 0);
   $path = trim((string)($source['webdav_path'] ?? ''), '/');
@@ -96,11 +95,10 @@ function bratonien_tools_webdav_source_index_signature(array $source)
   )));
 }
 
-function bratonien_tools_webdav_source_index_metadata(array $source, $image_id)
+function bratonien_tools_webdav_source_index_metadata(array $source, $shadow_relative)
 {
   $path = trim((string)($source['webdav_path'] ?? ''), '/');
   return array(
-    'image_id'=>(int)$image_id,
     'fileid'=>(int)($source['fileid'] ?? 0),
     'root_fileid'=>(int)($source['root_fileid'] ?? 0),
     'webdav_path'=>$path,
@@ -110,6 +108,7 @@ function bratonien_tools_webdav_source_index_metadata(array $source, $image_id)
     'content_type'=>(string)($source['content_type'] ?? $source['mime'] ?? ''),
     'width'=>(int)($source['width'] ?? 0),
     'height'=>(int)($source['height'] ?? 0),
+    'shadow_relative'=>ltrim((string)$shadow_relative, '/'),
     'source_signature'=>bratonien_tools_webdav_source_index_signature($source),
     'last_seen_at'=>time(),
   );
