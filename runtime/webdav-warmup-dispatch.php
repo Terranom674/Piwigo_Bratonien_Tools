@@ -112,6 +112,29 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     }
   }
 
+  if ($mode === 'sync')
+  {
+    if (!is_dir($state_dir) && !@mkdir($state_dir, 0750, true) && !is_dir($state_dir))
+    {
+      fwrite(STDERR, "Warmup-Priorität für Verbindung #{$connection_id} konnte nicht signalisiert werden: State-Verzeichnis fehlt.\n");
+      $result = 1;
+      continue;
+    }
+    $priority_file = $state_dir.'/webdav-cache-warmup-priority-sync';
+    $priority_payload = json_encode(array(
+      'connection_id'=>$connection_id,
+      'requested_at'=>time(),
+      'reason'=>'connector-sync-complete',
+    ), JSON_UNESCAPED_SLASHES);
+    if (!is_string($priority_payload) || @file_put_contents($priority_file, $priority_payload."\n", LOCK_EX) === false)
+    {
+      fwrite(STDERR, "Warmup-Priorität für Verbindung #{$connection_id} konnte nicht geschrieben werden.\n");
+      $result = 1;
+      continue;
+    }
+    @chmod($priority_file, 0664);
+  }
+
   // Der Guard hält webdav-sync.lock für den gesamten Worker-Lauf geteilt.
   // Dadurch kann der produktive Source-/Shadow-Tree während Download, Swap,
   // Piwigo-Aufruf und Restore nicht von einem Connector-Sync ersetzt werden.
