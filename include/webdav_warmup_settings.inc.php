@@ -32,6 +32,25 @@ function bratonien_tools_get_webdav_warmup_settings()
   return $settings;
 }
 
+function bratonien_tools_webdav_warmup_missing_baselines()
+{
+  if (!function_exists('bratonien_tools_nc_connector_connections') || !function_exists('bratonien_tools_nc_connector_is_webdav'))
+  {
+    return array('Connector-Verbindungen konnten nicht geprüft werden.');
+  }
+
+  $missing = array();
+  foreach (bratonien_tools_nc_connector_connections() as $connection)
+  {
+    if (empty($connection['enabled']) || !bratonien_tools_nc_connector_is_webdav($connection)) continue;
+    $connection_id = (int)($connection['id'] ?? 0);
+    if ($connection_id < 1) continue;
+    $state_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.connection-'.$connection_id.'.json';
+    if (!is_file($state_file) || !is_readable($state_file)) $missing[] = '#'.$connection_id;
+  }
+  return $missing;
+}
+
 function bratonien_tools_save_webdav_warmup_settings()
 {
   $current = bratonien_tools_get_webdav_warmup_settings();
@@ -40,6 +59,17 @@ function bratonien_tools_save_webdav_warmup_settings()
   $periodic_hours = isset($_POST['webdav_warmup_periodic_hours']) ? (int)$_POST['webdav_warmup_periodic_hours'] : (int)$current['periodic_hours'];
   $batch_size = max(1, min(50, $batch_size));
   $periodic_hours = max(1, min(168, $periodic_hours));
+
+  if ($enabled && empty($current['enabled']))
+  {
+    $missing = bratonien_tools_webdav_warmup_missing_baselines();
+    if ($missing)
+    {
+      throw new RuntimeException(
+        'WebDAV-Cache-Warmup bleibt deaktiviert. Bitte zuerst „Jetzt prüfen“ ausführen, damit der bestehende produktive Bestand nur als Ausgangszustand erfasst wird. Fehlende Baseline: '.implode(', ', $missing)
+      );
+    }
+  }
 
   $payload = array(
     'enabled'=>$enabled,
