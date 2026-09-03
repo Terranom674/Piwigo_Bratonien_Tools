@@ -36,4 +36,15 @@ for config in "${webdav_configs[@]}"; do
     fi
 done
 
+# Erst nach vollständig beendetem Connector-Lauf darf der Cache-Warmup den
+# produktiven Source-/Shadow-Tree lesen. Der Dispatcher ist in der Patchphase
+# standardmäßig deaktiviert und startet nur, wenn die Plugin-Einstellung das
+# ausdrücklich erlaubt. Neue Alben werden im sync-Modus sofort priorisiert;
+# die periodische Prüfung sammelt einzelne neue/geänderte Bilder und führt ihre
+# eigentliche Prüfung nur im konfigurierten Intervall aus.
+if [[ "$result" -eq 0 && -f "$SCRIPT_DIR/webdav-warmup-dispatch.php" ]]; then
+    php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=sync || result=1
+    php "$SCRIPT_DIR/webdav-warmup-dispatch.php" --mode=periodic || result=1
+fi
+
 exit "$result"
