@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Warmup-Dispatcher/0.9.7.1.12';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.17';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -48,12 +48,12 @@ foreach ($argv as $arg)
 $settings = bratonien_tools_get_webdav_warmup_settings();
 if (!in_array($mode, array('manual','rebuild'), true) && empty($settings['enabled']))
 {
-  fwrite(STDOUT, "WebDAV-Cache-Warmup ist deaktiviert.\n");
+  fwrite(STDOUT, "WebDAV-Worker ist deaktiviert.\n");
   exit(0);
 }
 if (!function_exists('exec'))
 {
-  fwrite(STDERR, "PHP exec() ist deaktiviert; Warmup kann nicht gestartet werden.\n");
+  fwrite(STDERR, "PHP exec() ist deaktiviert; Worker kann nicht gestartet werden.\n");
   exit(1);
 }
 
@@ -61,7 +61,7 @@ $worker = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/webdav-cache-warmup.php');
 $priority_waiter = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/run-webdav-priority-wait.sh');
 if (!$worker || !is_file($worker))
 {
-  fwrite(STDERR, "WebDAV-Cache-Warmup-Worker wurde nicht gefunden.\n");
+  fwrite(STDERR, "WebDAV-Worker wurde nicht gefunden.\n");
   exit(1);
 }
 if (!$priority_waiter || !is_file($priority_waiter))
@@ -86,37 +86,16 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
   $state_dir = rtrim((string)($config['state_dir'] ?? ''), '/');
   if ($state_dir === '')
   {
-    fwrite(STDERR, "Warmup für Verbindung #{$connection_id} übersprungen: Connector-State-Verzeichnis fehlt.\n");
+    fwrite(STDERR, "Worker für Verbindung #{$connection_id} übersprungen: Connector-State-Verzeichnis fehlt.\n");
     $result = 1;
     continue;
-  }
-
-  if ($mode === 'periodic')
-  {
-    $state_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.connection-'.$connection_id.'.json';
-    if (is_file($state_file) && is_readable($state_file))
-    {
-      $raw = @file_get_contents($state_file);
-      $state = $raw !== false ? json_decode($raw, true) : null;
-      if (is_array($state))
-      {
-        $last = (int)($state['last_periodic_at'] ?? 0);
-        $interval = max(1, (int)$settings['periodic_hours']) * 3600;
-        if ($last > 0 && time() - $last < $interval)
-        {
-          $remaining = max(0, $interval - (time() - $last));
-          fwrite(STDOUT, "Periodische Warmup-Prüfung für Verbindung #{$connection_id} noch nicht fällig ({$remaining}s verbleibend).\n");
-          continue;
-        }
-      }
-    }
   }
 
   if ($mode === 'sync')
   {
     if (!is_dir($state_dir) && !@mkdir($state_dir, 0750, true) && !is_dir($state_dir))
     {
-      fwrite(STDERR, "Warmup-Priorität für Verbindung #{$connection_id} konnte nicht signalisiert werden: State-Verzeichnis fehlt.\n");
+      fwrite(STDERR, "Worker-Priorität für Verbindung #{$connection_id} konnte nicht signalisiert werden: State-Verzeichnis fehlt.\n");
       $result = 1;
       continue;
     }
@@ -128,7 +107,7 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     ), JSON_UNESCAPED_SLASHES);
     if (!is_string($priority_payload) || @file_put_contents($priority_file, $priority_payload."\n", LOCK_EX) === false)
     {
-      fwrite(STDERR, "Warmup-Priorität für Verbindung #{$connection_id} konnte nicht geschrieben werden.\n");
+      fwrite(STDERR, "Worker-Priorität für Verbindung #{$connection_id} konnte nicht geschrieben werden.\n");
       $result = 1;
       continue;
     }
@@ -138,15 +117,9 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
   $worker_command = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
     .' --connection-id='.$connection_id
     .' --mode='.escapeshellarg($mode);
-
-  if ($mode === 'sync')
-  {
-    $base = escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command;
-  }
-  else
-  {
-    $base = $worker_command;
-  }
+  $base = $mode === 'sync'
+    ? escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command
+    : $worker_command;
 
   if ($wait)
   {
@@ -165,12 +138,12 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     $pid = isset($output[0]) ? (int)$output[0] : 0;
     if ($exit !== 0 || $pid <= 0)
     {
-      fwrite(STDERR, "Warmup für Verbindung #{$connection_id} konnte nicht gestartet werden.\n");
+      fwrite(STDERR, "Worker für Verbindung #{$connection_id} konnte nicht gestartet werden.\n");
       $result = 1;
       continue;
     }
     $started++;
-    fwrite(STDOUT, "Warmup {$mode} für Verbindung #{$connection_id} gestartet (PID {$pid}).\n");
+    fwrite(STDOUT, "WebDAV-Worker {$mode} für Verbindung #{$connection_id} gestartet (PID {$pid}).\n");
   }
 }
 
@@ -179,5 +152,5 @@ if ($connection_filter > 0 && $matched === 0)
   fwrite(STDERR, "WebDAV-Verbindung #{$connection_filter} wurde nicht als aktive Connector-Verbindung gefunden.\n");
   exit(1);
 }
-if (!$wait) fwrite(STDOUT, "Gestartete Warmup-Prozesse: {$started}.\n");
+if (!$wait) fwrite(STDOUT, "Gestartete WebDAV-Worker: {$started}.\n");
 exit($result);
