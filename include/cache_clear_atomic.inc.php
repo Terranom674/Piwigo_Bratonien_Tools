@@ -136,6 +136,16 @@ function bratonien_tools_clear_image_cache_atomic()
   @chmod($real_cache_root, $mode);
   @file_put_contents($real_cache_root.'/index.htm', 'Not allowed!');
 
+  // Der Quellenindex selbst bleibt bestehen, weil sich die Quellen durch ein
+  // Cache-Leeren nicht ändern. Seine Fertigmarkierungen sind danach aber
+  // zwingend ungültig. Der Worker darf sonst einen leeren Piwigo-Cache als
+  // bereits verarbeitet ansehen, ohne den Cache selbst anzuschauen.
+  $webdav_invalidated = 0;
+  if (function_exists('bratonien_tools_invalidate_webdav_cache_completion'))
+  {
+    $webdav_invalidated = bratonien_tools_invalidate_webdav_cache_completion('Piwigo-Bildcache wurde atomar geleert.');
+  }
+
   $failed = array();
   bratonien_tools_atomic_cache_remove_tree($detached, $failed);
 
@@ -161,6 +171,11 @@ function bratonien_tools_clear_image_cache_atomic()
     bratonien_tools_format_bytes($before['bytes']),
     $before['custom']
   );
+
+  if ($webdav_invalidated > 0)
+  {
+    $message .= sprintf(' Die Cache-Fertigmarkierungen von %d WebDAV-Worker-Index(en) wurden verworfen; die Quellenindizes selbst bleiben erhalten.', $webdav_invalidated);
+  }
 
   if ($active['files'] > 0)
   {
