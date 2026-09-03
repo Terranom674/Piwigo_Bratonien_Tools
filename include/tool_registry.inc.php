@@ -25,6 +25,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_delete_safe.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_webdav.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard_webdav_flow.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_warmup_settings.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_scan_diagnostic.inc.php');
 
 function bratonien_tools_get_tools()
 {
@@ -36,6 +37,7 @@ function bratonien_tools_get_tools()
     'image_cache_webdav_warmup_settings' => array('handler' => 'bratonien_tools_save_webdav_warmup_settings'),
     'image_cache_webdav_warmup_manual' => array('handler' => 'bratonien_tools_start_webdav_warmup_manual'),
     'image_cache_webdav_warmup_audit' => array('handler' => 'bratonien_tools_run_webdav_warmup_audit'),
+    'image_cache_webdav_scan_diagnostic' => array('handler' => 'bratonien_tools_run_webdav_scan_diagnostic'),
     'watermark_save' => array('handler' => 'bratonien_tools_save_watermark'),
     'watermark_file_delete' => array('handler' => 'bratonien_tools_delete_watermark_file'),
     'watermark_engine' => array('handler' => 'bratonien_tools_handle_watermark_engine'),
