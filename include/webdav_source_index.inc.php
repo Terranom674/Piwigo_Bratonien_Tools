@@ -4,17 +4,21 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_webdav_source_index_file($state_dir)
+function bratonien_tools_webdav_source_index_file($state_dir, $connection_id=0)
 {
-  $state_dir = rtrim((string)$state_dir, '/');
-  if ($state_dir === '') throw new RuntimeException('Connector-State-Verzeichnis fehlt für den WebDAV-Quellenindex.');
-  return $state_dir.'/webdav-cache-index.json';
+  // Der Quellenindex gehoert dem Piwigo-Worker und muss deshalb in einem
+  // Verzeichnis liegen, das derselbe Benutzer wie der Admin-/CLI-Worker
+  // schreiben kann. Das Connector-State-Verzeichnis ist fuer den Worker nur
+  // lesende Eingabe (Mapping/Priority), nicht sein eigener persistenter State.
+  $connection_id = (int)$connection_id;
+  if ($connection_id < 1) throw new RuntimeException('Verbindungs-ID fehlt fuer den WebDAV-Quellenindex.');
+  return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-cache-index.connection-'.$connection_id.'.json';
 }
 
 function bratonien_tools_webdav_source_index_empty($connection_id)
 {
   return array(
-    'schema_version'=>2,
+    'schema_version'=>3,
     'connection_id'=>(int)$connection_id,
     'updated_at'=>0,
     'last_periodic_at'=>0,
@@ -24,7 +28,7 @@ function bratonien_tools_webdav_source_index_empty($connection_id)
 
 function bratonien_tools_webdav_source_index_load($state_dir, $connection_id)
 {
-  $file = bratonien_tools_webdav_source_index_file($state_dir);
+  $file = bratonien_tools_webdav_source_index_file($state_dir, $connection_id);
   if (!is_file($file) || !is_readable($file)) return null;
 
   $raw = @file_get_contents($file);
@@ -40,14 +44,14 @@ function bratonien_tools_webdav_source_index_load($state_dir, $connection_id)
 
 function bratonien_tools_webdav_source_index_save($state_dir, $connection_id, array $index)
 {
-  $file = bratonien_tools_webdav_source_index_file($state_dir);
+  $file = bratonien_tools_webdav_source_index_file($state_dir, $connection_id);
   $directory = dirname($file);
   if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory))
   {
     throw new RuntimeException('WebDAV-Quellenindex-Verzeichnis konnte nicht angelegt werden.');
   }
 
-  $index['schema_version'] = 2;
+  $index['schema_version'] = 3;
   $index['connection_id'] = (int)$connection_id;
   $index['updated_at'] = time();
   if (!isset($index['sources']) || !is_array($index['sources'])) $index['sources'] = array();
