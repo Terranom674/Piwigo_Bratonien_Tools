@@ -30,7 +30,7 @@ function bratonien_tools_get_tools()
 {
   return array(
     'image_cache_clear' => array('handler' => 'bratonien_tools_clear_image_cache_atomic'),
-    'image_cache_build' => array('handler' => 'bratonien_tools_start_main_cache_build'),
+    'image_cache_build' => array('handler' => 'bratonien_tools_start_combined_image_cache_build'),
     'image_cache_cancel' => array('handler' => 'bratonien_tools_cancel_main_cache_build'),
     'image_cache_worker_settings' => array('handler' => 'bratonien_tools_save_cache_worker_settings'),
     'image_cache_webdav_warmup_settings' => array('handler' => 'bratonien_tools_save_webdav_warmup_settings'),
