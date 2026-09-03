@@ -91,6 +91,27 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     continue;
   }
 
+  if ($mode === 'periodic')
+  {
+    $state_file = PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.connection-'.$connection_id.'.json';
+    if (is_file($state_file) && is_readable($state_file))
+    {
+      $raw = @file_get_contents($state_file);
+      $state = $raw !== false ? json_decode($raw, true) : null;
+      if (is_array($state))
+      {
+        $last = (int)($state['last_periodic_at'] ?? 0);
+        $interval = max(1, (int)$settings['periodic_hours']) * 3600;
+        if ($last > 0 && time() - $last < $interval)
+        {
+          $remaining = max(0, $interval - (time() - $last));
+          fwrite(STDOUT, "Periodische Warmup-Prüfung für Verbindung #{$connection_id} noch nicht fällig ({$remaining}s verbleibend).\n");
+          continue;
+        }
+      }
+    }
+  }
+
   // Der Guard hält webdav-sync.lock für den gesamten Worker-Lauf geteilt.
   // Dadurch kann der produktive Source-/Shadow-Tree während Download, Swap,
   // Piwigo-Aufruf und Restore nicht von einem Connector-Sync ersetzt werden.
