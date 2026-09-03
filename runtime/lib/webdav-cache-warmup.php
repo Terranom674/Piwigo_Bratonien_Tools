@@ -61,6 +61,16 @@ function bratonien_tools_cache_warmup_status_file($connection_id)
   return PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.status-'.(int)$connection_id.'.json';
 }
 
+function bratonien_tools_cache_warmup_priority_file($state_dir)
+{
+  return rtrim((string)$state_dir, '/').'/webdav-cache-warmup-priority-sync';
+}
+
+function bratonien_tools_cache_warmup_priority_pending($priority_file)
+{
+  return is_string($priority_file) && $priority_file !== '' && is_file($priority_file);
+}
+
 function bratonien_tools_cache_warmup_write_json($file, array $payload)
 {
   $directory = dirname($file);
@@ -575,10 +585,16 @@ function bratonien_tools_cache_warmup_stage_pending(array $selected, array $stat
   return $pending;
 }
 
-function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $selected, array &$state, array $credentials, $batch_size)
+function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $selected, array &$state, array $credentials, $batch_size, $priority_file='')
 {
   $pending = bratonien_tools_cache_warmup_stage_pending($selected, $state, $stage);
-  if (!$pending) return array('ok'=>true, 'success'=>array(), 'failed'=>0);
+  if (!$pending) return array('ok'=>true, 'success'=>array(), 'failed'=>0, 'preempted'=>false);
+
+  if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
+  {
+    bratonien_tools_cache_warmup_log('stage2_preempted', array('connection_id'=>$connection_id, 'point'=>'before_first_batch'));
+    return array('ok'=>true, 'success'=>array(), 'failed'=>0, 'preempted'=>true);
+  }
 
   $temp_root = PHPWG_ROOT_PATH.'upload/bratonien-webdav-warmup';
   if (!is_dir($temp_root) && !@mkdir($temp_root, 0775, true) && !is_dir($temp_root)) throw new RuntimeException('Warmup-Temp-Verzeichnis konnte nicht angelegt werden.');
@@ -652,8 +668,14 @@ function bratonien_tools_cache_warmup_run_stage($connection_id, $stage, array $s
 
     foreach ($downloads as $file) @unlink($file);
     @rmdir($dir);
+
+    if ($stage === 2 && bratonien_tools_cache_warmup_priority_pending($priority_file))
+    {
+      bratonien_tools_cache_warmup_log('stage2_preempted', array('connection_id'=>$connection_id, 'point'=>'after_batch', 'batch'=>$batch_number));
+      return array('ok'=>$failed === 0, 'success'=>$success, 'failed'=>$failed, 'preempted'=>true);
+    }
   }
-  return array('ok'=>$failed === 0, 'success'=>$success, 'failed'=>$failed);
+  return array('ok'=>$failed === 0, 'success'=>$success, 'failed'=>$failed, 'preempted'=>false);
 }
 
 function bratonien_tools_cache_warmup_run($connection_id, $mode)
@@ -670,6 +692,7 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
   $state_dir = rtrim((string)($credentials['config']['state_dir'] ?? ''), '/');
   if ($state_dir === '') throw new RuntimeException('Connector-State-Verzeichnis fehlt.');
   if (!is_dir($state_dir) && !@mkdir($state_dir, 0750, true) && !is_dir($state_dir)) throw new RuntimeException('Connector-State-Verzeichnis konnte nicht angelegt werden.');
+  $priority_file = bratonien_tools_cache_warmup_priority_file($state_dir);
 
   $process_lock = @fopen($state_dir.'/webdav-cache-warmup.lock', 'c');
   if (!$process_lock || !@flock($process_lock, LOCK_EX | LOCK_NB))
@@ -681,6 +704,12 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
 
   try
   {
+    // Nur der Sync-Worker, der den Prozess-Lock tatsächlich erhalten hat,
+    // konsumiert seine eigene Prioritätsmarke. Ein zweiter Sync-Aufruf während
+    // eines laufenden Workers lässt die Marke stehen, damit der aktive Lauf
+    // Stufe 2 sicher zwischen zwei vollständigen Batches unterbrechen kann.
+    if ($mode === 'sync' && is_file($priority_file)) @unlink($priority_file);
+
     $scan = bratonien_tools_cache_warmup_scan($connection_id);
     $state = bratonien_tools_cache_warmup_load_state($connection_id);
     if ($state === null)
@@ -723,14 +752,24 @@ function bratonien_tools_cache_warmup_run($connection_id, $mode)
       return 0;
     }
 
-    $stage1 = bratonien_tools_cache_warmup_run_stage($connection_id, 1, $selected, $state, $credentials, $settings['batch_size']);
+    $stage1 = bratonien_tools_cache_warmup_run_stage($connection_id, 1, $selected, $state, $credentials, $settings['batch_size'], $priority_file);
     $stage2_candidates = array();
     foreach ($selected as $image_id=>$image)
     {
       $saved = isset($state['images'][(string)$image_id]) && is_array($state['images'][(string)$image_id]) ? $state['images'][(string)$image_id] : array();
       if (isset($saved['stage1_signature']) && hash_equals((string)$saved['stage1_signature'], $image['signature'])) $stage2_candidates[$image_id] = $image;
     }
-    $stage2 = bratonien_tools_cache_warmup_run_stage($connection_id, 2, $stage2_candidates, $state, $credentials, $settings['batch_size']);
+    $stage2 = bratonien_tools_cache_warmup_run_stage($connection_id, 2, $stage2_candidates, $state, $credentials, $settings['batch_size'], $priority_file);
+
+    if (!empty($stage2['preempted']))
+    {
+      bratonien_tools_cache_warmup_status($connection_id, 'preempted', 'Warmup Stufe 2 wurde nach einem vollständigen Batch für neue Sync-Priorität freigegeben.', array(
+        'mode'=>$mode,
+        'stage1_failed'=>(int)$stage1['failed'],
+        'stage2_failed'=>(int)$stage2['failed'],
+      ));
+      return ((int)$stage1['failed'] + (int)$stage2['failed']) > 0 ? 2 : 0;
+    }
 
     foreach ($scan['albums'] as $album_id) $state['albums'][(string)$album_id] = array('seen_at'=>time());
     if ($mode === 'periodic' || $mode === 'manual') $state['last_periodic_at'] = time();
