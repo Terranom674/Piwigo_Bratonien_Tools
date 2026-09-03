@@ -60,8 +60,15 @@ function bratonien_tools_run_webdav_scan_diagnostic()
       $parts[] = 'WebDAV #'.$id.': FEHLER: '.(string)$report['fatal'].' (Exit '.(int)$report['exit_code'].')';
       continue;
     }
+
+    $lock_state = (string)($report['worker_lock_state'] ?? 'unknown');
+    if ($lock_state === 'free') $lock_text = 'Worker-Lock frei';
+    elseif ($lock_state === 'busy') $lock_text = 'Worker-Lock BELEGT';
+    elseif ($lock_state === 'open_failed') $lock_text = 'Worker-Lock NICHT OEFFENBAR';
+    else $lock_text = 'Worker-Lock unbekannt';
+
     $parts[] = sprintf(
-      'WebDAV #%d: Mapping %d Dateien, Shadow %d Links, %d passend, %d defekt, %d ohne Mapping, %d doppelt (Exit %d).',
+      'WebDAV #%d: Mapping %d Dateien, Shadow %d Links, %d passend, %d defekt, %d ohne Mapping, %d doppelt; %s%s (Exit %d).',
       $id,
       (int)($report['mapping_files'] ?? 0),
       (int)($report['shadow_links'] ?? 0),
@@ -69,11 +76,13 @@ function bratonien_tools_run_webdav_scan_diagnostic()
       (int)($report['broken'] ?? 0),
       (int)($report['unmapped'] ?? 0),
       (int)($report['duplicates'] ?? 0),
+      $lock_text,
+      !empty($report['worker_lock_detail']) ? ' - '.(string)$report['worker_lock_detail'] : '',
       (int)$report['exit_code']
     );
   }
 
   return array(
-    'message'=>($failed ? 'Scan-Test fehlgeschlagen. ' : 'Scan-Test erfolgreich. ').implode(' ', $parts),
+    'message'=>($failed ? 'Scan-/Lock-Test auffaellig. ' : 'Scan-/Lock-Test erfolgreich. ').implode(' ', $parts),
   );
 }
