@@ -64,6 +64,8 @@ function bratonien_tools_status_webdav_label(array $status)
     if ($total > 0) $parts[] = $completed.' / '.$total.' Quellen dieser Stufe abgeschlossen';
     return implode(' · ', $parts).'.';
   }
+  if ($state === 'cancelling') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Abbruch angefordert; aktueller Batch wird noch beendet.');
+  if ($state === 'cancelled') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Cache-Aufbau wurde abgebrochen.');
   if ($state === 'preempted') return $prefix.'Stufe 2 wurde nach einem vollständigen Batch unterbrochen, damit neue Connector-Inhalte zuerst verarbeitet werden können.';
   if ($state === 'complete') return $prefix.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'Verarbeitung abgeschlossen.');
   if ($state === 'error' || $state === 'fatal') return $prefix.'FEHLER: '.((string)($status['message'] ?? '') !== '' ? (string)$status['message'] : 'WebDAV-Verarbeitung fehlgeschlagen.');
@@ -93,6 +95,8 @@ usort($webdav, function($a, $b) {
 });
 
 $webdav_active = false;
+$webdav_cancelling = false;
+$webdav_cancelled = false;
 $webdav_error = false;
 $webdav_pending = false;
 $webdav_latest = 0;
@@ -120,16 +124,16 @@ foreach ($webdav as &$status)
     $webdav_source_total += $selected;
     $webdav_progress_total += $selected * 2;
   }
-  elseif ($state === 'running')
+  elseif ($state === 'running' || $state === 'cancelling')
   {
-    $selected = max(0, (int)($status['selected_total'] ?? 0));
+    $selected = max(0, (int)($status['selected_total'] ?? $status['selected'] ?? 0));
     $stage = max(1, (int)($status['stage'] ?? 1));
     $stage_completed = max(0, min($selected, (int)($status['stage_completed'] ?? 0)));
     $webdav_source_total += $selected;
     $webdav_progress_total += $selected * 2;
     $webdav_progress_completed += $stage >= 2 ? $selected + $stage_completed : $stage_completed;
   }
-  elseif ($state === 'complete' || $state === 'error' || $state === 'fatal' || $state === 'preempted')
+  elseif (in_array($state, array('complete','error','fatal','preempted','cancelled'), true))
   {
     $selected = max(0, (int)($status['selected'] ?? 0));
     if ($selected > 0)
@@ -145,6 +149,8 @@ foreach ($webdav as &$status)
   }
 
   if (in_array($state, array('queued','scan','running'), true)) $webdav_active = true;
+  if ($state === 'cancelling') $webdav_cancelling = true;
+  if ($state === 'cancelled') $webdav_cancelled = true;
   if ($state === 'preempted') $webdav_pending = true;
   if (in_array($state, array('error','fatal'), true)) $webdav_error = true;
   if ($state !== 'complete') $webdav_all_complete = false;
@@ -155,7 +161,7 @@ unset($status);
 $local_state = (string)($local['state'] ?? 'idle');
 $local_updated = (int)($local['updated_at'] ?? 0);
 $local_stale = in_array($local_state, array('running','queued'), true) && $local_updated > 0 && (time() - $local_updated) > 45;
-if ($local_stale && !$webdav_active)
+if ($local_stale && !$webdav_active && !$webdav_cancelling)
 {
   $local['state'] = 'error';
   $local['message'] = 'Der lokale Piwigo-Teil liefert seit mehr als 45 Sekunden keinen Fortschritt.';
@@ -180,7 +186,15 @@ $local_completed = max(0, min($local_total, (int)($local['completed'] ?? 0)));
 $combined_total = $local_total + $webdav_progress_total;
 $combined_completed = $local_completed + min($webdav_progress_total, $webdav_progress_completed);
 
-if ($webdav_active)
+if ($webdav_cancelling || $local_state === 'cancelling')
+{
+  $overall['state'] = 'cancelling';
+  $overall['total'] = $combined_total;
+  $overall['completed'] = $combined_completed;
+  $overall['message'] = 'Cache-Aufbau wird nach dem aktuell laufenden Batch beendet'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'.';
+  $overall['current'] = implode(' ', $webdav_lines);
+}
+elseif ($webdav_active)
 {
   $overall['state'] = 'running';
   $overall['total'] = $combined_total;
@@ -211,6 +225,14 @@ elseif ($webdav_pending)
   $overall['message'] = 'Cache-Aufbau wartet auf priorisierte Connector-Inhalte'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. '.$local_label;
   $overall['current'] = implode(' ', $webdav_lines);
 }
+elseif ($webdav_cancelled || $local_state === 'cancelled')
+{
+  $overall['state'] = 'cancelled';
+  $overall['total'] = $combined_total;
+  $overall['completed'] = $combined_completed;
+  $overall['message'] = 'Cache-Aufbau wurde nach dem letzten vollständig abgeschlossenen Batch beendet.';
+  $overall['current'] = implode(' ', $webdav_lines);
+}
 elseif ($webdav_all_complete && $local_state === 'complete')
 {
   $overall['state'] = 'complete';
@@ -224,9 +246,6 @@ elseif ($webdav_all_complete && $local_state === 'complete')
 }
 else
 {
-  // Ein alter complete-Status darf niemals einen neuen Lauf als fertig markieren.
-  // Idle/unklare WebDAV-Zustände bleiben sichtbar, bis ein echter Lauf einen
-  // aktuellen queued/scan/running/complete/error-Zustand geschrieben hat.
   $overall['state'] = $local_state === 'complete' ? 'idle' : $local_state;
   $overall['message'] = $local_label;
   if ($webdav_lines) $overall['current'] = implode(' ', $webdav_lines);
