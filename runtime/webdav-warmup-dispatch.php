@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.23';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.29';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -64,6 +64,43 @@ function bratonien_tools_webdav_dispatch_failure_lines(array $output)
     }
   }
   return $failures;
+}
+
+function bratonien_tools_webdav_dispatch_only_connector_deferrals(array $output)
+{
+  $seen = false;
+  foreach ($output as $line)
+  {
+    $line = trim((string)$line);
+    if ($line === '') continue;
+    if (strpos($line, '[BRAT-WORKER] fatal ') !== false || strpos($line, 'download_failed') !== false || stripos($line, 'RESTORE FEHLGESCHLAGEN') !== false)
+    {
+      return false;
+    }
+    if (strpos($line, ' ok=0 ') !== false)
+    {
+      $seen = true;
+      if (strpos($line, 'message=Connector-Synchronisierung läuft.') === false && strpos($line, 'message=Connector-Mapping hat sich seit dem Batch-Download geändert.') === false && strpos($line, 'message=Shadow-Tree hat sich seit dem Batch-Download geändert.') === false)
+      {
+        return false;
+      }
+    }
+  }
+  return $seen;
+}
+
+function bratonien_tools_webdav_dispatch_connector_busy($state_dir)
+{
+  $lock = @fopen(rtrim((string)$state_dir, '/').'/webdav-sync.lock', 'c');
+  if (!$lock) return false;
+  if (@flock($lock, LOCK_SH | LOCK_NB))
+  {
+    @flock($lock, LOCK_UN);
+    fclose($lock);
+    return false;
+  }
+  fclose($lock);
+  return true;
 }
 
 $mode = 'periodic';
@@ -147,6 +184,20 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     }
     @chmod($priority_file, 0664);
   }
+  elseif (bratonien_tools_webdav_dispatch_connector_busy($state_dir))
+  {
+    if (function_exists('bratonien_tools_webdav_warmup_write_status'))
+    {
+      bratonien_tools_webdav_warmup_write_status(
+        $connection_id,
+        'waiting',
+        'Connector-Synchronisierung läuft. Der Cache-Worker startet erst danach; es werden vorher keine Nextcloud-Originale geladen.',
+        array('mode'=>$mode, 'deferred_by_connector'=>true)
+      );
+    }
+    fwrite(STDOUT, "WebDAV-Worker für Verbindung #{$connection_id} wartet auf den Connector-Sync.\n");
+    continue;
+  }
 
   $worker_command = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
     .' --connection-id='.$connection_id
@@ -167,12 +218,32 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     }
     if ($exit !== 0)
     {
+      $deferred = bratonien_tools_webdav_dispatch_only_connector_deferrals($output);
+      if ($deferred)
+      {
+        if (function_exists('bratonien_tools_webdav_warmup_write_status'))
+        {
+          $existing = bratonien_tools_webdav_dispatch_existing_status($connection_id);
+          $extra = is_array($existing) ? $existing : array();
+          unset($extra['state'], $extra['message'], $extra['connection_id'], $extra['updated_at']);
+          $extra['worker_exit_code'] = (int)$exit;
+          $extra['deferred_by_connector'] = true;
+          bratonien_tools_webdav_warmup_write_status(
+            $connection_id,
+            'waiting',
+            'Connector-Synchronisierung hat während des Batches Vorrang erhalten. Der bisherige Indexstand bleibt erhalten; die offenen Quellen werden später fortgesetzt und gelten nicht als Fehler.',
+            $extra
+          );
+        }
+        continue;
+      }
+
       $result = $exit;
       if (function_exists('bratonien_tools_webdav_warmup_write_status'))
       {
         $existing = bratonien_tools_webdav_dispatch_existing_status($connection_id);
         $failures = bratonien_tools_webdav_dispatch_failure_lines($output);
-        $terminal = is_array($existing) && in_array((string)($existing['state'] ?? ''), array('error','fatal','preempted'), true);
+        $terminal = is_array($existing) && in_array((string)($existing['state'] ?? ''), array('error','fatal','preempted','cancelled'), true);
 
         if ($terminal)
         {
