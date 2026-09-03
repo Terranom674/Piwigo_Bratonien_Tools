@@ -152,9 +152,45 @@ function bratonien_tools_start_webdav_cache_rebuild()
   );
 }
 
+function bratonien_tools_has_local_cache_sources()
+{
+  if (!function_exists('bratonien_tools_webdav_materialize_source_info')) return true;
+
+  $result = pwg_query('SELECT id FROM '.IMAGES_TABLE.' ORDER BY id');
+  while ($row = pwg_db_fetch_assoc($result))
+  {
+    $image_id = (int)($row['id'] ?? 0);
+    if ($image_id < 1) continue;
+    if (!bratonien_tools_webdav_materialize_source_info($image_id)) return true;
+  }
+  return false;
+}
+
 function bratonien_tools_start_combined_image_cache_build()
 {
-  $main = bratonien_tools_start_main_cache_build();
+  $main = array('started'=>false, 'message'=>'');
+
+  if (bratonien_tools_has_local_cache_sources())
+  {
+    $main = bratonien_tools_start_main_cache_build();
+  }
+  else
+  {
+    bratonien_tools_write_main_cache_status(array(
+      'state'=>'complete',
+      'message'=>'Lokaler Piwigo-Teil übersprungen: Es existieren keine lokalen Bildquellen; alle produktiven Bilder werden über den WebDAV-Worker verarbeitet.',
+      'total'=>0,
+      'completed'=>0,
+      'generated'=>0,
+      'cached'=>0,
+      'skipped'=>0,
+      'errors'=>0,
+      'current'=>'',
+      'worker_count'=>0,
+    ));
+    $main['message'] = 'Lokaler Piwigo-Teil nicht gestartet, weil keine lokalen Bildquellen vorhanden sind.';
+  }
+
   $webdav = bratonien_tools_start_webdav_cache_rebuild();
 
   $parts = array();
