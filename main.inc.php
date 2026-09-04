@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.7.1.30
+Version: 0.9.7.1.31
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -38,6 +38,7 @@ add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT
 add_event_handler('init', 'bratonien_tools_preserve_connector_top_level_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 9);
 add_event_handler('init', 'bratonien_tools_album_shares_init');
 add_event_handler('loc_end_intro', 'bratonien_tools_fix_admin_album_stat_tile');
+add_event_handler('loc_end_page_tail', 'bratonien_tools_add_legal_footer_links');
 add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_productive_ws_methods');
@@ -179,6 +180,22 @@ function bratonien_tools_fix_admin_album_stat_tile()
 function bratonien_tools_prefilter_admin_album_stat_tile($source)
 {
   return str_replace('{if $NB_ALBUMS > 1}', '{if $NB_ALBUMS > 0}', $source);
+}
+
+function bratonien_tools_add_legal_footer_links()
+{
+  global $template;
+
+  if (defined('IN_ADMIN'))
+  {
+    return;
+  }
+
+  $template->append(
+    'footer_elements',
+    ' - <a href="https://links.bratonien.de/@bratonien_cosplay#bratonien-popup-856170002" rel="noopener">Impressum</a>'
+    .' - <a href="https://links.bratonien.de/@bratonien_cosplay#bratonien-popup-907192090" rel="noopener">Datenschutzerklärung</a>'
+  );
 }
 
 function bratonien_tools_admin_menu($menu)
