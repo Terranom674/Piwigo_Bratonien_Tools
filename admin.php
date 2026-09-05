@@ -112,6 +112,45 @@ $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
 $customer_qr = bratonien_tools_customer_qr_admin_data();
 $customer_qr['friendship_codes'] = bratonien_tools_friendship_code_admin_data();
+
+$qr_present = array();
+foreach ($customer_qr['uploads'] as $qr_upload)
+{
+  $qr_year = (int)$qr_upload['year'];
+  $qr_number = (int)$qr_upload['number'];
+  if ($qr_year < 1 || $qr_number < 1)
+  {
+    continue;
+  }
+  if (!isset($qr_present[$qr_year]))
+  {
+    $qr_present[$qr_year] = array();
+  }
+  $qr_present[$qr_year][$qr_number] = $qr_upload;
+}
+
+$qr_batch_base = get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/customer-qr-admin-batch.php';
+$customer_qr['batch_download_available'] = class_exists('ZipArchive');
+$customer_qr['batch_download_url'] = $qr_batch_base;
+foreach ($customer_qr['years'] as &$qr_year)
+{
+  $year = (int)$qr_year['year'];
+  $capacity = (int)$qr_year['capacity'];
+  $qr_year['batch_download_url'] = $qr_batch_base.'?year='.$year;
+  $qr_year['slots'] = array();
+
+  for ($number = 1; $number <= $capacity; $number++)
+  {
+    $present = isset($qr_present[$year][$number]);
+    $qr_year['slots'][] = array(
+      'number' => $number,
+      'present' => $present,
+      'preview_url' => $present ? (string)$qr_present[$year][$number]['preview_url'] : '',
+    );
+  }
+}
+unset($qr_year);
+
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
