@@ -1,6 +1,6 @@
 <section class="bratonien-section" id="qr-upload">
   <h3>QR-Upload</h3>
-  <p class="bratonien-section__intro">Aktivierbares Uploadformular mit eindeutiger Jahres-/Nummern-Zuordnung und Batch-Upload.</p>
+  <p class="bratonien-section__intro">Aktivierbares Uploadformular für nummerierte QR-Codes und persönliche Freundschaftscodes.</p>
 
   <div class="bratonien-grid">
     <div class="bratonien-card">
@@ -27,6 +27,7 @@
         <span class="bratonien-label">Jahre</span><strong>{$CUSTOMER_QR.year_min}–{$CUSTOMER_QR.year_max}</strong>
         <span class="bratonien-label">Standardjahr</span><strong>{$CUSTOMER_QR.default_year}</strong>
         <span class="bratonien-label">Server-Batchlimit</span><strong>{$CUSTOMER_QR.max_files} Dateien</strong>
+        <span class="bratonien-label">Freundschaftscodes</span><strong>{$CUSTOMER_QR.friendship_codes.total}</strong>
       </div>
       <p style="margin-top:14px;overflow-wrap:anywhere"><a href="{$CUSTOMER_QR.url|escape:html}" target="_blank" rel="noopener">{$CUSTOMER_QR.url|escape:html}</a></p>
     </div>
@@ -53,7 +54,7 @@
   </div>
 
   <div class="bratonien-card" style="margin-top:18px;overflow-x:auto">
-    <h4>Uploads verwalten</h4>
+    <h4>QR-Codes verwalten</h4>
     {if $CUSTOMER_QR.total > 0}
       <table style="width:100%;border-collapse:collapse;min-width:820px">
         <thead>
@@ -90,6 +91,45 @@
       </table>
     {else}
       <p class="bratonien-base-note">Noch keine QR-Codes hochgeladen.</p>
+    {/if}
+  </div>
+
+  <div class="bratonien-card" style="margin-top:18px;overflow-x:auto">
+    <h4>Persönliche Freundschaftscodes</h4>
+    {if $CUSTOMER_QR.friendship_codes.total > 0}
+      <table style="width:100%;border-collapse:collapse;min-width:760px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Name</th>
+            <th style="text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Datei</th>
+            <th style="text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Größe</th>
+            <th style="text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Upload</th>
+            <th style="text-align:right;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {foreach from=$CUSTOMER_QR.friendship_codes.uploads item=friendship}
+            <tr>
+              <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08)"><strong>{$friendship.name|escape:html}</strong></td>
+              <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08);max-width:300px;overflow-wrap:anywhere">{$friendship.original_name|escape:html}</td>
+              <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08)">{$friendship.file_size_label|escape:html}</td>
+              <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08)">{$friendship.created|escape:html}</td>
+              <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap">
+                <a class="buttonLike" href="{$friendship.preview_url|escape:html}" target="_blank" rel="noopener" style="display:inline-block;margin-right:6px">Vorschau</a>
+                <a class="buttonLike" href="{$friendship.download_url|escape:html}" style="display:inline-block;margin-right:6px">Herunterladen</a>
+                <form method="post" style="display:inline" onsubmit="return confirm('Diesen Freundschaftscode wirklich löschen?');">
+                  <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
+                  <input type="hidden" name="bratonien_tool" value="friendship_code_delete">
+                  <input type="hidden" name="friendship_code_id" value="{$friendship.id}">
+                  <button class="buttonLike" type="submit">Löschen</button>
+                </form>
+              </td>
+            </tr>
+          {/foreach}
+        </tbody>
+      </table>
+    {else}
+      <p class="bratonien-base-note">Noch keine persönlichen Freundschaftscodes hochgeladen.</p>
     {/if}
   </div>
 </section>
