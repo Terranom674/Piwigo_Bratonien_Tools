@@ -20,6 +20,7 @@ function bratonien_tools_create_tables()
   $profiles = bratonien_tools_table('watermark_profiles');
   $rules = bratonien_tools_table('watermark_rules');
   $nc_connections = bratonien_tools_table('nc_connections');
+  $customer_qr = bratonien_tools_table('customer_qr_uploads');
 
   pwg_query("CREATE TABLE IF NOT EXISTS `$profiles` (
     id int(11) NOT NULL AUTO_INCREMENT,
@@ -81,6 +82,20 @@ function bratonien_tools_create_tables()
     UNIQUE KEY connection_key (connection_key)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
+  pwg_query("CREATE TABLE IF NOT EXISTS `$customer_qr` (
+    id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+    upload_year smallint(5) unsigned NOT NULL,
+    code_number varchar(32) NOT NULL,
+    original_name varchar(255) NOT NULL,
+    stored_name varchar(255) NOT NULL,
+    mime_type varchar(100) NOT NULL,
+    file_size bigint(20) unsigned NOT NULL DEFAULT 0,
+    created datetime NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY year_code (upload_year, code_number),
+    KEY upload_year (upload_year)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
   if (function_exists('bratonien_tools_create_album_shares_table'))
   {
     bratonien_tools_create_album_shares_table();
@@ -92,6 +107,7 @@ function bratonien_tools_drop_tables()
   pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_table('watermark_profiles').'`');
   pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_table('watermark_rules').'`');
   pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_table('nc_connections').'`');
+  pwg_query('DROP TABLE IF EXISTS `'.bratonien_tools_table('customer_qr_uploads').'`');
 
   if (function_exists('bratonien_tools_drop_album_shares_table'))
   {
