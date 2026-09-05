@@ -62,21 +62,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST')
 
   try
   {
+    if (
+      empty($_POST)
+      && empty($_FILES)
+      && !empty($_SERVER['CONTENT_LENGTH'])
+    )
+    {
+      throw new RuntimeException('Der Upload überschreitet das PHP-Limit post_max_size ('.ini_get('post_max_size').').');
+    }
+
     if (function_exists('check_pwg_token'))
     {
       check_pwg_token();
     }
 
     $year = bratonien_tools_customer_qr_year($_POST['upload_year'] ?? '');
-
-    if (
-      empty($_FILES['qr_files'])
-      && empty($_POST)
-      && !empty($_SERVER['CONTENT_LENGTH'])
-    )
-    {
-      throw new RuntimeException('Der Upload überschreitet das PHP-Limit post_max_size ('.ini_get('post_max_size').').');
-    }
 
     if (empty($_FILES['qr_files']))
     {
@@ -121,7 +121,7 @@ $selected_year = isset($flash['year']) ? (int)$flash['year'] : bratonien_tools_c
 $results = isset($flash['results']) && is_array($flash['results']) ? $flash['results'] : array();
 $token = function_exists('get_pwg_token') ? get_pwg_token() : '';
 $max_files = max(1, (int)ini_get('max_file_uploads'));
-$endpoint = htmlspecialchars(strtok($_SERVER['REQUEST_URI'], '?'), ENT_QUOTES, 'UTF-8');
+$endpoint = strtok($_SERVER['REQUEST_URI'], '?');
 
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store, max-age=0');
@@ -284,6 +284,8 @@ header('Cache-Control: no-store, max-age=0');
     timers.set(row,window.setTimeout(function(){checkRow(row);},250));
   }
 
+  function scheduleAll(){rows().forEach(function(row){scheduleCheck(row);});}
+
   function rebuild(){
     list.textContent='';
     Array.prototype.slice.call(fileInput.files||[]).forEach(function(file,index){
@@ -292,17 +294,17 @@ header('Cache-Control: no-store, max-age=0');
       var input=document.createElement('input');input.type='text';input.name='qr_numbers[]';input.inputMode='numeric';input.autocomplete='off';input.placeholder='QR-Nummer';input.setAttribute('aria-label','QR-Code-Nummer für '+file.name);input.maxLength=32;input.required=true;
       var status=document.createElement('div');status.className='status';status.textContent='Nummer fehlt.';
       row.appendChild(name);row.appendChild(input);row.appendChild(status);list.appendChild(row);
-      input.addEventListener('input',function(){scheduleCheck(row);});
+      input.addEventListener('input',scheduleAll);
       if(index===0)window.setTimeout(function(){input.focus();},0);
     });
     updateSubmit();
   }
 
   fileInput.addEventListener('change',rebuild);
-  yearInput.addEventListener('change',function(){rows().forEach(function(row){scheduleCheck(row);});});
+  yearInput.addEventListener('change',scheduleAll);
   form.addEventListener('submit',function(event){
     var invalid=rows().some(function(row){return row.dataset.valid!=='1';});
-    if(invalid){event.preventDefault();rows().forEach(function(row){if(row.dataset.valid!=='1')checkRow(row);});}
+    if(invalid){event.preventDefault();scheduleAll();}
     else{submit.disabled=true;submit.textContent='Upload läuft …';}
   });
 })();
