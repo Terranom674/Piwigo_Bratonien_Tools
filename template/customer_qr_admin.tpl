@@ -55,7 +55,7 @@
   <div class="bratonien-card" style="margin-top:18px;overflow-x:auto">
     <h4>Uploads verwalten</h4>
     {if $CUSTOMER_QR.total > 0}
-      <table style="width:100%;border-collapse:collapse;min-width:760px">
+      <table style="width:100%;border-collapse:collapse;min-width:820px">
         <thead>
           <tr>
             <th style="text-align:left;padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.14)">Jahr</th>
@@ -76,6 +76,7 @@
               <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08)">{$qr_upload.created|escape:html}</td>
               <td style="padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap">
                 <a class="buttonLike" href="{$qr_upload.preview_url|escape:html}" target="_blank" rel="noopener" style="display:inline-block;margin-right:6px">Vorschau</a>
+                <a class="buttonLike" href="{$qr_upload.preview_url|escape:html}&amp;download=1" style="display:inline-block;margin-right:6px">Herunterladen</a>
                 <form method="post" style="display:inline" onsubmit="return confirm('Diesen QR-Upload wirklich löschen? Die QR-Nummer wird danach wieder frei.');">
                   <input type="hidden" name="pwg_token" value="{$PWG_TOKEN|escape:html}">
                   <input type="hidden" name="bratonien_tool" value="customer_qr_delete">
