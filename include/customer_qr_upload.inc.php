@@ -9,6 +9,16 @@ function bratonien_tools_customer_qr_table()
   return $GLOBALS['prefixeTable'].'bratonien_tools_customer_qr_uploads';
 }
 
+function bratonien_tools_customer_qr_year_limits()
+{
+  return array(
+    2023 => 100,
+    2024 => 50,
+    2025 => 30,
+    2026 => 30,
+  );
+}
+
 function bratonien_tools_customer_qr_settings()
 {
   $default = array(
@@ -83,16 +93,26 @@ function bratonien_tools_customer_qr_ensure_storage()
 function bratonien_tools_customer_qr_year($value)
 {
   $year = (int)$value;
-  if ($year < 2023 || $year > 2048)
+  $limits = bratonien_tools_customer_qr_year_limits();
+  if (!isset($limits[$year]))
   {
-    throw new InvalidArgumentException('Das Jahr muss zwischen 2023 und 2048 liegen.');
+    throw new InvalidArgumentException('Erlaubt sind nur die Jahre 2023, 2024, 2025 und 2026.');
   }
   return $year;
 }
 
 function bratonien_tools_customer_qr_default_year()
 {
-  return max(2023, min(2048, (int)date('Y')));
+  $limits = bratonien_tools_customer_qr_year_limits();
+  $current = (int)date('Y');
+  if (isset($limits[$current]))
+  {
+    return $current;
+  }
+
+  $years = array_keys($limits);
+  sort($years, SORT_NUMERIC);
+  return (int)end($years);
 }
 
 function bratonien_tools_customer_qr_number($value)
@@ -100,18 +120,38 @@ function bratonien_tools_customer_qr_number($value)
   $value = trim((string)$value);
   if ($value === '' || !preg_match('/^[0-9]{1,32}$/', $value))
   {
-    throw new InvalidArgumentException('Die QR-Code-Nummer darf nur aus 1 bis 32 Ziffern bestehen.');
+    throw new InvalidArgumentException('Die QR-Code-Nummer darf nur aus Ziffern bestehen.');
   }
 
   $value = ltrim($value, '0');
-  return $value === '' ? '0' : $value;
+  if ($value === '' || $value === '0')
+  {
+    throw new InvalidArgumentException('Die QR-Code-Nummer muss mindestens 1 sein.');
+  }
+
+  return $value;
+}
+
+function bratonien_tools_customer_qr_number_for_year($year, $value)
+{
+  $year = bratonien_tools_customer_qr_year($year);
+  $number = bratonien_tools_customer_qr_number($value);
+  $limits = bratonien_tools_customer_qr_year_limits();
+  $limit = (int)$limits[$year];
+
+  if (strlen($number) > strlen((string)$limit) || (int)$number > $limit)
+  {
+    throw new InvalidArgumentException('Für '.$year.' sind nur QR-Code-Nummern 1 bis '.$limit.' vorgesehen.');
+  }
+
+  return $number;
 }
 
 function bratonien_tools_customer_qr_exists($year, $number)
 {
   bratonien_tools_customer_qr_ensure_storage();
   $year = bratonien_tools_customer_qr_year($year);
-  $number = bratonien_tools_customer_qr_number($number);
+  $number = bratonien_tools_customer_qr_number_for_year($year, $number);
   $table = bratonien_tools_customer_qr_table();
 
   $query = 'SELECT id FROM `'.$table.'` WHERE upload_year='.(int)$year
@@ -222,7 +262,7 @@ function bratonien_tools_customer_qr_process_uploads($year, array $files, array 
 
     try
     {
-      $number = bratonien_tools_customer_qr_number(isset($numbers[$index]) ? $numbers[$index] : '');
+      $number = bratonien_tools_customer_qr_number_for_year($year, isset($numbers[$index]) ? $numbers[$index] : '');
 
       if (isset($seen[$number]))
       {
@@ -317,30 +357,48 @@ function bratonien_tools_customer_qr_admin_data()
   bratonien_tools_customer_qr_ensure_storage();
   $settings = bratonien_tools_customer_qr_settings();
   $table = bratonien_tools_customer_qr_table();
+  $limits = bratonien_tools_customer_qr_year_limits();
+  $counts = array_fill_keys(array_keys($limits), 0);
   $total = 0;
-  $current_year_total = 0;
   $current_year = bratonien_tools_customer_qr_default_year();
 
-  $result = pwg_query('SELECT COUNT(*) AS cnt FROM `'.$table.'`');
-  if ($row = pwg_db_fetch_assoc($result))
+  $result = pwg_query('SELECT upload_year, COUNT(*) AS cnt FROM `'.$table.'` GROUP BY upload_year');
+  while ($row = pwg_db_fetch_assoc($result))
   {
-    $total = (int)$row['cnt'];
+    $year = (int)$row['upload_year'];
+    $count = (int)$row['cnt'];
+    $total += $count;
+    if (isset($counts[$year]))
+    {
+      $counts[$year] = $count;
+    }
   }
 
-  $result = pwg_query('SELECT COUNT(*) AS cnt FROM `'.$table.'` WHERE upload_year='.(int)$current_year);
-  if ($row = pwg_db_fetch_assoc($result))
+  $years = array();
+  foreach ($limits as $year => $capacity)
   {
-    $current_year_total = (int)$row['cnt'];
+    $used = (int)$counts[$year];
+    $years[] = array(
+      'year' => (int)$year,
+      'capacity' => (int)$capacity,
+      'used' => $used,
+      'remaining' => max(0, (int)$capacity - $used),
+    );
   }
+
+  $year_keys = array_keys($limits);
+  sort($year_keys, SORT_NUMERIC);
 
   return array(
     'enabled' => !empty($settings['enabled']),
     'url' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/customer-qr-upload.php',
-    'year_min' => 2023,
-    'year_max' => 2048,
+    'year_min' => (int)reset($year_keys),
+    'year_max' => (int)end($year_keys),
     'default_year' => $current_year,
+    'years' => $years,
     'total' => $total,
-    'current_year_total' => $current_year_total,
+    'current_year_total' => (int)$counts[$current_year],
+    'current_year_capacity' => (int)$limits[$current_year],
     'max_files' => max(1, (int)ini_get('max_file_uploads')),
   );
 }
