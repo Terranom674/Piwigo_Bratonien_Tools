@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.7.1.33
+Version: 0.9.7.1.34
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -25,8 +25,10 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/batch_titles.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_orphan_ws.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_productive_ws.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/customer_qr_upload.inc.php');
 
 add_event_handler('get_admin_plugin_menu_links', 'bratonien_tools_admin_menu');
+add_event_handler('blockmanager_apply', 'bratonien_tools_customer_qr_add_frontend_menu', EVENT_HANDLER_PRIORITY_NEUTRAL + 10);
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL, 4);
 add_event_handler('get_src_image_url', 'bratonien_tools_filter_webdav_materialize_src_url', EVENT_HANDLER_PRIORITY_NEUTRAL + 50, 2);
 add_event_handler('get_derivative_url', 'bratonien_tools_filter_webdav_materialize_derivative_url', EVENT_HANDLER_PRIORITY_NEUTRAL + 50, 4);
@@ -42,6 +44,48 @@ add_event_handler('loc_end_page_tail', 'bratonien_tools_add_legal_footer_links')
 add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
 add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_productive_ws_methods');
+
+function bratonien_tools_customer_qr_add_frontend_menu($menu_ref_array)
+{
+  if (defined('IN_ADMIN'))
+  {
+    return;
+  }
+
+  $settings = bratonien_tools_customer_qr_settings();
+  if (empty($settings['enabled']))
+  {
+    return;
+  }
+
+  if (!is_array($menu_ref_array) || empty($menu_ref_array[0]) || !is_object($menu_ref_array[0]))
+  {
+    return;
+  }
+
+  $menu = $menu_ref_array[0];
+  if (!method_exists($menu, 'get_id') || $menu->get_id() !== 'menubar')
+  {
+    return;
+  }
+
+  $block = $menu->get_block('mbMenu');
+  if ($block === null)
+  {
+    return;
+  }
+
+  if (!is_array($block->data))
+  {
+    $block->data = array();
+  }
+
+  $block->data['bratonien_customer_qr'] = array(
+    'TITLE' => 'QR-Code hochladen',
+    'NAME' => 'QR-Code hochladen',
+    'URL' => get_root_url().'plugins/'.BRATONIEN_TOOLS_ID.'/customer-qr-upload.php',
+  );
+}
 
 function bratonien_tools_prepare_connector_private_import()
 {
