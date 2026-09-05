@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.7.1.40
+Version: 0.9.7.1.41
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -19,6 +19,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_runtime.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_image_runtime.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_cache_validation.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/webdav_materialize_runtime.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/presentation_refresh.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/picture_navigation.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/batch_titles.inc.php');
@@ -38,6 +39,7 @@ add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EV
 add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', EVENT_HANDLER_PRIORITY_NEUTRAL - 20);
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
 add_event_handler('init', 'bratonien_tools_preserve_connector_top_level_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 9);
+add_event_handler('init', 'bratonien_tools_presentation_refresh_watch_admin_categories', EVENT_HANDLER_PRIORITY_NEUTRAL - 8);
 add_event_handler('init', 'bratonien_tools_album_shares_init');
 add_event_handler('loc_end_intro', 'bratonien_tools_fix_admin_album_stat_tile');
 add_event_handler('loc_end_page_tail', 'bratonien_tools_add_legal_footer_links');
