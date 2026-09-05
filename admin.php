@@ -110,6 +110,7 @@ $engine = bratonien_tools_get_watermark_engine_config();
 $cache_workers = bratonien_tools_get_cache_worker_settings();
 $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
+$customer_qr = bratonien_tools_customer_qr_admin_data();
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
@@ -244,6 +245,7 @@ $template->assign(array(
   'CACHE_WORKERS' => $cache_workers,
   'PUBLIC_SELECTION' => $public_selection,
   'PUBLIC_SELECTION_GROUPS' => $public_selection_groups,
+  'CUSTOMER_QR' => $customer_qr,
   'BRATONIEN_ASSETS' => $assets,
   'ASSET_ENV' => $asset_environment,
   'BRATONIEN_ALBUM_SHARES' => $album_shares,
@@ -261,6 +263,7 @@ $template->set_filename('admin_tabs_content', BRATONIEN_TOOLS_PATH . 'template/a
 $template->set_filename('plugin_admin_content', BRATONIEN_TOOLS_PATH . 'template/admin.tpl');
 $template->set_filename('webdav_warmup_admin_content', BRATONIEN_TOOLS_PATH . 'template/webdav_warmup_admin.tpl');
 $template->set_filename('public_selection_admin_content', BRATONIEN_TOOLS_PATH . 'template/public_selection_admin.tpl');
+$template->set_filename('customer_qr_admin_content', BRATONIEN_TOOLS_PATH . 'template/customer_qr_admin.tpl');
 $template->set_filename('asset_manager_admin_content', BRATONIEN_TOOLS_PATH . 'template/asset_manager_admin.tpl');
 $template->set_filename('album_shares_admin_content', BRATONIEN_TOOLS_PATH . 'template/album_shares_admin.tpl');
 $template->set_filename('nc_connector_admin_content', BRATONIEN_TOOLS_PATH . 'template/nc_connector_admin.tpl');
@@ -270,6 +273,7 @@ $admin_content = $template->parse('admin_tabs_content', true);
 $admin_content .= $template->parse('plugin_admin_content', true);
 $admin_content .= $template->parse('webdav_warmup_admin_content', true);
 $admin_content .= $template->parse('public_selection_admin_content', true);
+$admin_content .= $template->parse('customer_qr_admin_content', true);
 $admin_content .= $template->parse('asset_manager_admin_content', true);
 $admin_content .= $template->parse('album_shares_admin_content', true);
 $admin_content .= $template->parse('nc_connector_admin_content', true);
