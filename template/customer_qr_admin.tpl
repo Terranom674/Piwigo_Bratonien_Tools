@@ -1,3 +1,27 @@
+{literal}
+<style>
+.bratonien-qr-stock-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.bratonien-qr-stock-head h4{margin:0}
+.bratonien-qr-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.bratonien-qr-legend-item{display:inline-flex;gap:7px;align-items:center}
+.bratonien-qr-legend-box{width:18px;height:18px;border-radius:4px;border:1px solid}
+.bratonien-qr-legend-box.is-present{background:rgba(62,170,94,.28);border-color:#58c878}
+.bratonien-qr-legend-box.is-missing{background:rgba(205,72,72,.25);border-color:#db6d6d}
+.bratonien-qr-year{padding:14px 0;border-top:1px solid rgba(255,255,255,.10)}
+.bratonien-qr-year:first-of-type{border-top:0;padding-top:0}
+.bratonien-qr-year-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.bratonien-qr-year-head strong{font-size:1.05rem}
+.bratonien-qr-year-count{opacity:.78}
+.bratonien-qr-year-download{margin-left:auto}
+.bratonien-qr-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+.bratonien-qr-slot{min-height:38px;display:flex;align-items:center;justify-content:center;border:1px solid;border-radius:5px;font-weight:700;text-decoration:none!important}
+.bratonien-qr-slot.is-present{background:rgba(62,170,94,.28);border-color:#58c878;color:#dff7e6}
+.bratonien-qr-slot.is-present:hover{background:rgba(62,170,94,.42);color:#fff}
+.bratonien-qr-slot.is-missing{background:rgba(205,72,72,.25);border-color:#db6d6d;color:#ffdede}
+@media(max-width:760px){.bratonien-qr-year-download{margin-left:0}.bratonien-qr-slots{grid-template-columns:repeat(auto-fill,minmax(38px,1fr))}}
+</style>
+{/literal}
+
 <section class="bratonien-section" id="qr-upload">
   <h3>QR-Upload</h3>
   <p class="bratonien-section__intro">Aktivierbares Uploadformular für nummerierte QR-Codes und persönliche Freundschaftscodes.</p>
@@ -51,6 +75,45 @@
       </div>
       <p class="bratonien-base-note">Eine QR-Code-Nummer ist pro Jahr eindeutig. Wird ein Upload gelöscht, ist die Nummer für dieses Jahr wieder frei.</p>
     </div>
+  </div>
+
+  <div class="bratonien-card" style="margin-top:18px">
+    <div class="bratonien-qr-stock-head">
+      <h4>QR-Code-Bestand</h4>
+      {if $CUSTOMER_QR.batch_download_available and $CUSTOMER_QR.total > 0}
+        <a class="buttonLike" href="{$CUSTOMER_QR.batch_download_url|escape:html}">Alle QR-Codes als ZIP herunterladen</a>
+      {/if}
+    </div>
+
+    <div class="bratonien-qr-legend">
+      <span class="bratonien-qr-legend-item"><span class="bratonien-qr-legend-box is-present"></span>Vorhanden</span>
+      <span class="bratonien-qr-legend-item"><span class="bratonien-qr-legend-box is-missing"></span>Fehlt</span>
+    </div>
+
+    {foreach from=$CUSTOMER_QR.years item=qr_year}
+      <div class="bratonien-qr-year">
+        <div class="bratonien-qr-year-head">
+          <strong>{$qr_year.year}</strong>
+          <span class="bratonien-qr-year-count">{$qr_year.used} / {$qr_year.capacity} vorhanden · {$qr_year.remaining} fehlen</span>
+          {if $CUSTOMER_QR.batch_download_available and $qr_year.used > 0}
+            <a class="buttonLike bratonien-qr-year-download" href="{$qr_year.batch_download_url|escape:html}">{$qr_year.year} als ZIP</a>
+          {/if}
+        </div>
+        <div class="bratonien-qr-slots" aria-label="QR-Code-Bestand {$qr_year.year}">
+          {foreach from=$qr_year.slots item=qr_slot}
+            {if $qr_slot.present}
+              <a class="bratonien-qr-slot is-present" href="{$qr_slot.preview_url|escape:html}" target="_blank" rel="noopener" title="QR-Code #{$qr_slot.number} vorhanden – Vorschau öffnen">{$qr_slot.number}</a>
+            {else}
+              <span class="bratonien-qr-slot is-missing" title="QR-Code #{$qr_slot.number} fehlt">{$qr_slot.number}</span>
+            {/if}
+          {/foreach}
+        </div>
+      </div>
+    {/foreach}
+
+    {if not $CUSTOMER_QR.batch_download_available}
+      <p class="bratonien-base-note" style="margin-top:14px">Batch-Download ist erst verfügbar, wenn die PHP-Erweiterung ZipArchive auf dem Server aktiv ist.</p>
+    {/if}
   </div>
 
   <div class="bratonien-card" style="margin-top:18px;overflow-x:auto">
