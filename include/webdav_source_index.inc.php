@@ -4,6 +4,11 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
+if (!defined('BRATONIEN_WEBDAV_GENERATION_VERSION'))
+{
+  define('BRATONIEN_WEBDAV_GENERATION_VERSION', 2);
+}
+
 function bratonien_tools_webdav_source_index_file($state_dir, $connection_id=0)
 {
   // Der Quellenindex gehoert dem Piwigo-Worker und muss deshalb in einem
@@ -114,6 +119,7 @@ function bratonien_tools_webdav_source_index_metadata(array $source, $shadow_rel
     'height'=>(int)($source['height'] ?? 0),
     'shadow_relative'=>ltrim((string)$shadow_relative, '/'),
     'source_signature'=>bratonien_tools_webdav_source_index_signature($source),
+    'generation_version'=>(int)BRATONIEN_WEBDAV_GENERATION_VERSION,
     'last_seen_at'=>time(),
   );
 }
@@ -122,6 +128,7 @@ function bratonien_tools_webdav_source_index_is_current(array $entry, $signature
 {
   $signature = (string)$signature;
   return isset($entry['source_signature'], $entry['stage1_signature'], $entry['stage2_signature'])
+    && (int)($entry['generation_version'] ?? 0) === (int)BRATONIEN_WEBDAV_GENERATION_VERSION
     && hash_equals((string)$entry['source_signature'], $signature)
     && hash_equals((string)$entry['stage1_signature'], $signature)
     && hash_equals((string)$entry['stage2_signature'], $signature);
