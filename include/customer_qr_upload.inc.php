@@ -214,6 +214,7 @@ function bratonien_tools_customer_qr_process_uploads($year, array $files, array 
   foreach ($items as $index => $file)
   {
     $display_name = trim((string)($file['name'] ?? ''));
+    $number = '';
     if ($display_name === '')
     {
       $display_name = 'Datei '.($index + 1);
@@ -302,7 +303,7 @@ function bratonien_tools_customer_qr_process_uploads($year, array $files, array 
         'status' => 'error',
         'file' => $display_name,
         'year' => $year,
-        'number' => isset($number) ? $number : '',
+        'number' => $number,
         'message' => $e->getMessage(),
       );
     }
