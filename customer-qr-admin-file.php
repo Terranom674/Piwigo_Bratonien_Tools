@@ -26,7 +26,7 @@ if ($id < 1)
 }
 
 $table = bratonien_tools_customer_qr_table();
-$result = pwg_query('SELECT id, upload_year, stored_name, mime_type FROM `'.$table.'` WHERE id='.$id.' LIMIT 1');
+$result = pwg_query('SELECT id, upload_year, code_number, stored_name, mime_type FROM `'.$table.'` WHERE id='.$id.' LIMIT 1');
 $row = pwg_db_fetch_assoc($result);
 if (!$row)
 {
@@ -35,6 +35,7 @@ if (!$row)
 }
 
 $year = (int)$row['upload_year'];
+$number = (string)$row['code_number'];
 $stored_name = (string)$row['stored_name'];
 $mime = strtolower((string)$row['mime_type']);
 $allowed_mimes = array('image/png', 'image/jpeg', 'image/webp', 'image/gif');
@@ -56,10 +57,14 @@ if (!is_file($path) || !is_readable($path))
   exit;
 }
 
+$extension = strtolower((string)pathinfo($stored_name, PATHINFO_EXTENSION));
+$download = isset($_GET['download']) && (string)$_GET['download'] === '1';
+$filename = 'qr-'.$year.'-'.$number.'.'.$extension;
+
 header('Content-Type: '.$mime);
 header('Content-Length: '.filesize($path));
 header('Cache-Control: private, no-store, max-age=0');
 header('X-Content-Type-Options: nosniff');
-header('Content-Disposition: inline; filename="qr-'.$year.'-'.$id.'.'.pathinfo($stored_name, PATHINFO_EXTENSION).'"');
+header('Content-Disposition: '.($download ? 'attachment' : 'inline').'; filename="'.$filename.'"');
 readfile($path);
 exit;
