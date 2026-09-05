@@ -61,7 +61,12 @@ function bratonien_tools_save_album_rule()
     )));
   }
 
-  return array('message'=>'Albumregel gespeichert.');
+  if (function_exists('bratonien_tools_presentation_refresh_enqueue'))
+  {
+    bratonien_tools_presentation_refresh_enqueue(array($category), 'album-watermark-rule-changed');
+  }
+
+  return array('message'=>'Albumregel gespeichert. Betroffene Vorschauen werden im Hintergrund aktualisiert.');
 }
 
 function bratonien_tools_get_category_tree()
