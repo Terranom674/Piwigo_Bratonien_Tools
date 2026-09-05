@@ -108,9 +108,10 @@ function bratonien_tools_save_watermark_profile()
     throw new RuntimeException('Profilname darf nicht leer sein.');
   }
 
+  $existing_profile = $id > 0 ? bratonien_tools_get_watermark_profile($id) : null;
   if ($id > 0)
   {
-    if (!bratonien_tools_get_watermark_profile($id))
+    if (!$existing_profile)
     {
       throw new RuntimeException('Wasserzeichenprofil nicht gefunden.');
     }
@@ -128,7 +129,14 @@ function bratonien_tools_save_watermark_profile()
     mass_inserts($table, array_keys($data), array($data));
   }
 
-  return array('message'=>'Wasserzeichenprofil gespeichert.');
+  if ($id > 0 && function_exists('bratonien_tools_presentation_refresh_enqueue_all'))
+  {
+    bratonien_tools_presentation_refresh_enqueue_all('watermark-profile-changed');
+  }
+
+  return array('message'=>$id > 0
+    ? 'Wasserzeichenprofil gespeichert. Betroffene Vorschauen werden im Hintergrund aktualisiert.'
+    : 'Wasserzeichenprofil gespeichert.');
 }
 
 function bratonien_tools_profile_is_referenced($id)
