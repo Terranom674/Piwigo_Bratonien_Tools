@@ -26,6 +26,7 @@ if (empty($settings['enabled']))
 }
 
 bratonien_tools_customer_qr_ensure_storage();
+$year_limits = bratonien_tools_customer_qr_year_limits();
 
 if ((string)($_GET['action'] ?? '') === 'check')
 {
@@ -35,13 +36,14 @@ if ((string)($_GET['action'] ?? '') === 'check')
   try
   {
     $year = bratonien_tools_customer_qr_year($_GET['year'] ?? '');
-    $number = bratonien_tools_customer_qr_number($_GET['number'] ?? '');
+    $number = bratonien_tools_customer_qr_number_for_year($year, $_GET['number'] ?? '');
     $exists = bratonien_tools_customer_qr_exists($year, $number);
     echo json_encode(array(
       'ok' => true,
       'available' => !$exists,
       'year' => $year,
       'number' => $number,
+      'limit' => (int)$year_limits[$year],
       'message' => $exists
         ? 'Diese QR-Code-Nummer ist für '.$year.' bereits vorhanden.'
         : 'Nummer ist für '.$year.' frei.',
@@ -118,6 +120,11 @@ if (!empty($_SESSION['bratonien_customer_qr_flash']) && is_array($_SESSION['brat
 }
 
 $selected_year = isset($flash['year']) ? (int)$flash['year'] : bratonien_tools_customer_qr_default_year();
+if (!isset($year_limits[$selected_year]))
+{
+  $selected_year = bratonien_tools_customer_qr_default_year();
+}
+$selected_limit = (int)$year_limits[$selected_year];
 $results = isset($flash['results']) && is_array($flash['results']) ? $flash['results'] : array();
 $token = function_exists('get_pwg_token') ? get_pwg_token() : '';
 $max_files = max(1, (int)ini_get('max_file_uploads'));
@@ -187,10 +194,11 @@ header('Cache-Control: no-store, max-age=0');
       <label for="upload-year">Jahr</label>
       <div class="control">
         <select id="upload-year" name="upload_year" required>
-          <?php for ($year = 2023; $year <= 2048; $year++): ?>
-            <option value="<?php echo $year; ?>"<?php echo $year === $selected_year ? ' selected' : ''; ?>><?php echo $year; ?></option>
-          <?php endfor; ?>
+          <?php foreach ($year_limits as $year => $limit): ?>
+            <option value="<?php echo (int)$year; ?>"<?php echo (int)$year === $selected_year ? ' selected' : ''; ?>><?php echo (int)$year; ?></option>
+          <?php endforeach; ?>
         </select>
+        <div id="year-limit-note" class="muted" style="margin-top:6px">Für <?php echo $selected_year; ?> sind QR-Code-Nummern 1 bis <?php echo $selected_limit; ?> vorgesehen.</div>
       </div>
 
       <label for="qr-files">QR-Code-Datei(en)</label>
@@ -215,15 +223,20 @@ header('Cache-Control: no-store, max-age=0');
   var form=document.getElementById('qr-upload-form');
   var fileInput=document.getElementById('qr-files');
   var yearInput=document.getElementById('upload-year');
+  var yearNote=document.getElementById('year-limit-note');
   var list=document.getElementById('file-list');
   var submit=document.getElementById('submit-button');
   var endpoint=<?php echo json_encode($endpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+  var limits=<?php echo json_encode($year_limits, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
   var timers=new WeakMap();
+
+  function yearLimit(){return Number(limits[String(yearInput.value)]||limits[yearInput.value]||0);}
 
   function canonical(value){
     value=String(value||'').trim();
-    if(!/^\d{1,32}$/.test(value))return '';
+    if(!/^\d+$/.test(value))return '';
     value=value.replace(/^0+(?=\d)/,'');
+    if(value==='0')return '';
     return value;
   }
 
@@ -262,7 +275,9 @@ header('Cache-Control: no-store, max-age=0');
   function checkRow(row){
     var input=row.querySelector('input[name="qr_numbers[]"]');
     var value=canonical(input.value);
-    if(!value){setStatus(row,'Bitte eine Nummer aus 1 bis 32 Ziffern eingeben.','bad');return;}
+    var limit=yearLimit();
+    if(!value){setStatus(row,'Bitte eine QR-Code-Nummer ab 1 eingeben.','bad');return;}
+    if(!limit||Number(value)>limit){setStatus(row,'Für '+yearInput.value+' sind nur die Nummern 1 bis '+limit+' vorgesehen.','bad');return;}
 
     var grouped=markBatchDuplicates();
     if(grouped[value]&&grouped[value].length>1)return;
@@ -286,12 +301,16 @@ header('Cache-Control: no-store, max-age=0');
 
   function scheduleAll(){rows().forEach(function(row){scheduleCheck(row);});}
 
+  function updateYearNote(){
+    yearNote.textContent='Für '+yearInput.value+' sind QR-Code-Nummern 1 bis '+yearLimit()+' vorgesehen.';
+  }
+
   function rebuild(){
     list.textContent='';
     Array.prototype.slice.call(fileInput.files||[]).forEach(function(file,index){
       var row=document.createElement('div');row.className='file-row';row.dataset.valid='0';
       var name=document.createElement('div');name.className='file-name';name.textContent=file.name;
-      var input=document.createElement('input');input.type='text';input.name='qr_numbers[]';input.inputMode='numeric';input.autocomplete='off';input.placeholder='QR-Nummer';input.setAttribute('aria-label','QR-Code-Nummer für '+file.name);input.maxLength=32;input.required=true;
+      var input=document.createElement('input');input.type='text';input.name='qr_numbers[]';input.inputMode='numeric';input.autocomplete='off';input.placeholder='QR-Nummer';input.setAttribute('aria-label','QR-Code-Nummer für '+file.name);input.maxLength=3;input.required=true;
       var status=document.createElement('div');status.className='status';status.textContent='Nummer fehlt.';
       row.appendChild(name);row.appendChild(input);row.appendChild(status);list.appendChild(row);
       input.addEventListener('input',scheduleAll);
@@ -301,7 +320,7 @@ header('Cache-Control: no-store, max-age=0');
   }
 
   fileInput.addEventListener('change',rebuild);
-  yearInput.addEventListener('change',scheduleAll);
+  yearInput.addEventListener('change',function(){updateYearNote();scheduleAll();});
   form.addEventListener('submit',function(event){
     var invalid=rows().some(function(row){return row.dataset.valid!=='1';});
     if(invalid){event.preventDefault();scheduleAll();}
