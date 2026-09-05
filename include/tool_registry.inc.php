@@ -12,6 +12,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'tools/watermark_settings.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/album_rules.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'tools/asset_manager.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/watermark_engine.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/presentation_refresh.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/public_selection.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/self_update.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
@@ -86,9 +87,14 @@ function bratonien_tools_handle_watermark_engine()
   $enabled = !empty($_POST['engine_enabled']);
   bratonien_tools_set_watermark_engine($enabled);
 
+  if (function_exists('bratonien_tools_presentation_refresh_enqueue_all'))
+  {
+    bratonien_tools_presentation_refresh_enqueue_all('watermark-engine-changed');
+  }
+
   return array(
     'message' => $enabled
-      ? 'Bratonien-Wasserzeichenverwaltung aktiviert. Piwigos bisherige Wasserzeichen-Nutzung wurde gesichert und unterdrueckt.'
-      : 'Bratonien-Wasserzeichenverwaltung deaktiviert. Die zuvor gesicherte Piwigo-Wasserzeichen-Nutzung wurde wiederhergestellt.',
+      ? 'Bratonien-Wasserzeichenverwaltung aktiviert. Piwigos bisherige Wasserzeichen-Nutzung wurde gesichert und die Vorschauen werden aktualisiert.'
+      : 'Bratonien-Wasserzeichenverwaltung deaktiviert. Die zuvor gesicherte Piwigo-Wasserzeichen-Nutzung wurde wiederhergestellt und die Vorschauen werden aktualisiert.',
   );
 }
