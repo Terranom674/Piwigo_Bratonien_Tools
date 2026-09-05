@@ -92,6 +92,7 @@ function bratonien_tools_webdav_source_index_key(array $source)
 function bratonien_tools_webdav_source_index_signature(array $source)
 {
   return sha1(implode('|', array(
+    'generation-v'.(int)BRATONIEN_WEBDAV_GENERATION_VERSION,
     (int)($source['connection_id'] ?? 0),
     (int)($source['root_fileid'] ?? 0),
     (int)($source['fileid'] ?? 0),
