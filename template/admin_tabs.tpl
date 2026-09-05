@@ -20,7 +20,7 @@
       { id:'wasserzeichen', label:'Wasserzeichen', sections:['uebersicht','wasserzeichen','regeln'] },
       { id:'auswahl-download', label:'Fotoauswahl & Downloads' },
       { id:'freigaben', label:'Geschützte Freigaben' },
-      { id:'kunden-qr', label:'Kunden-QR' },
+      { id:'qr-upload', label:'QR-Upload' },
       { id:'nc-connector', label:'NC Connector' },
       { id:'bilddateien', label:'Bilddateien & Pfade' },
       { id:'wartung', label:'Wartung / Cache' },
