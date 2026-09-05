@@ -179,6 +179,7 @@ function bratonien_tools_clear_image_cache_atomic()
 
   $held_locks = array();
   $webdav_cancel_files = array();
+  $webdav_guards_ready = false;
 
   try
   {
@@ -203,6 +204,7 @@ function bratonien_tools_clear_image_cache_atomic()
     // 2. WebDAV-Warmup regulär abbrechen und danach alle Verbindungs-Locks
     // exklusiv halten. Der laufende Batch wird nicht hart beendet.
     bratonien_tools_atomic_cache_prepare_webdav_guards($held_locks, $webdav_cancel_files);
+    $webdav_guards_ready = true;
 
     // 3. Seit der Presentation-Refresh-Einführung kann auch dieser Worker
     // Derivate erzeugen. Ohne seinen Lock konnte ein gerade geleerter Cache
@@ -323,12 +325,17 @@ function bratonien_tools_clear_image_cache_atomic()
   }
   finally
   {
-    // Die Cancel-Dateien bleiben so lange bestehen, bis wir alle Worker-Locks
-    // wieder freigeben. Erst danach darf ein bewusst neu gestarteter Lauf den
-    // leeren Cache erneut aufbauen.
-    foreach ($webdav_cancel_files as $cancel)
+    // Nur wenn wirklich alle WebDAV-Prozess-Locks gesichert wurden, sind die
+    // Cancel-Dateien nicht mehr nötig. Bei einem Timeout bleiben sie bestehen,
+    // damit der noch laufende Worker nach seinem aktuellen Batch tatsächlich
+    // stoppt und das fehlgeschlagene Cache-Leeren nicht durch einen Folgebatch
+    // verschärft wird.
+    if ($webdav_guards_ready)
     {
-      @unlink($cancel);
+      foreach ($webdav_cancel_files as $cancel)
+      {
+        @unlink($cancel);
+      }
     }
     bratonien_tools_atomic_cache_release_locks($held_locks);
   }
