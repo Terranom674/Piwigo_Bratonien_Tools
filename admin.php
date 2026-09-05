@@ -111,6 +111,7 @@ $cache_workers = bratonien_tools_get_cache_worker_settings();
 $public_selection = bratonien_tools_get_public_selection_settings();
 $public_selection_groups = bratonien_tools_get_piwigo_groups();
 $customer_qr = bratonien_tools_customer_qr_admin_data();
+$customer_qr['friendship_codes'] = bratonien_tools_friendship_code_admin_data();
 $assets = bratonien_tools_get_assets();
 $asset_environment = bratonien_tools_get_asset_environment();
 $album_shares = bratonien_tools_get_album_shares();
