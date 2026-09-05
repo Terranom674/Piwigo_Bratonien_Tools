@@ -17,6 +17,7 @@ require_once(BRATONIEN_TOOLS_PATH . 'include/self_update.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_shares.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/album_lock.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/customer_qr_upload.inc.php');
+require_once(BRATONIEN_TOOLS_PATH . 'include/friendship_code_upload.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_piwigo_api.inc.php');
 require_once(BRATONIEN_TOOLS_PATH . 'include/nc_connector_wizard.inc.php');
@@ -50,6 +51,7 @@ function bratonien_tools_get_tools()
     'public_selection_settings' => array('handler' => 'bratonien_tools_save_public_selection_settings'),
     'customer_qr_settings' => array('handler' => 'bratonien_tools_customer_qr_save_settings'),
     'customer_qr_delete' => array('handler' => 'bratonien_tools_customer_qr_delete_upload'),
+    'friendship_code_delete' => array('handler' => 'bratonien_tools_friendship_code_delete_upload'),
     'asset_upload' => array('handler' => 'bratonien_tools_upload_asset'),
     'asset_delete' => array('handler' => 'bratonien_tools_delete_asset'),
     'asset_upload_limits' => array('handler' => 'bratonien_tools_save_upload_limits'),
