@@ -54,8 +54,8 @@ function bratonien_tools_customer_qr_save_settings()
 
   return array(
     'message' => $settings['enabled']
-      ? 'Kunden-QR-Upload aktiviert.'
-      : 'Kunden-QR-Upload deaktiviert.',
+      ? 'QR-Upload aktiviert.'
+      : 'QR-Upload deaktiviert.',
   );
 }
 
@@ -352,6 +352,83 @@ function bratonien_tools_customer_qr_process_uploads($year, array $files, array 
   return $results;
 }
 
+function bratonien_tools_customer_qr_delete_upload()
+{
+  $id = isset($_POST['customer_qr_id']) ? (int)$_POST['customer_qr_id'] : 0;
+  if ($id < 1)
+  {
+    throw new InvalidArgumentException('Ungültiger QR-Upload.');
+  }
+
+  $root = bratonien_tools_customer_qr_ensure_storage();
+  $table = bratonien_tools_customer_qr_table();
+  $result = pwg_query('SELECT id, upload_year, code_number, stored_name FROM `'.$table.'` WHERE id='.$id.' LIMIT 1');
+  $row = pwg_db_fetch_assoc($result);
+  if (!$row)
+  {
+    throw new RuntimeException('Der QR-Upload wurde nicht gefunden.');
+  }
+
+  $year = bratonien_tools_customer_qr_year($row['upload_year']);
+  $number = bratonien_tools_customer_qr_number_for_year($year, $row['code_number']);
+  $stored_name = (string)$row['stored_name'];
+  if ($stored_name === '' || basename($stored_name) !== $stored_name)
+  {
+    throw new RuntimeException('Der gespeicherte Dateiname ist ungültig.');
+  }
+
+  $lock_dir = $root.DIRECTORY_SEPARATOR.'.locks';
+  if (!is_dir($lock_dir) && !@mkdir($lock_dir, 0770, true) && !is_dir($lock_dir))
+  {
+    throw new RuntimeException('QR-Lockverzeichnis konnte nicht angelegt werden.');
+  }
+
+  $lock_path = $lock_dir.DIRECTORY_SEPARATOR.$year.'-'.$number.'.lock';
+  $lock = @fopen($lock_path, 'c+');
+  if ($lock === false || !@flock($lock, LOCK_EX))
+  {
+    if (is_resource($lock)) fclose($lock);
+    throw new RuntimeException('Der QR-Upload konnte nicht sicher gesperrt werden.');
+  }
+
+  try
+  {
+    $file = $root.DIRECTORY_SEPARATOR.$year.DIRECTORY_SEPARATOR.$stored_name;
+    if (is_file($file) && !@unlink($file))
+    {
+      throw new RuntimeException('Die QR-Datei konnte nicht gelöscht werden. Der Datenbankeintrag bleibt erhalten.');
+    }
+
+    if (pwg_query('DELETE FROM `'.$table.'` WHERE id='.$id.' LIMIT 1') === false)
+    {
+      throw new RuntimeException('Der QR-Datenbankeintrag konnte nicht gelöscht werden.');
+    }
+  }
+  finally
+  {
+    @flock($lock, LOCK_UN);
+    fclose($lock);
+  }
+
+  return array(
+    'message' => 'QR-Code '.$number.' aus '.$year.' gelöscht. Die Nummer ist wieder frei.',
+  );
+}
+
+function bratonien_tools_customer_qr_size_label($bytes)
+{
+  $bytes = max(0, (int)$bytes);
+  if ($bytes >= 1048576)
+  {
+    return number_format($bytes / 1048576, 1, ',', '.').' MB';
+  }
+  if ($bytes >= 1024)
+  {
+    return number_format($bytes / 1024, 0, ',', '.').' KB';
+  }
+  return $bytes.' B';
+}
+
 function bratonien_tools_customer_qr_admin_data()
 {
   bratonien_tools_customer_qr_ensure_storage();
@@ -386,6 +463,27 @@ function bratonien_tools_customer_qr_admin_data()
     );
   }
 
+  $uploads = array();
+  $upload_result = pwg_query(
+    'SELECT id, upload_year, code_number, original_name, file_size, created '
+    .'FROM `'.$table.'` '
+    .'ORDER BY upload_year DESC, CAST(code_number AS UNSIGNED) ASC, id ASC'
+  );
+  while ($row = pwg_db_fetch_assoc($upload_result))
+  {
+    $id = (int)$row['id'];
+    $uploads[] = array(
+      'id' => $id,
+      'year' => (int)$row['upload_year'],
+      'number' => (string)$row['code_number'],
+      'original_name' => (string)$row['original_name'],
+      'file_size' => (int)$row['file_size'],
+      'file_size_label' => bratonien_tools_customer_qr_size_label($row['file_size']),
+      'created' => (string)$row['created'],
+      'preview_url' => get_absolute_root_url(true).'plugins/'.BRATONIEN_TOOLS_ID.'/customer-qr-admin-file.php?id='.$id,
+    );
+  }
+
   $year_keys = array_keys($limits);
   sort($year_keys, SORT_NUMERIC);
 
@@ -396,6 +494,7 @@ function bratonien_tools_customer_qr_admin_data()
     'year_max' => (int)end($year_keys),
     'default_year' => $current_year,
     'years' => $years,
+    'uploads' => $uploads,
     'total' => $total,
     'current_year_total' => (int)$counts[$current_year],
     'current_year_capacity' => (int)$limits[$current_year],
