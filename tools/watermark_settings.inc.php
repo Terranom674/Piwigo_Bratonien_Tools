@@ -41,5 +41,10 @@ function bratonien_tools_save_watermark_defaults()
 
   conf_update_param('bratonien_watermark_defaults', json_encode($config));
 
-  return array('message'=>'Globale Wasserzeichenregeln gespeichert.');
+  if (function_exists('bratonien_tools_presentation_refresh_enqueue_all'))
+  {
+    bratonien_tools_presentation_refresh_enqueue_all('global-watermark-rules-changed');
+  }
+
+  return array('message'=>'Globale Wasserzeichenregeln gespeichert. Vorschauen werden im Hintergrund an die neuen Regeln angepasst.');
 }
