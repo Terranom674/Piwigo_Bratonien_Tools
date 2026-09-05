@@ -31,6 +31,69 @@ bratonien_tools_friendship_code_ensure_storage();
 $year_limits = bratonien_tools_customer_qr_year_limits();
 $action = (string)($_GET['action'] ?? '');
 
+function bratonien_tools_customer_qr_public_inventory($year)
+{
+  $year = bratonien_tools_customer_qr_year($year);
+  $limits = bratonien_tools_customer_qr_year_limits();
+  $limit = (int)$limits[$year];
+  $present = array();
+  $table = bratonien_tools_customer_qr_table();
+
+  $result = pwg_query(
+    'SELECT code_number FROM `'.$table.'` '
+    .'WHERE upload_year='.(int)$year.' '
+    .'ORDER BY CAST(code_number AS UNSIGNED) ASC'
+  );
+
+  while ($row = pwg_db_fetch_assoc($result))
+  {
+    $number = (int)$row['code_number'];
+    if ($number >= 1 && $number <= $limit)
+    {
+      $present[$number] = true;
+    }
+  }
+
+  $slots = array();
+  for ($number = 1; $number <= $limit; $number++)
+  {
+    $slots[] = array(
+      'number' => $number,
+      'present' => isset($present[$number]),
+    );
+  }
+
+  $present_count = count($present);
+  return array(
+    'year' => $year,
+    'limit' => $limit,
+    'present_count' => $present_count,
+    'missing_count' => max(0, $limit - $present_count),
+    'slots' => $slots,
+  );
+}
+
+if ($action === 'inventory')
+{
+  header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, max-age=0');
+
+  try
+  {
+    $inventory = bratonien_tools_customer_qr_public_inventory($_GET['year'] ?? '');
+    echo json_encode(array(
+      'ok' => true,
+      'inventory' => $inventory,
+    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  }
+  catch (Throwable $e)
+  {
+    http_response_code(400);
+    echo json_encode(array('ok' => false, 'message' => $e->getMessage()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  }
+  exit;
+}
+
 if ($action === 'check')
 {
   header('Content-Type: application/json; charset=utf-8');
@@ -172,6 +235,7 @@ if (!isset($year_limits[$selected_year]))
   $selected_year = bratonien_tools_customer_qr_default_year();
 }
 $selected_limit = (int)$year_limits[$selected_year];
+$inventory = bratonien_tools_customer_qr_public_inventory($selected_year);
 $results = isset($flash['results']) && is_array($flash['results']) ? $flash['results'] : array();
 $token = function_exists('get_pwg_token') ? get_pwg_token() : '';
 $max_files = max(1, (int)ini_get('max_file_uploads'));
@@ -209,7 +273,19 @@ header('Cache-Control: no-store, max-age=0');
     .result{padding:12px 14px;border-radius:9px;margin-top:8px;border:1px solid var(--border)}
     .result.ok{border-color:color-mix(in srgb,var(--ok),transparent 45%)}.result.duplicate,.result.error{border-color:color-mix(in srgb,var(--bad),transparent 45%)}
     .result strong{display:block}.meta{color:var(--muted);font-size:.92rem}
-    @media(max-width:680px){.grid{grid-template-columns:1fr}.file-row{grid-template-columns:1fr}.card{padding:16px}}
+    .inventory{margin-top:20px;padding-top:18px;border-top:1px solid var(--border)}
+    .inventory-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+    .inventory-head h2{margin:0}
+    .inventory-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:.92rem;color:var(--muted)}
+    .inventory-legend span{display:inline-flex;align-items:center;gap:6px}
+    .inventory-dot{width:14px;height:14px;border-radius:3px;border:1px solid}
+    .inventory-dot.present{background:rgba(62,170,94,.30);border-color:#58c878}
+    .inventory-dot.missing{background:rgba(205,72,72,.28);border-color:#db6d6d}
+    .inventory-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+    .inventory-slot{min-height:38px;display:flex;align-items:center;justify-content:center;border:1px solid;border-radius:6px;font-weight:750}
+    .inventory-slot.present{background:rgba(62,170,94,.30);border-color:#58c878;color:#dff7e6}
+    .inventory-slot.missing{background:rgba(205,72,72,.28);border-color:#db6d6d;color:#ffdede}
+    @media(max-width:680px){.grid{grid-template-columns:1fr}.file-row{grid-template-columns:1fr}.card{padding:16px}.inventory-grid{grid-template-columns:repeat(auto-fill,minmax(38px,1fr))}}
   </style>
 </head>
 <body>
@@ -264,6 +340,22 @@ header('Cache-Control: no-store, max-age=0');
       </div>
     </div>
 
+    <section class="inventory" aria-labelledby="inventory-title">
+      <div class="inventory-head">
+        <h2 id="inventory-title">QR-Code-Bestand <span id="inventory-year"><?php echo (int)$inventory['year']; ?></span></h2>
+        <span id="inventory-count" class="muted"><?php echo (int)$inventory['present_count']; ?> vorhanden · <?php echo (int)$inventory['missing_count']; ?> fehlen</span>
+      </div>
+      <div class="inventory-legend" aria-hidden="true">
+        <span><i class="inventory-dot present"></i>Vorhanden</span>
+        <span><i class="inventory-dot missing"></i>Fehlt</span>
+      </div>
+      <div id="inventory-grid" class="inventory-grid" aria-live="polite">
+        <?php foreach ($inventory['slots'] as $slot): ?>
+          <span class="inventory-slot <?php echo !empty($slot['present']) ? 'present' : 'missing'; ?>" title="QR-Code #<?php echo (int)$slot['number']; ?> <?php echo !empty($slot['present']) ? 'vorhanden' : 'fehlt'; ?>"><?php echo (int)$slot['number']; ?></span>
+        <?php endforeach; ?>
+      </div>
+    </section>
+
     <div id="file-list" class="file-list" aria-live="polite"></div>
 
     <div class="actions">
@@ -307,6 +399,9 @@ header('Cache-Control: no-store, max-age=0');
   var yearNote=document.getElementById('year-limit-note');
   var list=document.getElementById('file-list');
   var submit=document.getElementById('submit-button');
+  var inventoryYear=document.getElementById('inventory-year');
+  var inventoryCount=document.getElementById('inventory-count');
+  var inventoryGrid=document.getElementById('inventory-grid');
   var endpoint=<?php echo json_encode($endpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
   var limits=<?php echo json_encode($year_limits, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
   var timers=new WeakMap();
@@ -334,6 +429,33 @@ header('Cache-Control: no-store, max-age=0');
   function updateSubmit(){
     var all=rows();
     submit.disabled=!all.length||all.some(function(row){return row.dataset.valid!=='1';});
+  }
+
+  function renderInventory(inventory){
+    inventoryYear.textContent=String(inventory.year);
+    inventoryCount.textContent=String(inventory.present_count)+' vorhanden · '+String(inventory.missing_count)+' fehlen';
+    inventoryGrid.textContent='';
+    (inventory.slots||[]).forEach(function(slot){
+      var node=document.createElement('span');
+      node.className='inventory-slot '+(slot.present?'present':'missing');
+      node.textContent=String(slot.number);
+      node.title='QR-Code #'+slot.number+' '+(slot.present?'vorhanden':'fehlt');
+      inventoryGrid.appendChild(node);
+    });
+  }
+
+  function loadInventory(){
+    inventoryCount.textContent='Bestand wird geladen …';
+    var requestedYear=yearInput.value;
+    var url=endpoint+'?action=inventory&year='+encodeURIComponent(requestedYear)+'&_='+Date.now();
+    fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}})
+      .then(function(response){return response.json().then(function(data){return {response:response,data:data};});})
+      .then(function(result){
+        if(!result.response.ok||!result.data.ok||!result.data.inventory)throw new Error(result.data.message||'Bestand konnte nicht geladen werden.');
+        if(String(yearInput.value)!==String(requestedYear))return;
+        renderInventory(result.data.inventory);
+      })
+      .catch(function(error){inventoryCount.textContent=error.message||'Bestand konnte nicht geladen werden.';});
   }
 
   function markBatchDuplicates(){
@@ -401,7 +523,7 @@ header('Cache-Control: no-store, max-age=0');
   }
 
   fileInput.addEventListener('change',rebuild);
-  yearInput.addEventListener('change',function(){updateYearNote();scheduleAll();});
+  yearInput.addEventListener('change',function(){updateYearNote();scheduleAll();loadInventory();});
   form.addEventListener('submit',function(event){
     var invalid=rows().some(function(row){return row.dataset.valid!=='1';});
     if(invalid){event.preventDefault();scheduleAll();}
