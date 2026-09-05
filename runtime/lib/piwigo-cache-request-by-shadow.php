@@ -23,11 +23,12 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/piwigo-cache-request-by-shadow.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Shadow-Cache-Bridge/0.9.7.1.17';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-Piwigo-Shadow-Cache-Bridge/0.9.7.1.41';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
 require_once(PHPWG_ROOT_PATH.'include/derivative.inc.php');
+require_once(PHPWG_ROOT_PATH.'admin/include/image.class.php');
 if (!defined('BRATONIEN_TOOLS_PATH'))
 {
   fwrite(STDERR, "Bratonien Tools ist nicht aktiv.\n");
@@ -69,6 +70,43 @@ function bratonien_tools_shadow_bridge_call_i($request, &$detail=null)
     if ($output) $detail .= ': '.implode(' ', array_slice($output, -3));
     return false;
   }
+  return true;
+}
+
+function bratonien_tools_shadow_bridge_sync_actual_metadata(array &$row, $source_path)
+{
+  $size = @getimagesize($source_path);
+  if (!is_array($size) || (int)($size[0] ?? 0) < 1 || (int)($size[1] ?? 0) < 1)
+  {
+    bratonien_tools_shadow_bridge_fail('Das temporär eingesetzte Original besitzt keine lesbaren Bildabmessungen.');
+  }
+
+  $width = (int)$size[0];
+  $height = (int)$size[1];
+  $rotation_angle = pwg_image::get_rotation_angle($source_path);
+  $rotation_angle = $rotation_angle === null ? 0 : (int)$rotation_angle;
+  $rotation = pwg_image::get_rotation_code_from_angle($rotation_angle);
+  if ($rotation === null) $rotation = 0;
+  $rotation = (int)$rotation;
+
+  if (
+    (int)($row['width'] ?? 0) === $width
+    && (int)($row['height'] ?? 0) === $height
+    && isset($row['rotation'])
+    && (int)$row['rotation'] === $rotation
+  )
+  {
+    return false;
+  }
+
+  pwg_query(
+    'UPDATE '.IMAGES_TABLE
+    .' SET width='.$width.', height='.$height.', rotation='.$rotation
+    .' WHERE id='.(int)$row['id'].' LIMIT 1'
+  );
+  $row['width'] = $width;
+  $row['height'] = $height;
+  $row['rotation'] = $rotation;
   return true;
 }
 
@@ -151,10 +189,12 @@ if (count($rows) !== 1)
   bratonien_tools_shadow_bridge_fail('Piwigo kann den Shadow-Pfad nicht eindeutig einem Bild zuordnen: '.$db_path);
 }
 $row = $rows[0];
+$metadata_repaired = bratonien_tools_shadow_bridge_sync_actual_metadata($row, $shadow_real);
 
 $variants = bratonien_tools_shadow_bridge_variants($row, $stage);
 $generated = 0;
 $already = 0;
+$invalid_removed = 0;
 foreach ($variants as $variant)
 {
   $reason = '';
@@ -162,6 +202,18 @@ foreach ($variants as $variant)
   {
     $already++;
     continue;
+  }
+
+  // Ein vorhandenes, aber geometrisch falsches Derivat darf nicht an i.php
+  // vorbeikommen. Piwigo entscheidet sonst allein anhand von mtimes und kann
+  // eine alte Datei trotz korrigierter Breite/Höhe/EXIF-Rotation behalten.
+  if (is_file($variant['target']))
+  {
+    if (!@unlink($variant['target']))
+    {
+      bratonien_tools_shadow_bridge_fail($variant['name'].': ungültiges Alt-Derivat konnte nicht entfernt werden ('.$reason.').');
+    }
+    $invalid_removed++;
   }
 
   $request = bratonien_tools_shadow_bridge_i_request($variant['target']);
@@ -187,8 +239,10 @@ echo json_encode(array(
   'shadow_relative'=>$shadow_relative,
   'stage'=>$stage,
   'piwigo_image_id'=>(int)$row['id'],
+  'metadata_repaired'=>$metadata_repaired,
   'variants'=>count($variants),
   'generated'=>$generated,
   'already_valid'=>$already,
+  'invalid_removed'=>$invalid_removed,
 ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n";
 exit(0);
