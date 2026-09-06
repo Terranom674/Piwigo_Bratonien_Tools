@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.29';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.48';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -127,6 +127,7 @@ if (!function_exists('exec'))
 
 $worker = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/webdav-cache-warmup.php');
 $priority_waiter = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/run-webdav-priority-wait.sh');
+$after_sync_waiter = realpath(BRATONIEN_TOOLS_PATH.'runtime/lib/run-webdav-after-sync.sh');
 if (!$worker || !is_file($worker))
 {
   fwrite(STDERR, "WebDAV-Worker wurde nicht gefunden.\n");
@@ -135,6 +136,11 @@ if (!$worker || !is_file($worker))
 if (!$priority_waiter || !is_file($priority_waiter))
 {
   fwrite(STDERR, "WebDAV-Prioritäts-Warter wurde nicht gefunden.\n");
+  exit(1);
+}
+if (!$after_sync_waiter || !is_file($after_sync_waiter))
+{
+  fwrite(STDERR, "WebDAV-Connector-Warter wurde nicht gefunden.\n");
   exit(1);
 }
 
@@ -161,6 +167,10 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     $result = 1;
     continue;
   }
+
+  $worker_command = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
+    .' --connection-id='.$connection_id
+    .' --mode='.escapeshellarg($mode);
 
   if ($mode === 'sync')
   {
@@ -191,17 +201,37 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
       bratonien_tools_webdav_warmup_write_status(
         $connection_id,
         'waiting',
-        'Connector-Synchronisierung läuft. Der Cache-Worker startet erst danach; es werden vorher keine Nextcloud-Originale geladen.',
-        array('mode'=>$mode, 'deferred_by_connector'=>true)
+        'Connector-Synchronisierung läuft. Der Cache-Worker ist vorgemerkt und startet automatisch unmittelbar danach; es werden vorher keine Nextcloud-Originale geladen.',
+        array('mode'=>$mode, 'deferred_by_connector'=>true, 'resume_scheduled'=>true)
       );
     }
-    fwrite(STDOUT, "WebDAV-Worker für Verbindung #{$connection_id} wartet auf den Connector-Sync.\n");
+
+    $deferred = escapeshellarg('/bin/bash').' '.escapeshellarg($after_sync_waiter).' '.escapeshellarg($state_dir).' '.$worker_command;
+    $command = 'nohup '.$deferred.' >> '.escapeshellarg($log).' 2>&1 < /dev/null & echo $!';
+    $output = array();
+    $exit = 1;
+    @exec($command, $output, $exit);
+    $pid = isset($output[0]) ? (int)$output[0] : 0;
+    if ($exit !== 0 || $pid <= 0)
+    {
+      fwrite(STDERR, "Wartender WebDAV-Worker für Verbindung #{$connection_id} konnte nicht gestartet werden.\n");
+      $result = 1;
+      if (function_exists('bratonien_tools_webdav_warmup_write_status'))
+      {
+        bratonien_tools_webdav_warmup_write_status(
+          $connection_id,
+          'error',
+          'Connector-Synchronisierung läuft, aber der automatische Cache-Fortsetzungsauftrag konnte nicht gestartet werden.',
+          array('mode'=>$mode, 'deferred_by_connector'=>true, 'resume_scheduled'=>false)
+        );
+      }
+      continue;
+    }
+    $started++;
+    fwrite(STDOUT, "WebDAV-Worker für Verbindung #{$connection_id} wartet auf den Connector-Sync und startet danach automatisch (PID {$pid}).\n");
     continue;
   }
 
-  $worker_command = escapeshellarg(PHP_BINARY).' '.escapeshellarg($worker)
-    .' --connection-id='.$connection_id
-    .' --mode='.escapeshellarg($mode);
   $base = $mode === 'sync'
     ? escapeshellarg('/bin/bash').' '.escapeshellarg($priority_waiter).' '.escapeshellarg($state_dir).' '.$worker_command
     : $worker_command;
