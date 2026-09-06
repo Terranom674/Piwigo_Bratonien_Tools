@@ -36,15 +36,21 @@ foreach ($mapping['files'] as $path => $entry)
   $dimensions[str_replace('\\', '/', (string)$path)] = array($width, $height);
 }
 
-if (!$dimensions && $mapped_files > 0)
-{
-  fwrite(STDERR, "WebDAV-Mapping enthaelt fuer vorhandene Bildquellen keine Originalabmessungen.\n");
-  exit(1);
-}
-
 if ($mapped_files === 0)
 {
   echo "WebDAV-Metadaten: keine aktuellen Bildquellen vorhanden.\n";
+  exit(0);
+}
+
+// Nextcloud liefert die Bildabmessungen ueber WebDAV nicht fuer jede Datei.
+// Das ist kein Fehler des Connector-Syncs: die Dateien und ihr Shadow Tree
+// sind trotzdem gueltig und Piwigo kann die Bildquelle spaeter bei Bedarf
+// materialisieren. Vorhandene Abmessungen werden uebernommen, fehlende Werte
+// bleiben unangetastet. Nur ein syntaktisch/technisch ungueltiges Mapping ist
+// oben weiterhin fatal.
+if (!$dimensions)
+{
+  echo 'WebDAV-Metadaten: bilder='.$mapped_files.' aktualisiert=0 ohne_masse='.$mapped_files." (Nextcloud lieferte keine Bildabmessungen; Synchronisierung bleibt gueltig)\n";
   exit(0);
 }
 
@@ -59,7 +65,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/sync-webdav-metadata.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Metadata/0.9.7.1.43';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Metadata/0.9.7.1.47';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -110,5 +116,10 @@ if ($updated > 0)
   if (function_exists('invalidate_user_cache')) invalidate_user_cache(true);
 }
 
-echo 'WebDAV-Metadaten: bilder='.$checked.' aktualisiert='.$updated.' ohne_masse='.$missing."\n";
-exit($missing > 0 ? 1 : 0);
+echo 'WebDAV-Metadaten: bilder='.$checked.' aktualisiert='.$updated.' ohne_masse='.$missing;
+if ($missing > 0)
+{
+  echo ' (fehlende WebDAV-Abmessungen sind nicht fatal)';
+}
+echo "\n";
+exit(0);
