@@ -25,19 +25,27 @@ if (!is_array($mapping) || !isset($mapping['files']) || !is_array($mapping['file
 }
 
 $dimensions = array();
+$mapped_files = 0;
 foreach ($mapping['files'] as $path => $entry)
 {
   if (!is_array($entry) || (string)($entry['kind'] ?? '') !== 'file') continue;
+  $mapped_files++;
   $width = (int)($entry['width'] ?? 0);
   $height = (int)($entry['height'] ?? 0);
   if ($width < 1 || $height < 1) continue;
   $dimensions[str_replace('\\', '/', (string)$path)] = array($width, $height);
 }
 
-if (!$dimensions)
+if (!$dimensions && $mapped_files > 0)
 {
-  fwrite(STDERR, "WebDAV-Mapping enthaelt keine Originalabmessungen.\n");
+  fwrite(STDERR, "WebDAV-Mapping enthaelt fuer vorhandene Bildquellen keine Originalabmessungen.\n");
   exit(1);
+}
+
+if ($mapped_files === 0)
+{
+  echo "WebDAV-Metadaten: keine aktuellen Bildquellen vorhanden.\n";
+  exit(0);
 }
 
 define('PHPWG_ROOT_PATH', $piwigo_root.'/');
@@ -51,7 +59,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/lib/sync-webdav-metadata.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Metadata/0.9.6.8.20';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Metadata/0.9.7.1.43';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
