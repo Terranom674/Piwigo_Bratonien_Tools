@@ -23,7 +23,7 @@ $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['SCRIPT_NAME'] = '/plugins/bratonien_tools/runtime/webdav-warmup-dispatch.php';
 $_SERVER['PHP_SELF'] = $_SERVER['SCRIPT_NAME'];
 $_SERVER['QUERY_STRING'] = '';
-$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.49';
+$_SERVER['HTTP_USER_AGENT'] = 'Bratonien-WebDAV-Worker-Dispatcher/0.9.7.1.50';
 $_SERVER['HTTPS'] = 'off';
 
 require_once(PHPWG_ROOT_PATH.'include/common.inc.php');
@@ -89,8 +89,22 @@ function bratonien_tools_webdav_dispatch_only_connector_deferrals(array $output)
   return $seen;
 }
 
+function bratonien_tools_webdav_dispatch_connector_service_active()
+{
+  if (!function_exists('exec') || !is_executable('/usr/bin/systemctl')) return false;
+  $output = array();
+  $exit = 1;
+  @exec('/usr/bin/systemctl is-active --quiet bratonien-nc-connector.service 2>/dev/null', $output, $exit);
+  return $exit === 0;
+}
+
 function bratonien_tools_webdav_dispatch_connector_busy($state_dir)
 {
+  // Ein belegtes Lock allein ist kein Beweis für einen laufenden Connector.
+  // Maßgeblich ist der privilegierte systemd-Dienst. Damit können Alt-/Fremd-
+  // Locks den Cache-Aufbau nicht dauerhaft als vermeintlichen Sync blockieren.
+  if (!bratonien_tools_webdav_dispatch_connector_service_active()) return false;
+
   $lock = @fopen(rtrim((string)$state_dir, '/').'/webdav-sync.lock', 'c');
   if (!$lock) return false;
   if (@flock($lock, LOCK_SH | LOCK_NB))
