@@ -4,7 +4,7 @@ if (!defined('PHPWG_ROOT_PATH'))
   die('Hacking attempt!');
 }
 
-function bratonien_tools_nc_connector_systemctl_run(array $args)
+function bratonien_tools_nc_connector_command_run(array $command)
 {
   $result = array('exit'=>-1, 'stdout'=>'', 'stderr'=>'');
   if (!function_exists('proc_open'))
@@ -13,7 +13,6 @@ function bratonien_tools_nc_connector_systemctl_run(array $args)
     return $result;
   }
 
-  $command = array_merge(array('/usr/bin/systemctl'), $args);
   $spec = array(
     0=>array('file','/dev/null','r'),
     1=>array('pipe','w'),
@@ -23,7 +22,7 @@ function bratonien_tools_nc_connector_systemctl_run(array $args)
   $process = @proc_open($command, $spec, $pipes, null, $environment);
   if (!is_resource($process))
   {
-    $result['stderr'] = 'systemctl konnte nicht gestartet werden.';
+    $result['stderr'] = 'Prozess konnte nicht gestartet werden.';
     return $result;
   }
 
@@ -35,6 +34,11 @@ function bratonien_tools_nc_connector_systemctl_run(array $args)
   return $result;
 }
 
+function bratonien_tools_nc_connector_systemctl_run(array $args)
+{
+  return bratonien_tools_nc_connector_command_run(array_merge(array('/usr/bin/systemctl'), $args));
+}
+
 function bratonien_tools_nc_connector_systemctl_value(array $args)
 {
   $result = bratonien_tools_nc_connector_systemctl_run($args);
@@ -43,49 +47,51 @@ function bratonien_tools_nc_connector_systemctl_value(array $args)
 
 function bratonien_tools_nc_connector_run_now()
 {
-  if (!function_exists('proc_open'))
+  $service = 'bratonien-nc-connector.service';
+  $load_state = bratonien_tools_nc_connector_systemctl_value(array('show',$service,'--property=LoadState','--value'));
+  if ($load_state !== 'loaded')
   {
-    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: proc_open ist in PHP nicht verfügbar.');
+    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: der privilegierte Connector-Dienst '.$service.' ist nicht geladen.');
   }
 
-  $runtime_dir = realpath(dirname(__DIR__).'/runtime');
-  if ($runtime_dir === false || !is_dir($runtime_dir))
+  // Der Connector verwaltet bewusst geschützte Runtime-Daten unter /etc und
+  // /var/lib. Er darf deshalb niemals direkt als Webserver-Benutzer laufen.
+  // Der manuelle Admin-Button startet denselben privilegierten systemd-Dienst,
+  // den auch der Timer verwendet.
+  $result = bratonien_tools_nc_connector_systemctl_run(array('start',$service));
+
+  // Auf Installationen ohne passende polkit-Regel darf ausschließlich die
+  // eng begrenzte, vom Betreiber eingerichtete sudo-Freigabe für genau diesen
+  // systemd-Dienst verwendet werden. Es gibt absichtlich keinen Fallback auf
+  // runtime/run-all.sh als www-data.
+  if ($result['exit'] !== 0 && is_file('/usr/bin/sudo') && is_executable('/usr/bin/sudo'))
   {
-    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: Runtime-Verzeichnis wurde nicht gefunden.');
+    $result = bratonien_tools_nc_connector_command_run(array(
+      '/usr/bin/sudo',
+      '-n',
+      '/usr/bin/systemctl',
+      'start',
+      $service,
+    ));
   }
 
-  $script = $runtime_dir.'/run-all.sh';
-  if (!is_file($script) || !is_readable($script))
+  if ($result['exit'] !== 0)
   {
-    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: runtime/run-all.sh ist nicht lesbar.');
+    $detail = $result['stderr'] !== '' ? $result['stderr'] : $result['stdout'];
+    if ($detail === '') $detail = 'Exit-Code '.$result['exit'];
+    throw new RuntimeException(
+      'WebDAV-Abgleich konnte den privilegierten Connector-Dienst nicht starten. '
+      .'Der Connector wird aus Sicherheitsgründen nicht als Webserver-Benutzer direkt ausgeführt. '.$detail
+    );
   }
 
-  $spec = array(
-    0=>array('file','/dev/null','r'),
-    1=>array('pipe','w'),
-    2=>array('pipe','w'),
-  );
-  $environment = array_merge($_ENV, array('LC_ALL'=>'C','LANG'=>'C'));
-  $process = @proc_open(array('/usr/bin/env','bash',$script), $spec, $pipes, $runtime_dir, $environment);
-  if (!is_resource($process))
+  $service_result = bratonien_tools_nc_connector_systemctl_value(array('show',$service,'--property=Result','--value'));
+  if ($service_result !== '' && $service_result !== 'success')
   {
-    throw new RuntimeException('WebDAV-Abgleich konnte nicht gestartet werden: Connector-Prozess konnte nicht geöffnet werden.');
+    throw new RuntimeException('WebDAV-Abgleich wurde gestartet, der Connector-Dienst endete aber mit Ergebnis '.$service_result.'.');
   }
 
-  $stdout = trim((string)stream_get_contents($pipes[1]));
-  $stderr = trim((string)stream_get_contents($pipes[2]));
-  fclose($pipes[1]);
-  fclose($pipes[2]);
-  $exit = (int)proc_close($process);
-
-  if ($exit !== 0)
-  {
-    $detail = $stderr !== '' ? $stderr : $stdout;
-    if ($detail === '') $detail = 'Exit-Code '.$exit;
-    throw new RuntimeException('WebDAV-Abgleich fehlgeschlagen: '.$detail);
-  }
-
-  return array('message'=>'WebDAV-Abgleich wurde ausgeführt.');
+  return array('message'=>'WebDAV-Abgleich wurde über den privilegierten Connector-Dienst ausgeführt.');
 }
 
 function bratonien_tools_nc_connector_parse_systemd_time($value)
