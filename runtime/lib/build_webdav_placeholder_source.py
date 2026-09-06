@@ -32,6 +32,17 @@ SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 PLACEHOLDER = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
 
 
+class WebDavAuthenticationError(RuntimeError):
+    pass
+
+
+class WebDavPathUnavailable(RuntimeError):
+    def __init__(self, relative: str, status: int) -> None:
+        self.relative = validate_relative(relative)
+        self.status = int(status)
+        super().__init__(f"Nextcloud path unavailable with HTTP {self.status}: {self.relative or '/'}")
+
+
 def fail(message: str) -> None:
     raise RuntimeError(message)
 
@@ -136,8 +147,10 @@ class WebDavClient:
                 status = response.status
                 payload = response.read()
         except urllib.error.HTTPError as error:
-            if error.code in {401, 403}:
-                fail("Nextcloud rejected the WebDAV credentials or directory access")
+            if error.code == 401:
+                raise WebDavAuthenticationError("Nextcloud rejected the WebDAV credentials") from error
+            if error.code in {403, 404}:
+                raise WebDavPathUnavailable(relative, error.code) from error
             fail(f"Nextcloud PROPFIND failed with HTTP {error.code}")
         except urllib.error.URLError as error:
             fail(f"Nextcloud WebDAV is unreachable: {error.reason}")
@@ -187,6 +200,25 @@ class WebDavClient:
         if current is None or int(current.get("fileid", 0)) < 1:
             fail(f"Nextcloud returned no stable fileid for {relative or '/'}")
         return current, children
+
+
+def confirmed_removed_root(client: WebDavClient, remote_root: str, error: WebDavPathUnavailable) -> bool:
+    remote_root = validate_relative(remote_root)
+    if remote_root == "":
+        return False
+    if error.status == 404:
+        return True
+    if error.status != 403:
+        return False
+
+    parent_path = PurePosixPath(remote_root).parent
+    parent = "" if str(parent_path) == "." else str(parent_path).strip("/")
+    _, siblings = client.list_collection(parent)
+    wanted = PurePosixPath(remote_root).name.casefold()
+    for sibling in siblings:
+        if str(sibling.get("display_name", "")).casefold() == wanted:
+            return False
+    return True
 
 
 def link_placeholder(seed: Path, target: Path) -> None:
@@ -301,14 +333,34 @@ def main() -> int:
         staging.mkdir(parents=True)
 
         client = WebDavClient(args.base_url, args.user, password, max(1, args.timeout))
+
+        # A successful request against the user's WebDAV root proves that the
+        # credentials and the Nextcloud endpoint are healthy. Only after this
+        # guard may an individual configured root be interpreted as removed.
+        client.list_collection("")
+
         mapping: dict[str, dict[str, object]] = {}
         manifest: list[str] = []
         total_files = total_folders = total_skipped = 0
         used_names: set[str] = set()
+        removed_roots: list[dict[str, object]] = []
 
         for remote_root_raw in args.root:
             remote_root = validate_relative(remote_root_raw)
-            current, _ = client.list_collection(remote_root)
+            try:
+                current, _ = client.list_collection(remote_root)
+            except WebDavPathUnavailable as error:
+                if not confirmed_removed_root(client, remote_root, error):
+                    raise RuntimeError(
+                        f"Configured WebDAV root cannot be read safely; existing mirror is preserved: {remote_root or '/'} (HTTP {error.status})"
+                    ) from error
+                removed_roots.append({"path": remote_root, "status": error.status})
+                print(
+                    f"webdav-placeholder: configured root no longer available and will be removed from the mirror: {remote_root or '/'} (HTTP {error.status})",
+                    file=sys.stderr,
+                )
+                continue
+
             fileid = int(current["fileid"])
             display = str(current.get("display_name", "")).strip() or (PurePosixPath(remote_root).name if remote_root else args.user)
             local_name = f"root-{fileid}"
@@ -366,6 +418,9 @@ def main() -> int:
         })
         print(json.dumps({
             "roots": len(args.root),
+            "roots_available": len(args.root) - len(removed_roots),
+            "roots_removed": len(removed_roots),
+            "removed_root_details": removed_roots,
             "files": total_files,
             "folders": total_folders,
             "skipped": total_skipped,
