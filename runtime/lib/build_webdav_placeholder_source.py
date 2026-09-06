@@ -337,7 +337,7 @@ def main() -> int:
         # A successful request against the user's WebDAV root proves that the
         # credentials and the Nextcloud endpoint are healthy. Only after this
         # guard may an individual configured root be interpreted as removed.
-        client.list_collection("")
+        webdav_home, _ = client.list_collection("")
 
         mapping: dict[str, dict[str, object]] = {}
         manifest: list[str] = []
@@ -408,6 +408,19 @@ def main() -> int:
         for path, data in mapping.items():
             final_path = source_text + path[len(staging_text):] if path.startswith(staging_text) else path
             final_mapping[final_path] = data
+
+        # Der Worker erwartet ein syntaktisch nicht-leeres Connector-Mapping,
+        # filtert aber selbst ausschließlich kind=file. Wenn alle ausgewählten
+        # Roots entzogen wurden, hält dieser echte WebDAV-Home-Verzeichniseintrag
+        # das Mapping gültig, während der Shadowtree bewusst null Bildquellen hat.
+        if not final_mapping:
+            final_mapping[source_text] = {
+                "kind": "folder",
+                "fileid": int(webdav_home["fileid"]),
+                "webdav_path": "",
+                "display_name": str(webdav_home.get("display_name", "")) or args.user,
+                "control_entry": True,
+            }
 
         atomic_text(args.manifest, "\n".join(manifest) + "\n")
         atomic_json(args.mapping, {
