@@ -121,6 +121,18 @@ foreach ($webdav as &$status)
     $status['message'] = 'Worker wurde angefordert, hat aber innerhalb von 45 Sekunden keinen Scan gestartet.';
   }
 
+  // Ältere Dispatcher-Versionen konnten den Zustand "waiting" schreiben und
+  // anschließend ohne Fortsetzungsauftrag enden. Dieser reine Statuswert ist
+  // kein Beweis für einen laufenden Connector und darf die Cache-Seite nicht
+  // dauerhaft blockieren. Neue Wartezustände tragen resume_scheduled=true und
+  // besitzen einen echten Hintergrund-Warter.
+  if ($state === 'waiting' && empty($status['resume_scheduled']) && $updated > 0 && (time() - $updated) > 45)
+  {
+    $state = 'idle';
+    $status['state'] = 'idle';
+    $status['message'] = 'Veralteter Connector-Wartezustand wurde verworfen; aktuell ist kein fortsetzbarer Cache-Auftrag registriert.';
+  }
+
   if ($state === 'scan')
   {
     $selected = max(0, (int)($status['selected'] ?? 0));
@@ -160,7 +172,7 @@ foreach ($webdav as &$status)
   if ($state === 'cancelled') $webdav_cancelled = true;
   if ($state === 'preempted') $webdav_pending = true;
   if (in_array($state, array('error','fatal'), true)) $webdav_error = true;
-  if ($state !== 'complete') $webdav_all_complete = false;
+  if ($state !== 'complete' && $state !== 'idle') $webdav_all_complete = false;
   $webdav_lines[] = bratonien_tools_status_webdav_label($status);
 }
 unset($status);
@@ -217,7 +229,7 @@ elseif ($webdav_waiting)
   $overall['state'] = 'queued';
   $overall['total'] = $combined_total;
   $overall['completed'] = $combined_completed;
-  $overall['message'] = 'Cache-Aufbau pausiert für laufende Connector-Synchronisierung'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. Der Indexstand bleibt erhalten.';
+  $overall['message'] = 'Cache-Aufbau pausiert für laufende Connector-Synchronisierung'.($webdav_source_total > 0 ? ' · '.$webdav_source_total.' WebDAV-Quellen' : '').'. Der Fortsetzungsauftrag bleibt registriert.';
   $overall['current'] = implode(' ', $webdav_lines);
 }
 elseif ($webdav_partial)
