@@ -82,16 +82,37 @@ function bratonien_tools_runtime_b64url_encode($value)
   return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
 
+function bratonien_tools_profile_watermark_relative(array $profile)
+{
+  $relative = ltrim(trim((string)($profile['watermark_file'] ?? '')), '/');
+  if ($relative !== '')
+  {
+    return $relative;
+  }
+
+  // Ein Profil ohne eigene Datei bedeutet bewusst: Einstellungen dieses
+  // Profils verwenden, aber die zentrale Basis-Wasserzeichendatei erben.
+  // Dadurch kann das Standardprofil "Oeffentlich" ohne doppelte Dateipflege
+  // fuer jedes öffentliche Album als Schutzregel dienen.
+  if (function_exists('bratonien_tools_get_base_watermark_config'))
+  {
+    $base = bratonien_tools_get_base_watermark_config();
+    $relative = ltrim(trim((string)($base['file'] ?? '')), '/');
+  }
+
+  return $relative;
+}
+
 function bratonien_tools_profile_watermark_path(array $profile)
 {
   static $paths = array();
 
-  if (empty($profile['watermark_file']))
+  $relative = bratonien_tools_profile_watermark_relative($profile);
+  if ($relative === '')
   {
     return null;
   }
 
-  $relative = ltrim((string)$profile['watermark_file'], '/');
   if (array_key_exists($relative, $paths))
   {
     return $paths[$relative];
@@ -119,9 +140,10 @@ function bratonien_tools_profile_watermark_path(array $profile)
 function bratonien_tools_runtime_profile_version(array $profile)
 {
   $watermark_path = bratonien_tools_profile_watermark_path($profile);
+  $effective_file = bratonien_tools_profile_watermark_relative($profile);
   $parts = array(
     $profile['id'] ?? 0,
-    $profile['watermark_file'] ?? '',
+    $effective_file,
     $profile['scale_percent'] ?? 100,
     $profile['xpos'] ?? 90,
     $profile['ypos'] ?? 90,
