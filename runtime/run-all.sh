@@ -5,40 +5,6 @@ CONFIG_DIR="/etc/bratonien-tools/nc-connector"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
 
-provision_manual_start_bridge() {
-    # Der periodische Connector-Dienst laeuft privilegiert. Er darf deshalb die
-    # eng begrenzte Freigabe fuer den manuellen Admin-Start selbst pflegen.
-    # Erlaubt wird ausschliesslich genau ein systemctl-Aufruf fuer genau diesen
-    # Dienst; weder eine Shell noch beliebige sudo/systemctl-Kommandos.
-    [[ "${EUID:-$(id -u)}" -eq 0 ]] || return 0
-    command -v visudo >/dev/null 2>&1 || return 0
-
-    local sudoers_dir="/etc/sudoers.d"
-    local sudoers_file="$sudoers_dir/bratonien-nc-connector"
-    local rule="www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start bratonien-nc-connector.service"
-    local tmp
-
-    mkdir -p -- "$sudoers_dir"
-    if [[ -r "$sudoers_file" ]] && [[ "$(tr -d '\r' < "$sudoers_file" | sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d')" == "$rule" ]]; then
-        chown root:root -- "$sudoers_file"
-        chmod 0440 -- "$sudoers_file"
-        return 0
-    fi
-
-    tmp="$(mktemp "$sudoers_dir/.bratonien-nc-connector.XXXXXX")"
-    trap 'rm -f -- "$tmp"' RETURN
-    printf '%s\n' "$rule" > "$tmp"
-    chown root:root -- "$tmp"
-    chmod 0440 -- "$tmp"
-    visudo -cf "$tmp" >/dev/null
-    mv -f -- "$tmp" "$sudoers_file"
-    chown root:root -- "$sudoers_file"
-    chmod 0440 -- "$sudoers_file"
-    trap - RETURN
-}
-
-provision_manual_start_bridge
-
 if ! php "$SCRIPT_DIR/reconcile-webdav.php"; then
     echo "NC Connector: WebDAV-Verbindungen konnten nicht mit der Runtime abgeglichen werden." >&2
     exit 1
