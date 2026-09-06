@@ -180,6 +180,23 @@ if [[ "${PIWIGO_SYNC_ENABLED:-0}" == "1" ]]; then
         exit "$PIWIGO_EXIT"
     fi
 
+    CLEANUP_OUTPUT=""
+    CLEANUP_EXIT=0
+    if CLEANUP_OUTPUT="$(php "$SCRIPT_DIR/repair-webdav-orphans.php" 2>&1)"; then
+        CLEANUP_EXIT=0
+    else
+        CLEANUP_EXIT=$?
+    fi
+    [[ -z "$CLEANUP_OUTPUT" ]] || printf '%s\n' "$CLEANUP_OUTPUT"
+    if [[ "$CLEANUP_EXIT" -ne 0 ]]; then
+        DETAIL="Exit-Code: $CLEANUP_EXIT"
+        if [[ -n "$CLEANUP_OUTPUT" ]]; then
+            DETAIL+="; Ausgabe: $(printf '%s\n' "$CLEANUP_OUTPUT" | compact_output)"
+        fi
+        write_status error "Verwaiste Piwigo-Bilder entfernter WebDAV-Quellen konnten nicht bereinigt werden" "$DETAIL"
+        exit "$CLEANUP_EXIT"
+    fi
+
     METADATA_OUTPUT=""
     METADATA_EXIT=0
     if METADATA_OUTPUT="$(php "$SCRIPT_DIR/lib/sync-webdav-metadata.php" \
