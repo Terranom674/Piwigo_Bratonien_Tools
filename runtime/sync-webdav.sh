@@ -101,14 +101,34 @@ if [[ -r "$WEBDAV_MAPPING_FILE" ]]; then
     OLD_MAPPING_HASH="$(sha256sum -- "$WEBDAV_MAPPING_FILE" | awk '{print $1}')"
 fi
 
-python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
+# Der Scanner liefert die eigentliche Fehlerursache auf stderr. Diese Ausgabe
+# darf nicht vom allgemeinen ERR-Trap verschluckt werden, weil im Admin sonst
+# nur die aufgerufene Python-Befehlszeile statt der Ursache sichtbar ist.
+PLACEHOLDER_OUTPUT=""
+PLACEHOLDER_EXIT=0
+trap - ERR
+if PLACEHOLDER_OUTPUT="$(python3 "$SCRIPT_DIR/lib/build_webdav_placeholder_source.py" \
     --base-url "$WEBDAV_BASE_URL" \
     --user "$WEBDAV_USER" \
     --password-file "$WEBDAV_PASSWORD_FILE" \
     "${ROOT_ARGS[@]}" \
     --source-dir "$WEBDAV_SOURCE_DIR" \
     --manifest "$MANIFEST" \
-    --mapping "$WEBDAV_MAPPING_FILE"
+    --mapping "$WEBDAV_MAPPING_FILE" 2>&1)"; then
+    PLACEHOLDER_EXIT=0
+else
+    PLACEHOLDER_EXIT=$?
+fi
+trap 'failure $? "$BASH_COMMAND" "$LINENO"' ERR
+[[ -z "$PLACEHOLDER_OUTPUT" ]] || printf '%s\n' "$PLACEHOLDER_OUTPUT"
+if [[ "$PLACEHOLDER_EXIT" -ne 0 ]]; then
+    DETAIL="Exit-Code: $PLACEHOLDER_EXIT"
+    if [[ -n "$PLACEHOLDER_OUTPUT" ]]; then
+        DETAIL+="; Ausgabe: $(printf '%s\n' "$PLACEHOLDER_OUTPUT" | compact_output)"
+    fi
+    write_status error "Nextcloud-WebDAV konnte nicht eingelesen werden" "$DETAIL"
+    exit "$PLACEHOLDER_EXIT"
+fi
 
 find "$WEBDAV_SOURCE_DIR" -type d -exec chgrp www-data -- {} +
 find "$WEBDAV_SOURCE_DIR" -type d -exec chmod 0775 -- {} +
