@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Bratonien Tools
-Version: 0.9.7.1.44
+Version: 0.9.7.1.45
 Description: Erweiterbare Administrationswerkzeuge fuer die Bratonien-Piwigo-Installation.
 Plugin URI: https://github.com/Terranom674/Piwigo_Bratonien_Tools
 Author: Bratonien
@@ -38,176 +38,12 @@ add_event_handler('element_set_global_action', 'bratonien_tools_batch_titles_app
 add_event_handler('init', 'bratonien_tools_prepare_connector_private_import', EVENT_HANDLER_PRIORITY_NEUTRAL - 30);
 add_event_handler('init', 'bratonien_tools_prepare_private_album_permissions', EVENT_HANDLER_PRIORITY_NEUTRAL - 20);
 add_event_handler('init', 'bratonien_tools_preserve_private_album_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 10);
-add_event_handler('init', 'bratonien_tools_preserve_connector_top_level_access', EVENT_HANDLER_PRIORITY_NEUTRAL - 9);
-add_event_handler('init', 'bratonien_tools_presentation_refresh_watch_admin_categories', EVENT_HANDLER_PRIORITY_NEUTRAL - 8);
-add_event_handler('init', 'bratonien_tools_album_shares_init');
-add_event_handler('loc_end_intro', 'bratonien_tools_fix_admin_album_stat_tile');
-add_event_handler('loc_end_page_tail', 'bratonien_tools_add_legal_footer_links');
-add_event_handler('delete_categories', 'bratonien_tools_album_shares_on_delete_categories');
-add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_orphan_ws_methods');
-add_event_handler('ws_add_methods', 'bratonien_tools_register_nc_productive_ws_methods');
-
-function bratonien_tools_prepare_connector_private_import()
-{
-  global $conf;
-
-  if (
-    !defined('IN_ADMIN')
-    || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
-    || (string)($_GET['page'] ?? '') !== 'site_update'
-    || (string)($_POST['bratonien_connector'] ?? '') !== '1'
-  )
-  {
-    return;
-  }
-
-  $conf['newcat_default_status'] = 'private';
-}
-
-function bratonien_tools_prepare_private_album_permissions()
-{
-  global $user;
-
-  if (
-    !defined('IN_ADMIN')
-    || $_SERVER['REQUEST_METHOD'] !== 'POST'
-    || empty($user['id'])
-    || (string)($_POST['status'] ?? '') !== 'private'
-  )
-  {
-    return;
-  }
-
-  $page = (string)($_GET['page'] ?? '');
-  if (!preg_match('/^album-(\d+)-permissions$/', $page, $matches))
-  {
-    return;
-  }
-
-  $category_id = (int)$matches[1];
-  if ($category_id < 1)
-  {
-    return;
-  }
-
-  bratonien_tools_grant_private_album_access($category_id, (int)$user['id']);
-}
-
-function bratonien_tools_preserve_connector_top_level_access()
-{
-  global $user;
-
-  if (
-    !defined('IN_ADMIN')
-    || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
-    || (string)($_GET['page'] ?? '') !== 'site_update'
-    || (string)($_POST['bratonien_connector'] ?? '') !== '1'
-    || empty($user['id'])
-  )
-  {
-    return;
-  }
-
-  $site_id = (int)($_GET['site'] ?? 0);
-  $user_id = (int)$user['id'];
-  if ($site_id < 1 || $user_id < 1)
-  {
-    return;
-  }
-
-  register_shutdown_function(function () use ($site_id, $user_id) {
-    $query = '\nSELECT id\n  FROM '.CATEGORIES_TABLE.'\n  WHERE site_id = '.$site_id.'\n    AND dir IS NOT NULL\n    AND id_uppercat IS NULL\n    AND status = \'private\'\n;';
-    $result = pwg_query($query);
-    $changed = false;
-    while ($row = pwg_db_fetch_assoc($result))
-    {
-      $category_id = (int)$row['id'];
-      if ($category_id < 1)
-      {
-        continue;
-      }
-
-      $access_query = '\nSELECT 1\n  FROM '.USER_ACCESS_TABLE.'\n  WHERE user_id = '.$user_id.'\n    AND cat_id = '.$category_id.'\n  LIMIT 1\n;';
-      if (pwg_db_num_rows(pwg_query($access_query)) > 0)
-      {
-        continue;
-      }
-
-      bratonien_tools_grant_private_album_access($category_id, $user_id);
-      $changed = true;
-    }
-
-    if ($changed && function_exists('invalidate_user_cache'))
-    {
-      invalidate_user_cache(true);
-    }
-  });
-}
-
-function bratonien_tools_grant_private_album_access($category_id, $user_id)
-{
-  $category_id = (int)$category_id;
-  $user_id = (int)$user_id;
-  if ($category_id < 1 || $user_id < 1)
-  {
-    return;
-  }
-
-  $query = '\nSELECT 1\n  FROM '.USER_ACCESS_TABLE.'\n  WHERE user_id = '.$user_id.'\n    AND cat_id = '.$category_id.'\n  LIMIT 1\n;';
-  $result = pwg_query($query);
-  if (pwg_db_num_rows($result) > 0)
-  {
-    return;
-  }
-
-  single_insert(
-    USER_ACCESS_TABLE,
-    array(
-      'user_id' => $user_id,
-      'cat_id' => $category_id,
-    )
-  );
-}
-
-function bratonien_tools_fix_admin_album_stat_tile()
-{
-  global $template;
-
-  if (!defined('IN_ADMIN'))
-  {
-    return;
-  }
-
-  $template->set_prefilter('intro', 'bratonien_tools_prefilter_admin_album_stat_tile');
-}
-
-function bratonien_tools_prefilter_admin_album_stat_tile($source)
-{
-  return str_replace('{if $NB_ALBUMS > 1}', '{if $NB_ALBUMS > 0}', $source);
-}
-
-function bratonien_tools_add_legal_footer_links()
-{
-  global $template;
-
-  if (defined('IN_ADMIN'))
-  {
-    return;
-  }
-
-  $template->append(
-    'footer_elements',
-    ' - <a href="https://links.bratonien.de/@bratonien_cosplay#bratonien-popup-856170002" rel="noopener">Impressum</a>'
-    .' - <a href="https://links.bratonien.de/@bratonien_cosplay#bratonien-popup-907192090" rel="noopener">Datenschutzerklärung</a>'
-  );
-}
 
 function bratonien_tools_admin_menu($menu)
 {
   $menu[] = array(
     'NAME' => 'Bratonien Tools',
-    'URL'  => get_root_url() . 'admin.php?page=plugin-' . BRATONIEN_TOOLS_ID,
+    'URL' => get_root_url().'admin.php?page=plugin-'.BRATONIEN_TOOLS_ID,
   );
   return $menu;
 }
-?>
