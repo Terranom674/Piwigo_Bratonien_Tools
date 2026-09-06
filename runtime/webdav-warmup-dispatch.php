@@ -98,14 +98,47 @@ function bratonien_tools_webdav_dispatch_connector_service_active()
   return $exit === 0;
 }
 
+function bratonien_tools_webdav_dispatch_reset_orphan_sync_lock($state_dir)
+{
+  $path = rtrim((string)$state_dir, '/').'/webdav-sync.lock';
+  if (!is_file($path)) return true;
+
+  $lock = @fopen($path, 'c');
+  if (!$lock) return false;
+  if (@flock($lock, LOCK_SH | LOCK_NB))
+  {
+    @flock($lock, LOCK_UN);
+    fclose($lock);
+    return true;
+  }
+  fclose($lock);
+
+  // Der Produktions-Connector darf ausschließlich über den systemd-Dienst
+  // laufen. Ist dieser nicht aktiv, ist ein weiterhin exklusiv belegter Lock
+  // kein gültiger Connector-Zustand. Den alten Inode hängen wir aus und legen
+  // eine frische Lockdatei an, damit ein verwaister Altprozess den Cache nicht
+  // dauerhaft blockiert. Ein späterer echter Connector benutzt automatisch die
+  // neue Datei.
+  if (bratonien_tools_webdav_dispatch_connector_service_active()) return false;
+
+  $orphan = $path.'.orphan-'.date('YmdHis').'-'.getmypid();
+  if (!@rename($path, $orphan)) return false;
+  $fresh = @fopen($path, 'c');
+  if (!$fresh)
+  {
+    @rename($orphan, $path);
+    return false;
+  }
+  @chmod($path, 0660);
+  fclose($fresh);
+  @file_put_contents(PHPWG_ROOT_PATH.PWG_LOCAL_DIR.'bratonien-webdav-warmup.log', '[BRAT-WORKER] orphan_sync_lock_reset old='.basename($orphan)."\n", FILE_APPEND | LOCK_EX);
+  return true;
+}
+
 function bratonien_tools_webdav_dispatch_connector_busy($state_dir)
 {
-  // Ein belegtes Lock allein ist kein Beweis für einen laufenden Connector.
-  // Maßgeblich ist der privilegierte systemd-Dienst. Damit können Alt-/Fremd-
-  // Locks den Cache-Aufbau nicht dauerhaft als vermeintlichen Sync blockieren.
-  if (!bratonien_tools_webdav_dispatch_connector_service_active()) return false;
-
-  $lock = @fopen(rtrim((string)$state_dir, '/').'/webdav-sync.lock', 'c');
+  $path = rtrim((string)$state_dir, '/').'/webdav-sync.lock';
+  $lock = @fopen($path, 'c');
   if (!$lock) return false;
   if (@flock($lock, LOCK_SH | LOCK_NB))
   {
@@ -114,7 +147,18 @@ function bratonien_tools_webdav_dispatch_connector_busy($state_dir)
     return false;
   }
   fclose($lock);
-  return true;
+
+  if (bratonien_tools_webdav_dispatch_connector_service_active()) return true;
+
+  // Genau der hier beobachtete Fehlerfall: Lock belegt, aber kein Connector-
+  // Dienst aktiv. Nicht als "Connector läuft" darstellen, sondern den
+  // verwaisten Lockzustand reparieren und den Cache normal starten lassen.
+  if (bratonien_tools_webdav_dispatch_reset_orphan_sync_lock($state_dir)) return false;
+
+  // Konnte der ungültige Lockzustand nicht sicher repariert werden, wird nicht
+  // behauptet, dass ein Connector läuft. Der Worker erhält stattdessen einen
+  // echten Fehler und kann den Zustand sichtbar machen.
+  throw new RuntimeException('WebDAV-Sync-Lock ist belegt, obwohl der Connector-Dienst nicht aktiv ist, und konnte nicht sicher zurückgesetzt werden.');
 }
 
 function bratonien_tools_webdav_dispatch_schedule_after_sync($waiter, $state_dir, $worker_command, $log, &$pid=null)
@@ -198,6 +242,21 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     .' --connection-id='.$connection_id
     .' --mode='.escapeshellarg($mode);
 
+  try
+  {
+    $connector_busy = $mode !== 'sync' && bratonien_tools_webdav_dispatch_connector_busy($state_dir);
+  }
+  catch (Throwable $e)
+  {
+    if (function_exists('bratonien_tools_webdav_warmup_write_status'))
+    {
+      bratonien_tools_webdav_warmup_write_status($connection_id, 'error', $e->getMessage(), array('mode'=>$mode, 'deferred_by_connector'=>false));
+    }
+    fwrite(STDERR, $e->getMessage()."\n");
+    $result = 1;
+    continue;
+  }
+
   if ($mode === 'sync')
   {
     if (!is_dir($state_dir) && !@mkdir($state_dir, 0750, true) && !is_dir($state_dir))
@@ -220,7 +279,7 @@ foreach (bratonien_tools_nc_connector_connections() as $connection)
     }
     @chmod($priority_file, 0664);
   }
-  elseif (bratonien_tools_webdav_dispatch_connector_busy($state_dir))
+  elseif ($connector_busy)
   {
     $resume_pid = 0;
     $scheduled = bratonien_tools_webdav_dispatch_schedule_after_sync($after_sync_waiter, $state_dir, $worker_command, $log, $resume_pid);
